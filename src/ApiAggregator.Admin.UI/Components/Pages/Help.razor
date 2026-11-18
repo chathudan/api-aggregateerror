@@ -1,0 +1,224 @@
+@page "/help"
+
+<PageTitle>Help</PageTitle>
+
+<div class="help">
+<aside class="toc">
+    <strong>Help</strong>
+    <a href="/help#start">How it works</a>
+    <a href="/help#before">Before you add a service</a>
+    <a href="/help#add-service">Add a service</a>
+    <a href="/help#sign-in">Choose the sign-in</a>
+    <a href="/help#secrets">Passwords and keys</a>
+    <a href="/help#add-endpoint">Add an endpoint by hand</a>
+    <a href="/help#build">Build an aggregated endpoint</a>
+    <a href="/help#publish">Test and publish</a>
+    <a href="/help#troubleshooting">Troubleshooting</a>
+    <a href="/help#app-errors">Errors apps receive</a>
+    <a href="/help#logs">Live logs</a>
+    <a href="/help#words">Words used here</a>
+</aside>
+
+<article>
+<h1>Admin guide</h1>
+<p class="lead">How to connect services and combine their endpoints into one endpoint for web and mobile apps. No coding needed.</p>
+
+@* ------------------------------------------------------------------ *@
+<section id="start">
+<h2>How it works</h2>
+<p>Apps call <strong>one aggregated endpoint</strong>, for example <code>GET /bff/customer/C-10042/overview</code>. The gateway calls several <strong>services</strong> behind the scenes, passes values between them, and sends back one combined answer.</p>
+<ol>
+    <li><strong>Services</strong>: register each backend API once: its address, its endpoints and how the gateway signs in to it.</li>
+    <li><strong>Endpoints</strong>: build an aggregated endpoint by picking service endpoints as steps.</li>
+    <li><strong>Try it</strong>, then <strong>Publish</strong>. Apps can use it straight away; nothing needs redeploying.</li>
+</ol>
+</section>
+
+@* ------------------------------------------------------------------ *@
+<section id="before">
+<h2>Before you add a service</h2>
+<p>Ask the service's owner (the team that runs it) for:</p>
+<table class="list">
+    <thead><tr><th>What</th><th>Example</th><th>Why</th></tr></thead>
+    <tbody>
+        <tr><td>OpenAPI (Swagger) spec address, if there is one</td><td><code>https://billing.internal/swagger/v1/swagger.json</code></td><td>Fills in the endpoints for you</td></tr>
+        <tr><td>Base address</td><td><code>https://billing.internal/api</code></td><td>Where calls go</td></tr>
+        <tr><td>How to sign in, and the credentials</td><td>"API key in header X-Api-Key"</td><td>See <a href="/help#sign-in">Choose the sign-in</a></td></tr>
+        <tr><td>A test record you may use</td><td>Customer <code>C-10042</code></td><td>For <strong>Try it</strong></td></tr>
+    </tbody>
+</table>
+<p class="hint">Use test-environment addresses and test data while building. Never paste real customer or patient data into test values.</p>
+</section>
+
+@* ------------------------------------------------------------------ *@
+<section id="add-service">
+<h2>Add a service</h2>
+<p>Go to <a href="/services">Services</a> and choose <strong>Add service</strong>.</p>
+<h3>If the service has an OpenAPI spec (recommended)</h3>
+<ol>
+    <li>Keep <strong>From an OpenAPI spec</strong> selected. Paste the spec address and choose <strong>Load</strong>.</li>
+    <li>Check the <strong>Name</strong> and <strong>Base address</strong>. They're filled in from the spec; change them if the spec points at the wrong environment.</li>
+    <li>Untick any operations you don't need. You can import more later with <strong>Import from OpenAPI</strong>.</li>
+    <li>Pick the sign-in. The spec often suggests one. Fill in the fields, then choose <strong>Save service</strong>.</li>
+    <li>The result of an automatic <strong>Check sign-in</strong> appears under the service name. Green means you're ready.</li>
+</ol>
+<h3>If it doesn't have a spec</h3>
+<ol>
+    <li>Choose <strong>Enter by hand</strong>, enter the name and base address, pick the sign-in and save.</li>
+    <li>Add each endpoint with <strong>Add endpoint</strong> (see <a href="/help#add-endpoint">Add an endpoint by hand</a>).</li>
+</ol>
+<p class="hint">The <strong>base address</strong> is the part every endpoint path is added to. If the service's calls look like <code>https://billing.internal/api/invoices</code>, the base address is <code>https://billing.internal/api</code> and the endpoint path is <code>/invoices</code>.</p>
+</section>
+
+@* ------------------------------------------------------------------ *@
+<section id="sign-in">
+<h2>Choose the sign-in</h2>
+<p>Pick the card that matches what the service owner told you.</p>
+<table class="list">
+    <thead><tr><th>The owner says…</th><th>Pick</th><th>You'll need</th></tr></thead>
+    <tbody>
+        <tr><td>"It's open on the internal network" / "no auth"</td><td>No sign-in</td><td>Nothing</td></tr>
+        <tr><td>"Basic auth" / "username and password on every request"</td><td>Username and password</td><td>Username, password</td></tr>
+        <tr><td>"Call /login first, then use the session cookie" or "the login returns a token"</td><td>Log in first, then reuse the session</td><td>Login address, username, password. If the login answer contains a token, where it is (for example <code>token</code> or <code>data.accessToken</code>)</td></tr>
+        <tr><td>"OAuth 2.0 client credentials" / "get a JWT from the token endpoint" / "Entra ID app registration"</td><td>OAuth client (JWT token)</td><td>Token address, client id, client secret, scope (if they give one)</td></tr>
+        <tr><td>"Send an API key" / "subscription key" / "X-Api-Key header"</td><td>API key</td><td>Key name (for example <code>X-Api-Key</code>), key value, header or query</td></tr>
+        <tr><td>"Here's a long-lived token for you"</td><td>Fixed token</td><td>The token</td></tr>
+        <tr><td>"We accept your users' own sign-in tokens"</td><td>Use the caller's own token</td><td>Nothing. Only use this when the owner confirms it</td></tr>
+    </tbody>
+</table>
+<p><strong>Two things at once?</strong> For example an API key <em>and</em> a login: pick the first card, then choose <strong>Combine with another sign-in step</strong> for the second.</p>
+<p>Not sure? Ask the owner for an example request (for example a curl command or Postman collection). The headers it sends tell you which card it is.</p>
+</section>
+
+@* ------------------------------------------------------------------ *@
+<section id="secrets">
+<h2>Passwords and keys</h2>
+<ul>
+    <li>Password, secret and key boxes never show a saved value again. "Saved. Type to replace" means a value is stored.</li>
+    <li>Values are <strong>never</strong> stored in the service settings. The settings only hold a name like <code>secret:service-d-billing-value</code> that points to the real value.</li>
+    <li><strong>On your own computer (development)</strong>, typed values go into <code>config/secrets.local.json</code>. That file stays on your machine and isn't shared through git.</li>
+    <li><strong>In test and production environments</strong>, the screen shows the secret's name instead of saving it. Send that name to an administrator, who adds the value to Key Vault. Never send passwords in chat or email.</li>
+</ul>
+</section>
+
+@* ------------------------------------------------------------------ *@
+<section id="add-endpoint">
+<h2>Add an endpoint by hand</h2>
+<p>On the service, choose <strong>Add endpoint</strong>.</p>
+<table class="list">
+    <thead><tr><th>Field</th><th>Example</th><th>Tip</th></tr></thead>
+    <tbody>
+        <tr><td>Name</td><td>Get order lines</td><td>Shown when building endpoints; make it a clear action</td></tr>
+        <tr><td>Method</td><td>GET</td><td>As documented by the service</td></tr>
+        <tr><td>Path</td><td><code>/orders/{orderId}/lines</code></td><td>Put changing parts in braces. They become required path values</td></tr>
+        <tr><td>Other values</td><td><code>status</code> (query), <code>X-Customer-Id</code> (header)</td><td>Tick Required if the service rejects calls without it</td></tr>
+        <tr><td>Sample response</td><td><code>{ "id": "O-1", "total": 20.5 }</code></td><td>Paste a real-looking answer (no real personal data). The builder then offers these fields in its dropdowns</td></tr>
+    </tbody>
+</table>
+</section>
+
+@* ------------------------------------------------------------------ *@
+<section id="build">
+<h2>Build an aggregated endpoint</h2>
+<p>Go to <a href="/">Endpoints</a> and choose <strong>Create endpoint</strong>.</p>
+<ol>
+    <li><strong>Endpoint:</strong> name it, then set the route, for example <code>customer/{id}/billing</code>. Apps will call <code>/bff/customer/C-10042/billing</code>. Leave <strong>Callers must sign in</strong> ticked. Enter the scope apps must have, for example <code>customer.read</code>, if your admin gave you one.</li>
+    <li><strong>Inputs:</strong> route values like <code>{id}</code> are added for you. Add query or header inputs only if apps need to send them. Anything not listed is ignored, which keeps the services safe.</li>
+    <li><strong>Steps:</strong> choose <strong>Add step</strong>, search, and add the service endpoints in a sensible order, for example "Get customer" first, then "List invoices".
+        <ul>
+            <li>Values marked <span class="tag suggested">suggested</span> were filled in for you. Check that each one makes sense.</li>
+            <li>For any value still empty, pick from <strong>Use value from</strong>: the caller's inputs, or a field from an earlier step. That's how one service's id is passed to another (path, query or header).</li>
+            <li>"Runs after…" shows the order the gateway worked out. Steps that don't depend on each other run at the same time.</li>
+            <li><strong>Advanced:</strong> untick "If this call fails, fail the whole endpoint" for nice-to-have data, so apps still get the rest. "Only run when" and "Run once for each item" are for special cases.</li>
+        </ul>
+    </li>
+    <li><strong>Response:</strong> choose <strong>Add fields from …</strong> for each step, then rename or remove fields. If you add none, each step's full answer is returned.</li>
+</ol>
+<p class="hint"><strong>Cache responses</strong> makes repeat calls much faster. Each app user gets their own cached copy, so nobody sees someone else's data. Keep it off for data that must always be up to the second.</p>
+</section>
+
+@* ------------------------------------------------------------------ *@
+<section id="publish">
+<h2>Test and publish</h2>
+<ol>
+    <li>Fix everything listed under <strong>Things to fix</strong>.</li>
+    <li>Enter test values next to the inputs (step 2), then choose <strong>Try it</strong>. You'll see each call, its status and time, and the combined answer.</li>
+    <li>When the test passes, choose <strong>Publish</strong>. A passing test of the exact current version is required; any change after testing means testing again.</li>
+</ol>
+<p>Editing a published endpoint creates a draft. The live version keeps working until you publish again. Every published version is kept, so an administrator can roll back.</p>
+</section>
+
+@* ------------------------------------------------------------------ *@
+<section id="troubleshooting">
+<h2>Troubleshooting</h2>
+<table class="list">
+    <thead><tr><th>You see</th><th>What it means</th><th>What to do</th></tr></thead>
+    <tbody>
+        <tr><td>The secret '…' has no value</td><td>A password, key or client secret was never saved, or isn't in Key Vault</td><td>Open the service's <strong>Sign-in</strong>, type the value again and save. In test or production, ask an admin to add that secret name to Key Vault</td></tr>
+        <tr><td>Couldn't reach the sign-in address</td><td>The login or token address is wrong, or the service is down</td><td>Check the address with the owner; try it in a browser or Postman</td></tr>
+        <tr><td>Login for profile '…' failed with 401</td><td>Wrong username or password</td><td>Re-enter them under <strong>Sign-in</strong>; confirm with the owner</td></tr>
+        <tr><td>Token endpoint … answered 400 or 401</td><td>Wrong client id, client secret or scope</td><td>Re-enter them; ask the owner which scope to use</td></tr>
+        <tr><td>Login … returned no session cookie or token</td><td>The login worked but the answer wasn't what was expected</td><td>Ask where the token is in the login answer and set "Token in the login response"</td></tr>
+        <tr><td>Settings and secrets are complete. This sign-in type is checked…</td><td>Basic, API key and fixed-token sign-ins can only be proven by a real call</td><td>Build a small endpoint and use <strong>Try it</strong></td></tr>
+        <tr><td>Service … answered 401 / 403</td><td>The service rejected the credentials, or the account lacks permission</td><td>Check the sign-in; ask the owner to grant access</td></tr>
+        <tr><td>Service … answered 404</td><td>The test record doesn't exist, or the path is wrong</td><td>Try another test value; check the endpoint path</td></tr>
+        <tr><td>'x' (path) is required by … but has no value</td><td>A step value is empty</td><td>Pick something in <strong>Use value from</strong></td></tr>
+        <tr><td>… uses request input '…', which isn't declared</td><td>A value comes from an input that isn't listed in step 2</td><td>Add that input</td></tr>
+        <tr><td>Steps depend on each other in a loop</td><td>Step A uses step B and step B uses step A</td><td>Change one of the values so it comes from an earlier step or an input</td></tr>
+        <tr><td>Header '…' can't be set here</td><td>Authorization and cookies are handled by the sign-in</td><td>Set it up under the service's <strong>Sign-in</strong> instead</td></tr>
+        <tr><td>Run a successful test of this exact draft before publishing</td><td>The draft changed after the last test, or the test didn't pass</td><td>Choose <strong>Try it</strong> again, then <strong>Publish</strong></td></tr>
+        <tr><td>Couldn't read that spec</td><td>The spec address is wrong, needs a sign-in, or isn't OpenAPI</td><td>Open the address in a browser; ask the owner for the JSON or YAML spec address</td></tr>
+    </tbody>
+</table>
+</section>
+
+@* ------------------------------------------------------------------ *@
+<section id="app-errors">
+<h2>Errors apps receive</h2>
+<p>When something goes wrong, apps get a <code>code</code> they can act on, plus a <code>correlationId</code>. Ask app developers for that id when they report a problem: it finds the matching gateway logs.</p>
+<table class="list">
+    <thead><tr><th>code</th><th>Meaning</th><th>Usually fixed by</th></tr></thead>
+    <tbody>
+        <tr><td><code>auth_failed</code></td><td>The gateway couldn't sign in to a service</td><td>Correcting the service's sign-in or secret</td></tr>
+        <tr><td><code>unauthorized</code> / <code>forbidden</code></td><td>The service refused the gateway's credentials</td><td>The service owner granting access</td></tr>
+        <tr><td><code>not_found</code></td><td>The record doesn't exist in a service</td><td>Nothing; it's real data</td></tr>
+        <tr><td><code>timeout</code> / <code>unreachable</code> / <code>server_error</code></td><td>A service was slow or down</td><td>The app retrying later; the service owner</td></tr>
+        <tr><td><code>invalid_input</code></td><td>The app sent a missing or wrong value</td><td>The app developer</td></tr>
+        <tr><td><code>unauthenticated</code> / <code>insufficient_scope</code></td><td>The app user isn't signed in, or lacks the endpoint's scope</td><td>The app or identity admin</td></tr>
+    </tbody>
+</table>
+</section>
+
+@* ------------------------------------------------------------------ *@
+<section id="logs">
+<h2>Live logs</h2>
+<p>The <strong>Logs</strong> page shows what the gateway and the Admin API have just done, newest first. It updates by itself.</p>
+<ul>
+    <li><strong>Gateway</strong> lines are calls from apps: which endpoint was called, how long it took, and which service step failed and why.</li>
+    <li><strong>Admin API</strong> lines are what you do here: <em>Try it</em> runs, sign-in checks, imports and publishing.</li>
+</ul>
+<p><strong>Find one request.</strong> When an app reports an error it includes a <code>correlationId</code>. Paste it into the search box, or click the short id in any row to show only that request. After a <em>Try it</em> run, use "See logs for this test". Click a row to see all its details, such as the step, the service and the error code.</p>
+<p><strong>Narrow things down.</strong> Use the level filter to show only warnings and errors, or only errors. Press <strong>Pause</strong> to read in peace: new lines keep arriving behind the scenes and the page tells you how many are waiting. <strong>Clear</strong> only empties this page, not the gateway's memory.</p>
+<p><strong>Good to know.</strong></p>
+<ul>
+    <li>Only the most recent lines are kept (2,000 per process), and only from the processes running on this machine. In production, with several gateway copies, use your central log store.</li>
+    <li>Logs never contain customer data, passwords or keys. If you suspect a problem with a specific value, check it with <em>Try it</em> instead.</li>
+</ul>
+</section>
+
+@* ------------------------------------------------------------------ *@
+<section id="words">
+<h2>Words used here</h2>
+<dl>
+    <dt>Service</dt><dd>A backend API the gateway calls, such as billing or orders.</dd>
+    <dt>Endpoint (of a service)</dt><dd>One operation of a service, for example <code>GET /invoices</code>.</dd>
+    <dt>Aggregated endpoint</dt><dd>What apps call. It runs several steps and returns one answer.</dd>
+    <dt>Step</dt><dd>One call to a service endpoint inside an aggregated endpoint.</dd>
+    <dt>Sign-in</dt><dd>How the gateway proves who it is to a service. Not the same as how app users sign in.</dd>
+    <dt>Scope</dt><dd>A permission an app user's token must have to call an aggregated endpoint.</dd>
+    <dt>Draft / Published</dt><dd>Drafts are only for testing. Published endpoints are live for apps.</dd>
+    <dt>Correlation id</dt><dd>A code on every response that ties it to the gateway's logs.</dd>
+</dl>
+</section>
+</article>
+</div>

@@ -91,6 +91,13 @@ on the console outside Development, ready for Azure Monitor, Seq, Elastic or Lok
 values. The built-in HttpClient request logging is removed, because it prints full URLs including
 query values.
 
+**Live logs in the admin UI.** The **Logs** page shows recent lines from the gateway and the admin
+API as they happen, with filters for source, level, text and correlation id
+([ADR 0010](../adr/0010-live-logs-in-admin-ui.md)). Each process keeps its last 2,000 lines in
+memory (`LiveLogs:Capacity`) and serves them at `/_admin/logs` (gateway) and `/admin/logs` (admin
+API) to callers with the `aggregator.author` scope. Set `LiveLogs:Enabled = false` to turn it off.
+It shows one process only, so keep a central log store for production.
+
 **Suggested alerts:** a rise in `StepFailed` grouped by ServiceId and ErrorCode; any
 `DownstreamAuthFailed`, since expired credentials or rotated secrets are the usual cause;
 `ConfigReloadFailed`; p95 of `RequestCompleted.DurationMs` per Endpoint.

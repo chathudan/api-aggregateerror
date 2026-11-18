@@ -32,7 +32,7 @@ public sealed class ConfigurationSecretResolver(IConfiguration configuration) : 
     {
         var value = configuration[$"Secrets:{name}"];
         return string.IsNullOrEmpty(value)
-            ? throw new AuthFailedException($"Secret '{name}' is not configured.")
+            ? throw new AuthFailedException($"The secret '{name}' has no value. Add it to Key Vault (or Secrets:{name} in configuration), or type it in the admin UI under Services > Sign-in.")
             : ValueTask.FromResult(value);
     }
 }

@@ -54,3 +54,39 @@ textarea { font: 13px ui-monospace, Menlo, monospace; padding: 8px; border: 1px 
 .ok-inline { color: var(--ok); font-size: 13px; }
 table.list td:last-child { white-space: nowrap; }
 table.list input, table.list select { width: 100%; box-sizing: border-box; }
+
+/* ---- help */
+.help { display: grid; grid-template-columns: 200px minmax(0, 1fr); gap: 32px; align-items: start; }
+.help .toc { position: sticky; top: 16px; display: flex; flex-direction: column; gap: 6px; font-size: 14px; }
+.help .toc a { color: var(--muted); text-decoration: none; }
+.help .toc a:hover { color: var(--accent); }
+.help article { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 8px 28px 28px; line-height: 1.6; }
+.help section { scroll-margin-top: 16px; border-top: 1px solid var(--border); padding-top: 8px; margin-top: 20px; }
+.help .lead { color: var(--muted); font-size: 16px; }
+.help li { margin-bottom: 4px; }
+.help dt { font-weight: 500; margin-top: 10px; } .help dd { margin: 2px 0 0; color: var(--muted); }
+.help-link { font-size: 13px; font-weight: 400; color: var(--accent); margin-left: 8px; text-decoration: none; white-space: nowrap; }
+.help-link:hover { text-decoration: underline; }
+@media (max-width: 800px) { .help { grid-template-columns: 1fr; } .help .toc { position: static; } }
+.help table.list { table-layout: fixed; }
+.help table.list td, .help table.list td:last-child { white-space: normal; overflow-wrap: anywhere; }
+.help table.list th:first-child { width: 32%; }
+
+/* ---- logs */
+.tag.warn { background: #faeeda; color: #854f0b; }
+.tag.error { background: #fcebeb; color: #a32d2d; }
+.tag.chip { background: #e6f1fb; color: #0c447c; }
+.chip-x { background: none; border: none; color: inherit; cursor: pointer; font: inherit; padding: 0 0 0 4px; }
+.bad-inline { color: var(--bad); font-size: 13px; }
+.log-controls { display: flex; gap: 12px; align-items: flex-end; flex-wrap: wrap; }
+.log-search { flex: 1; min-width: 220px; }
+.log-table { table-layout: auto; }
+.log-table td.nowrap { white-space: nowrap; font-variant-numeric: tabular-nums; }
+.log-table td.log-message { white-space: normal; overflow-wrap: anywhere; }
+.log-table td:last-child { white-space: nowrap; }
+.log-table .link { padding: 0; font: 13px ui-monospace, Menlo, monospace; }
+.log-row { cursor: pointer; }
+.log-row:hover { background: #faf9f5; }
+.log-details td { background: var(--page); }
+.log-details dl { display: grid; grid-template-columns: 160px 1fr; gap: 2px 12px; margin: 4px 0; font-size: 13px; }
+.log-details dt { color: var(--muted); } .log-details dd { margin: 0; overflow-wrap: anywhere; }

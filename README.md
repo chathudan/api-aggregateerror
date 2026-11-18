@@ -32,7 +32,7 @@ dotnet test                   # engine tests
 
 ./scripts/dev-run.sh          # mocks :5100, gateway :5200, admin API :5210, admin UI :5300
 ./scripts/try-gateway.sh      # in another terminal: dev token + calls to the sample endpoints
-open http://localhost:5300    # the wizard
+open http://localhost:5300    # admin UI (see Help in the top bar for the technician guide)
 ```
 
 Or with Docker: `docker compose up --build`.

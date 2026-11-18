@@ -13,7 +13,7 @@
     return;
 }
 
-<h1>@(IsNew ? "New aggregated endpoint" : _form.Name)</h1>
+<div class="header-row"><h1>@(IsNew ? "New aggregated endpoint" : _form.Name)</h1><HelpLink Topic="build" Text="How to build an endpoint" /></div>
 <p class="muted">Address: <code>@_form.Method /bff/@_form.Route.Trim('/')</code></p>
 
 @* ------------------------------------------------------------------ 1. Endpoint *@
@@ -43,7 +43,7 @@
 
 @* ------------------------------------------------------------------ 2. Inputs *@
 <section class="card">
-    <h2>2. Inputs</h2>
+    <h2>2. Inputs <HelpLink Topic="build" /></h2>
     <p class="hint">What the caller sends. Anything not listed here is ignored and never passed on.</p>
     <table class="list">
         <thead><tr><th>From</th><th>Name</th><th>Type</th><th>Required</th><th>Default</th><th>Test value</th><th></th></tr></thead>
@@ -75,7 +75,7 @@
 
 @* ------------------------------------------------------------------ 3. Steps *@
 <section class="card">
-    <h2>3. Steps</h2>
+    <h2>3. Steps <HelpLink Topic="build" /></h2>
     <p class="hint">Each step calls one service endpoint. Fill each value from the caller's inputs or from an earlier step. The run order is worked out for you.</p>
 
     @for (var i = 0; i < _form.Steps.Count; i++)
@@ -219,12 +219,12 @@
 
 @* ------------------------------------------------------------------ 5. Test and publish *@
 <section class="card">
-    <h2>5. Test and publish</h2>
+    <h2>5. Test and publish <HelpLink Topic="publish" /></h2>
 
     @if (Issues.Count > 0)
     {
         <div class="issues">
-            <strong>Things to fix</strong>
+            <strong>Things to fix</strong> <HelpLink Topic="troubleshooting" Text="What do these mean?" />
             <ul>@foreach (var issue in Issues) { <li><code>@issue.Where</code> @issue.Message</li> }</ul>
         </div>
     }
@@ -240,6 +240,10 @@
         <p class="@(_test.Passed ? "ok" : "bad")">
             @(_test.Passed ? "Test passed" : "Test didn't pass") · HTTP @_test.StatusCode · @_test.DurationMs ms @(_test.Partial ? "· partial response" : "")
         </p>
+        @if (!string.IsNullOrEmpty(_test.CorrelationId))
+        {
+            <p class="hint"><a href="/logs?correlation=@Uri.EscapeDataString(_test.CorrelationId)">See logs for this test</a></p>
+        }
         @if (_test.Trace is { Count: > 0 })
         {
             <table class="list">

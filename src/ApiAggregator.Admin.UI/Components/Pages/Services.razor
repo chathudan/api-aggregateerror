@@ -6,7 +6,7 @@
 <div class="header-row">
     <div>
         <h1>Services</h1>
-        <p class="muted">The APIs you can combine into aggregated endpoints.</p>
+        <p class="muted">The APIs you can combine into aggregated endpoints. <HelpLink Topic="add-service" Text="How to add a service" /></p>
     </div>
     @if (_newService is null)
     {
@@ -18,7 +18,7 @@
 @if (_newService is { } ns)
 {
     <section class="card accent">
-        <h2>Add a service</h2>
+        <div class="header-row"><h2>Add a service</h2><HelpLink Topic="before" Text="What to ask the service owner" /></div>
 
         <div class="choice">
             <button class="kind @(ns.FromSpec ? "selected" : "")" @onclick="() => ns.FromSpec = true">
@@ -58,7 +58,7 @@
             </div>
         }
 
-        <h3>How the gateway signs in</h3>
+        <h3>How the gateway signs in <HelpLink Topic="sign-in" Text="Which one do I pick?" /></h3>
         @if (ns.SuggestedSignIn is not null) { <p class="hint">The spec suggests <strong>@SignInKinds.Get(ns.SuggestedSignIn).Title</strong>. Change it if needed.</p> }
         <SignInEditor Form="ns.SignIn" ServiceId="@ns.Id" CanSaveSecrets="_canSaveSecrets" />
 
@@ -104,7 +104,7 @@ else
                 </div>
             </div>
 
-            @if (_checks.TryGetValue(s.Id, out var check)) { <p class="@(check.Ok ? "ok" : "bad")">@check.Message</p> }
+            @if (_checks.TryGetValue(s.Id, out var check)) { <p class="@(check.Ok ? "ok" : "bad")">@check.Message @if (!check.Ok) { <HelpLink Topic="troubleshooting" Text="What does this mean?" /> }</p> }
 
             @if (s.Endpoints.Count == 0)
             {
@@ -133,7 +133,7 @@ else
             @if (_openFor == s.Id && _panel == Panel.Endpoint)
             {
                 <div class="panel">
-                    <h3>Add an endpoint</h3>
+                    <h3>Add an endpoint <HelpLink Topic="add-endpoint" /></h3>
                     <div class="grid">
                         <label>Name <input @bind="_newEndpoint.Name" placeholder="Get order lines" /></label>
                         <label>Method
@@ -177,7 +177,7 @@ else
             @if (_openFor == s.Id && _panel == Panel.SignIn && _signIn is not null)
             {
                 <div class="panel">
-                    <h3>How the gateway signs in to @s.Name</h3>
+                    <h3>How the gateway signs in to @s.Name <HelpLink Topic="sign-in" Text="Which one do I pick?" /></h3>
                     <SignInEditor Form="_signIn" ServiceId="@s.Id" CanSaveSecrets="_canSaveSecrets" />
                     <Problems Items="_problems" />
                     <div class="inline">

@@ -15,6 +15,7 @@ using ApiAggregator.Engine;
 using ApiAggregator.Engine.Auth;
 using ApiAggregator.Engine.Config;
 using ApiAggregator.Engine.Execution;
+using ApiAggregator.Engine.Logging.Live;
 using ApiAggregator.Engine.Model;
 using ApiAggregator.Engine.Validation;
 using ApiAggregator.Hosting;
@@ -33,6 +34,9 @@ else
         o.UseUtcTimestamp = true;
         o.TimestampFormat = "yyyy-MM-ddTHH:mm:ss.fffZ ";
     });
+
+// Keep the latest lines in memory for the admin UI's Logs page. After the console setup above: ClearProviders would remove it.
+builder.Logging.AddLiveLogs(builder.Configuration.GetSection("LiveLogs"));
 
 builder.Services.AddAggregatorEngine(builder.Configuration);
 builder.Services.AddSingleton<OpenApiImporter>();
@@ -67,6 +71,9 @@ app.UseAuthorization();
 
 var requireTestBeforePublish = builder.Configuration.GetValue("Admin:RequireTestBeforePublish", true);
 var passedTests = new ConcurrentDictionary<string, string>(); // recipe id -> hash of the draft that last passed "Try it"
+
+// Live logs for the admin UI's Logs page (this process: Try it runs, sign-in checks, imports).
+app.MapLiveLogs("/admin/logs", "author");
 
 var admin = app.MapGroup("/admin").RequireAuthorization("author")
     .AddEndpointFilter(async (ctx, next) =>
@@ -126,8 +133,12 @@ admin.MapPut("/secrets/{name}", async (string name, SecretValue body, IWebHostEn
     return Results.Ok(new { name, reference = $"secret:{name}" });
 });
 
-admin.MapGet("/secrets/{name}", (string name, IConfiguration configuration) =>
-    IsSecretName(name) ? Results.Ok(new { name, exists = !string.IsNullOrEmpty(configuration[$"Secrets:{name}"]) }) : Results.BadRequest());
+admin.MapGet("/secrets/{name}", async (string name, ISecretResolver secrets, CancellationToken ct) =>
+{
+    if (!IsSecretName(name)) return Results.BadRequest();
+    try { await secrets.GetAsync(name, ct); return Results.Ok(new { name, exists = true }); }
+    catch (AuthFailedException) { return Results.Ok(new { name, exists = false }); }
+});
 
 // ---------------------------------------------------------------- auth profiles
 admin.MapGet("/auth-kinds", (IEnumerable<IAuthStep> steps) =>
@@ -225,7 +236,7 @@ admin.MapPost("/recipes/{id}/test", async (string id, TestRequest test, IConfigS
     var passed = result.StatusCode == 200 && !result.Partial;
     if (passed) passedTests[id] = Hash(draft);
 
-    return Results.Ok(new { passed, result.StatusCode, result.DurationMs, result.Partial, result.Trace, body = result.Body });
+    return Results.Ok(new { passed, result.StatusCode, result.DurationMs, result.Partial, result.Trace, body = result.Body, correlationId = caller.CorrelationId });
 });
 
 admin.MapPost("/recipes/{id}/publish", async (string id, IConfigStore store, HttpContext http, ILogger<Program> log, CancellationToken ct) =>

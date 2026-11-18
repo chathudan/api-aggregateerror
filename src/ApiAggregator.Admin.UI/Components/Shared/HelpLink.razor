@@ -1,0 +1,7 @@
+@* A small "Help" link that opens the matching section of the guide in a new tab, so work in progress isn't lost. *@
+<a class="help-link" href="/help#@Topic" target="_blank" rel="noopener" title="Open help in a new tab">@Text</a>
+
+@code {
+    [Parameter, EditorRequired] public string Topic { get; set; } = "start";
+    [Parameter] public string Text { get; set; } = "Help";
+}

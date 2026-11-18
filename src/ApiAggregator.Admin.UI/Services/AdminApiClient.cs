@@ -34,7 +34,7 @@ public sealed class AdminTokenProvider(IConfiguration configuration, IHttpClient
 
 public sealed record RecipeSummary(string Id, string Name, string Method, string Route, int? PublishedVersion, bool HasDraft);
 
-public sealed record TestOutcome(bool Passed, int StatusCode, long DurationMs, bool Partial, List<TraceRow>? Trace, JsonNode? Body, List<IssueRow>? Issues);
+public sealed record TestOutcome(bool Passed, int StatusCode, long DurationMs, bool Partial, List<TraceRow>? Trace, JsonNode? Body, List<IssueRow>? Issues, string? CorrelationId = null);
 
 public sealed record TraceRow(string Alias, string? DisplayName, string Outcome, int? HttpStatus, long DurationMs, int Calls, bool FromCache, string? Message, string? Request, string? ErrorCode, string? ServiceId, bool Retryable, string? Detail);
 

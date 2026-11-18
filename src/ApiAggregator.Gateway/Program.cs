@@ -5,6 +5,7 @@ using System.Threading.RateLimiting;
 using ApiAggregator.Engine;
 using ApiAggregator.Engine.Config;
 using ApiAggregator.Engine.Execution;
+using ApiAggregator.Engine.Logging.Live;
 using ApiAggregator.Engine.Routing;
 using ApiAggregator.Gateway;
 using ApiAggregator.Hosting;
@@ -24,6 +25,9 @@ else
         o.UseUtcTimestamp = true;
         o.TimestampFormat = "yyyy-MM-ddTHH:mm:ss.fffZ ";
     });
+
+// Keep the latest lines in memory for the admin UI's Logs page. After the console setup above: ClearProviders would remove it.
+builder.Logging.AddLiveLogs(builder.Configuration.GetSection("LiveLogs"));
 
 builder.WebHost.ConfigureKestrel(k =>
 {
@@ -45,7 +49,9 @@ builder.Services.AddHttpClient(EngineHttpClients.Downstream)
 // ---------------------------------------------------------------- inbound auth (JWT)
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(o => InboundAuth.Configure(o, builder.Configuration.GetSection("Auth"), builder.Environment));
-builder.Services.AddAuthorization();
+// Who may read the live logs: the same people who author or publish recipes.
+builder.Services.AddAuthorizationBuilder()
+    .AddPolicy("log-reader", p => p.RequireAssertion(c => InboundAuth.HasScope(c.User, "aggregator.author") || InboundAuth.HasScope(c.User, "aggregator.publisher")));
 
 // ---------------------------------------------------------------- abuse protection
 builder.Services.AddRateLimiter(o =>
@@ -111,6 +117,9 @@ app.MapGet("/health/ready", async (IConfigStore store, CancellationToken ct) =>
     var snapshot = await store.GetSnapshotAsync(ct);
     return Results.Ok(new { status = "ready", recipes = snapshot.Recipes.Count, configVersion = snapshot.Version });
 });
+
+// Live logs for the admin UI. Outside /bff on purpose, and skipped by the request log (see RequestLogMiddleware).
+app.MapLiveLogs("/_admin/logs", "log-reader");
 
 // OpenAPI document for all published aggregated endpoints (web/mobile teams generate clients from it).
 app.MapGet("/bff/openapi.json", async (IConfigStore store, CancellationToken ct) =>

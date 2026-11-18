@@ -11,6 +11,9 @@ builder.Services.AddSingleton<AdminTokenProvider>();
 builder.Services.AddHttpClient<AdminApiClient>(c =>
     c.BaseAddress = new Uri(builder.Configuration["AdminApi:BaseUrl"] ?? "http://localhost:5210/"));
 
+// Live logs of the gateway and the Admin API (the Logs page). Addresses come from "Gateway:BaseUrl" and "AdminApi:BaseUrl".
+builder.Services.AddHttpClient<LiveLogClient>();
+
 var app = builder.Build();
 
 if (!app.Environment.IsDevelopment())

@@ -14,3 +14,4 @@ decision; write a new ADR that supersedes it. Use `.claude/skills/write-adr` or 
 | [0007](0007-file-config-store-first.md) | File config store first, PostgreSQL behind the same interface next | Accepted |
 | [0008](0008-blazor-admin-ui.md) | Blazor (interactive server) for the admin UI | Proposed |
 | [0009](0009-error-contract-and-logging.md) | Downstream error contract (problem details, codes) and structured logging | Accepted |
+| [0010](0010-live-logs-in-admin-ui.md) | Live logs in the admin UI (in-memory buffer, long polling) | Accepted |

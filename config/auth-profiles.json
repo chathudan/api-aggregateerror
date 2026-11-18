@@ -3,7 +3,13 @@
     "id": "service-a-basic",
     "name": "Service A - Basic auth",
     "steps": [
-      { "kind": "Basic", "settings": { "username": "svc-a", "password": "secret:service-a-password" } }
+      {
+        "kind": "Basic",
+        "settings": {
+          "username": "svc-a",
+          "password": "secret:service-a-password"
+        }
+      }
     ]
   },
   {
@@ -32,6 +38,19 @@
           "tokenUrl": "http://localhost:5100/c/oauth/token",
           "clientId": "client-c",
           "clientSecret": "secret:service-c-client-secret"
+        }
+      }
+    ]
+  },
+  {
+    "id": "service-d-billing-signin",
+    "name": "Service D (billing) sign-in",
+    "steps": [
+      {
+        "kind": "ApiKey",
+        "settings": {
+          "name": "X-Api-Key",
+          "value": "secret:service-d-billing-value"
         }
       }
     ]

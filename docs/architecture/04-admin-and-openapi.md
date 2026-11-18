@@ -1,5 +1,11 @@
 # 04 — Admin UI, lifecycle and OpenAPI import
 
+## In-app help
+
+The admin UI has a **Help** page (`/help`) written for technicians: what to ask a service owner,
+which sign-in to pick, how secrets are handled, building and publishing, a troubleshooting table of
+every common message, and the error codes apps receive. Each screen links to the matching section.
+
 ## Who does what
 
 | Person | Can | Scope in token |
@@ -46,7 +52,8 @@ show up before anyone builds an endpoint.
 
 **Secrets typed in the UI**
 - *Development:* saved to `config/secrets.local.json`, which git ignores. The auth profile only
-  stores `secret:<service>-<field>`. The gateway and admin API read the file with reload on change.
+  stores `secret:<service>-<field>`. The gateway and admin API read the file directly whenever it
+  has changed (`LocalSecretsResolver`), so a value works on the very next call, including **Check sign-in**.
 - *Other environments:* the UI never sends the value. It shows the secret **name** to add in Key
   Vault, and `PUT /admin/secrets/{name}` is refused.
 
@@ -93,6 +100,7 @@ for web).
 | `GET /admin/auth-kinds` | author | Available auth kinds and their required settings |
 | `GET /admin/auth-profiles`, `PUT /admin/auth-profiles/{id}` | author | Profiles (plain-text secrets are rejected) |
 | `POST /admin/schema/infer` | author | Sample response → schema |
+| `GET /admin/logs?after=&wait=` | author | Recent admin API log lines (long poll). The gateway has the same at `/_admin/logs` |
 | `GET /admin/recipes`, `GET/PUT /admin/recipes/{id}` | author | List, read and save drafts |
 | `POST /admin/recipes/{id}/validate` | author | Plain-English issues |
 | `GET /admin/recipes/{id}/sources?beforeStep=x` | author | Options for the "use value from" dropdown |
