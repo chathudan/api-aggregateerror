@@ -76,7 +76,7 @@ switch (args[0])
             var result = await executor.ExecuteAsync(recipe, inbound, caller, mode, CancellationToken.None);
             Console.WriteLine($"--- run {i}: HTTP {result.StatusCode} in {clock.ElapsedMilliseconds} ms{(result.FromCache ? " (from cache)" : "")}{(result.Partial ? " (partial)" : "")}");
             foreach (var t in result.Trace)
-                Console.WriteLine($"    {t.Outcome,-9} {t.Alias,-10} {t.HttpStatus?.ToString() ?? "-",-4} {t.DurationMs,5} ms  calls={t.Calls}{(t.FromCache ? " cached" : "")}  {t.Request}{(t.Message is null ? "" : "  " + t.Message)}");
+                Console.WriteLine($"    {t.Outcome,-9} {t.Alias,-10} {t.HttpStatus?.ToString() ?? "-",-4} {t.DurationMs,5} ms  calls={t.Calls}{(t.FromCache ? " cached" : "")}  {t.Request}{(t.Message is null ? "" : "  " + t.Message)}{(t.ErrorCode is null ? "" : $" [{t.ErrorCode}]")}{(t.Detail is null ? "" : " — " + t.Detail)}");
             if (i == options.Repeat) Console.WriteLine(result.Body?.ToJsonString(new JsonSerializerOptions { WriteIndented = true, Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping }));
         }
         return 0;

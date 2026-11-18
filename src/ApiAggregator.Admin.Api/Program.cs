@@ -21,13 +21,26 @@ using ApiAggregator.Hosting;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 
 var builder = WebApplication.CreateBuilder(args);
+builder.AddLocalSecretsFile(); // Development only: secrets saved from the admin UI
+
+// Logs: readable single lines on a developer machine, one JSON object per line (with scopes) everywhere else.
+if (builder.Environment.IsDevelopment())
+    builder.Logging.AddSimpleConsole(o => { o.IncludeScopes = true; o.SingleLine = true; });
+else
+    builder.Logging.ClearProviders().AddJsonConsole(o =>
+    {
+        o.IncludeScopes = true;
+        o.UseUtcTimestamp = true;
+        o.TimestampFormat = "yyyy-MM-ddTHH:mm:ss.fffZ ";
+    });
 
 builder.Services.AddAggregatorEngine(builder.Configuration);
 builder.Services.AddSingleton<OpenApiImporter>();
 builder.Services.AddSingleton<SourceCatalog>();
 builder.Services.AddHttpClient(OpenApiImporter.HttpClientName)
     .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler { AllowAutoRedirect = false, UseCookies = false })
-    .ConfigureHttpClient(c => c.Timeout = TimeSpan.FromSeconds(10));
+    .ConfigureHttpClient(c => c.Timeout = TimeSpan.FromSeconds(10))
+    .RemoveAllLoggers(); // no default HttpClient logging: it would write full URLs (see ServiceCollectionExtensions)
 
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(o => InboundAuth.Configure(o, builder.Configuration.GetSection("Auth"), builder.Environment));
@@ -92,9 +105,59 @@ admin.MapPost("/services/{id}/openapi/import", async (string id, OpenApiImportRe
 // For endpoints added by hand: paste a sample response, get a schema back (drives the UI dropdowns).
 admin.MapPost("/schema/infer", (System.Text.Json.Nodes.JsonNode sample) => Results.Ok(SourceCatalog.InferSchema(sample)));
 
+// ---------------------------------------------------------------- what this installation allows
+admin.MapGet("/capabilities", (IEnumerable<IAuthStep> steps, IWebHostEnvironment env) => new
+{
+    // Development: the UI may store secret values (in config/secrets.local.json, git-ignored).
+    // Elsewhere: the UI shows the secret NAME to put in Key Vault and never sends the value.
+    canSaveSecrets = env.IsDevelopment(),
+    authKinds = steps.Select(s => new { kind = s.Kind, requiredSettings = s.RequiredSettings })
+});
+
+// ---------------------------------------------------------------- secrets (values never come back)
+admin.MapPut("/secrets/{name}", async (string name, SecretValue body, IWebHostEnvironment env, IConfiguration configuration, CancellationToken ct) =>
+{
+    if (!env.IsDevelopment())
+        return Results.BadRequest(new { title = "Secrets are managed in Key Vault in this environment. Ask an admin to add it there." });
+    if (!IsSecretName(name)) return Results.BadRequest(new { title = "Secret names use lowercase letters, digits and dashes." });
+    if (string.IsNullOrEmpty(body.Value) || body.Value.Length > 4096) return Results.BadRequest(new { title = "Enter a value (up to 4096 characters)." });
+
+    await LocalSecrets.SaveAsync(LocalSecrets.PathFor(configuration, env.ContentRootPath), name, body.Value, ct);
+    return Results.Ok(new { name, reference = $"secret:{name}" });
+});
+
+admin.MapGet("/secrets/{name}", (string name, IConfiguration configuration) =>
+    IsSecretName(name) ? Results.Ok(new { name, exists = !string.IsNullOrEmpty(configuration[$"Secrets:{name}"]) }) : Results.BadRequest());
+
 // ---------------------------------------------------------------- auth profiles
 admin.MapGet("/auth-kinds", (IEnumerable<IAuthStep> steps) =>
     steps.Select(s => new { kind = s.Kind, requiredSettings = s.RequiredSettings }));
+
+// Signs in once with the profile (login / token call), so problems show up before anyone builds an endpoint.
+admin.MapPost("/auth-profiles/{id}/check", async (string id, IConfigStore store, DownstreamAuthenticator auth, CancellationToken ct) =>
+{
+    var config = await store.GetSnapshotAsync(ct);
+    var profile = config.GetAuthProfile(id);
+    if (profile is null) return Results.NotFound(new { title = $"Sign-in '{id}' not found." });
+    var service = config.Services.FirstOrDefault(s => s.AuthProfileId == id);
+
+    using var probe = new HttpRequestMessage(HttpMethod.Get, service?.BaseUrl ?? "http://localhost/");
+    try
+    {
+        auth.Invalidate(profile, "sign-in check requested");
+        await auth.ApplyAsync(profile, probe, CallerContext.Anonymous(), ct);
+        var signsInOnline = profile.Steps.Any(s => s.Kind is "SessionLogin" or "OAuthClientCredentials");
+        return Results.Ok(new
+        {
+            ok = true,
+            message = signsInOnline
+                ? "Signed in."
+                : "Settings and secrets are complete. This sign-in type is checked by the service on the first real call."
+        });
+    }
+    catch (AuthFailedException ex) { return Results.Ok(new { ok = false, message = ex.Message }); }
+    catch (HttpRequestException) { return Results.Ok(new { ok = false, message = "Couldn't reach the sign-in address. Check the URL and that the service is running." }); }
+});
 
 admin.MapGet("/auth-profiles", async (IConfigStore store, CancellationToken ct) => (await store.GetSnapshotAsync(ct)).AuthProfiles.OrderBy(p => p.Id));
 
@@ -222,6 +285,11 @@ static string Hash(Recipe r)
     var content = Clone(r, RecipeStatus.Draft, 0); // status/version don't change what the recipe does
     return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(JsonSerializer.Serialize(content, AggregatorJson.Options))));
 }
+
+static bool IsSecretName(string name) =>
+    name.Length is > 0 and <= 80 && name.All(c => char.IsAsciiLetterLower(c) || char.IsAsciiDigit(c) || c == '-');
+
+public sealed record SecretValue(string? Value);
 
 public sealed record TestRequest(Dictionary<string, string?>? Route, Dictionary<string, string?>? Query, Dictionary<string, string?>? Headers)
 {

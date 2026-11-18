@@ -33,3 +33,24 @@ table.list td { border-bottom: 1px solid var(--border); padding: 6px 8px; vertic
 .status { color: var(--muted); }
 pre.json { background: #f1efe8; border-radius: var(--radius); padding: 12px; overflow: auto; max-height: 420px; font-size: 13px; }
 code { font-size: 13px; }
+
+/* ---- choices and panels (add service, sign-in, step picker) */
+.card.accent { border-color: #b5d4f4; }
+h3 { font-size: 15px; font-weight: 500; margin: 18px 0 8px; }
+.kinds, .choice { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 10px; margin: 8px 0 14px; }
+.kind { text-align: left; display: flex; flex-direction: column; gap: 4px; padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); cursor: pointer; font: inherit; color: var(--text); }
+.kind span { font-size: 13px; color: var(--muted); }
+.kind:hover { border-color: #c8c6bd; }
+.kind.selected { border: 2px solid var(--accent); padding: 9px 11px; background: #f3f8fd; }
+.panel { border-top: 1px solid var(--border); margin-top: 12px; padding-top: 4px; }
+.signin-step { border: 1px dashed var(--border); border-radius: var(--radius); padding: 10px 12px; margin-bottom: 10px; }
+.ops { display: flex; flex-direction: column; gap: 6px; max-height: 260px; overflow: auto; margin-bottom: 10px; }
+.grow { flex: 1; }
+textarea { font: 13px ui-monospace, Menlo, monospace; padding: 8px; border: 1px solid var(--border); border-radius: var(--radius); width: 100%; box-sizing: border-box; }
+.tag.suggested { background: #e6f1fb; color: #0c447c; }
+.picker { border: 1px solid var(--border); border-radius: var(--radius); padding: 10px 12px; margin-top: 10px; background: var(--page); }
+.picker-row { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 6px 0; border-bottom: 1px solid var(--border); }
+.picker-row:last-child { border-bottom: none; }
+.ok-inline { color: var(--ok); font-size: 13px; }
+table.list td:last-child { white-space: nowrap; }
+table.list input, table.list select { width: 100%; box-sizing: border-box; }

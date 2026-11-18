@@ -67,13 +67,37 @@ flowchart LR
 
 ## Observability
 
-- **Health:** `/health/live`, and `/health/ready`, which returns the recipe count and config version.
-- **Correlation:** `X-Correlation-Id` is accepted from callers (validated) or generated, sent to every
-  downstream call and returned on the response.
-- **Logs:** one structured audit line per composition, with no values. Downstream auth failures are
-  logged as warnings without secrets.
-- **Next:** OpenTelemetry traces and metrics, with a span per step and counters for cache hits and
-  sign-ins (roadmap).
+**Correlation.** `X-Correlation-Id` is accepted from callers (letters, digits, `-` and `_`, up to 64
+characters) or generated. It's sent to every downstream call, returned on every response including
+errors, written into error bodies, and present in every log line through a scope.
+
+**Logs** are structured and source-generated (`EngineLog`), with fixed event IDs. They're JSON
+on the console outside Development, ready for Azure Monitor, Seq, Elastic or Loki.
+
+| Event | Level | When | Key fields |
+|---|---|---|---|
+| 1000 CompositionStarted | Debug | A recipe starts | RecipeId, Version, Subject |
+| 1001 CompositionCompleted | Information | It finished with 200 | Status, DurationMs, Steps, FromCache, Partial |
+| 1002 CompositionFailed | Warning | 4xx/5xx result | Status, ErrorCode, RootCauses |
+| 1003 InputRejected | Information | 400 | ErrorCount (no values) |
+| 1100 / 1101 / 1102 | Debug / **Warning** / Debug | Step succeeded / **failed** / skipped | Step, ServiceId, EndpointId, ErrorCode, HttpStatus, DurationMs, Detail |
+| 1200 DownstreamAuthFailed | Warning | Sign-in to a service failed | ProfileId, ServiceId, Reason |
+| 1201 / 1202 | Information | Credential obtained / invalidated | CacheKey or ProfileId, ExpiresAt or Reason |
+| 1300 ResponseCacheHit | Debug | Served from cache | Level, RecipeOrStep |
+| 1400 / 1401 | Information / Error | Config loaded / reload failed | Counts, Version |
+| 2000 RequestCompleted | Information | Every gateway request | Method, Endpoint (recipe id), Status, DurationMs, CorrelationId, Subject |
+
+**Never logged:** request or response bodies, header values, query values, raw paths, tokens, secret
+values. The built-in HttpClient request logging is removed, because it prints full URLs including
+query values.
+
+**Suggested alerts:** a rise in `StepFailed` grouped by ServiceId and ErrorCode; any
+`DownstreamAuthFailed`, since expired credentials or rotated secrets are the usual cause;
+`ConfigReloadFailed`; p95 of `RequestCompleted.DurationMs` per Endpoint.
+
+**Health:** `/health/live`, and `/health/ready`, which returns the recipe count and config version.
+
+**Next:** OpenTelemetry traces and metrics, with a span per step (roadmap).
 
 ## Availability and disaster recovery
 

@@ -2,6 +2,7 @@
 //   /a  Service A - customers       - Basic auth            (svc-a / pass-a)
 //   /b  Service B - orders          - session cookie login  (svc-b / pass-b)
 //   /c  Service C - recommendations - OAuth client credentials -> JWT (client-c / secret-c)
+//   /d  Service D - billing         - API key (X-Api-Key: key-d), has an OpenAPI spec at /d/openapi.json
 // GET /_stats shows how many times each endpoint was called (handy for checking the cache).
 // Test data only. No real customer or patient data belongs here.
 
@@ -94,6 +95,23 @@ c.MapGet("/recommendations", (HttpRequest req, string? segment) =>
     return Results.Ok(new { segment, tier, items = new[] { new { code = "R1", title = $"Offer for {segment}/{tier}" }, new { code = "R2", title = "Loyalty bonus" } } });
 });
 
+// ------------------------------------------------------------------ Service D (API key, OpenAPI spec)
+var d = app.MapGroup("/d").AddEndpointFilter(async (ctx, next) =>
+    ctx.HttpContext.Request.Headers["X-Api-Key"] == "key-d" ? await next(ctx) : Results.Unauthorized());
+d.MapGet("/invoices", (string? customerId) =>
+{
+    Count("d.listInvoices");
+    return string.IsNullOrEmpty(customerId)
+        ? Results.BadRequest(new { error = "customerId is required" })
+        : Results.Ok(new { customerId, total = 2, invoices = new[] { new { id = "INV-1", amount = 120.0, status = "paid" }, new { id = "INV-2", amount = 80.0, status = "due" } } });
+});
+d.MapGet("/invoices/{invoiceId}", (string invoiceId) =>
+{
+    Count("d.getInvoice");
+    return Results.Ok(new { id = invoiceId, amount = 120.0, status = "paid", lines = new[] { new { item = "Consult", amount = 120.0 } } });
+});
+app.MapGet("/d/openapi.json", () => Results.Text(OpenApiSpecs.ServiceD, "application/json"));
+
 app.Run();
 
 record LoginRequest(string? Username, string? Password);
@@ -123,6 +141,36 @@ static class Jwt
 
 static class OpenApiSpecs
 {
+    public const string ServiceD = """
+    {
+      "openapi": "3.0.3",
+      "info": { "title": "Service D (billing)", "version": "1.0.0" },
+      "servers": [ { "url": "http://localhost:5100/d" } ],
+      "components": { "securitySchemes": { "key": { "type": "apiKey", "name": "X-Api-Key", "in": "header" } } },
+      "security": [ { "key": [] } ],
+      "paths": {
+        "/invoices": {
+          "get": {
+            "operationId": "listInvoices", "summary": "List invoices for a customer",
+            "parameters": [ { "name": "customerId", "in": "query", "required": true, "schema": { "type": "string" } } ],
+            "responses": { "200": { "description": "OK", "content": { "application/json": { "schema": {
+              "type": "object",
+              "properties": { "customerId": {"type":"string"}, "total": {"type":"integer"},
+                "invoices": { "type": "array", "items": { "type": "object", "properties": { "id": {"type":"string"}, "amount": {"type":"number"}, "status": {"type":"string"} } } } }
+            } } } } }
+          }
+        },
+        "/invoices/{invoiceId}": {
+          "get": {
+            "operationId": "getInvoice", "summary": "Get one invoice",
+            "parameters": [ { "name": "invoiceId", "in": "path", "required": true, "schema": { "type": "string" } } ],
+            "responses": { "200": { "description": "OK" } }
+          }
+        }
+      }
+    }
+    """;
+
     public const string ServiceA = """
     {
       "openapi": "3.0.3",

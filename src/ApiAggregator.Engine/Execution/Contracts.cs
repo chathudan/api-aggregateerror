@@ -24,7 +24,11 @@ public sealed class ExecutionMode
 
 public enum StepOutcome { Succeeded, Failed, Skipped }
 
-/// <summary>What happened in one step. Safe to show to the caller: no secrets, no downstream bodies.</summary>
+/// <summary>
+/// What happened in one step. Safe to show to the caller: no secrets, no downstream bodies.
+/// Message is the caller-facing text. Detail is the internal reason and is only filled when
+/// ExecutionMode.IncludeRequestDetails is on (admin "Try it"), never for gateway callers.
+/// </summary>
 public sealed record StepTrace(
     string Alias,
     string? DisplayName,
@@ -34,7 +38,11 @@ public sealed record StepTrace(
     int Calls,
     bool FromCache,
     string? Message,
-    string? Request = null);
+    string? Request = null,
+    string? ErrorCode = null,
+    string? ServiceId = null,
+    bool Retryable = false,
+    string? Detail = null);
 
 public sealed class CompositionResult
 {
@@ -42,6 +50,13 @@ public sealed class CompositionResult
     public JsonNode? Body { get; init; }
     public bool Partial { get; init; }
     public bool FromCache { get; init; }
+
+    /// <summary>Stable code of the first root cause (or "invalid_input"). Null when the call worked.</summary>
+    public string? ErrorCode { get; init; }
+
+    /// <summary>True when at least one root cause is worth retrying later.</summary>
+    public bool Retryable { get; init; }
+
     public long DurationMs { get; init; }
     public IReadOnlyList<StepTrace> Trace { get; init; } = [];
 }

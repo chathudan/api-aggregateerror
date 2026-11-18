@@ -113,6 +113,7 @@
                                 <td>@parts[1]</td>
                                 <td><span class="tag">@parts[0]</span></td>
                                 <td>
+                                    @if (binding.Suggested) { <span class="tag suggested" title="@binding.Reason">suggested</span> }
                                     <select value="@SelectValue(binding)" @onchange="e => OnBindingChanged(binding, e.Value?.ToString())">
                                         <option value="none">Leave empty</option>
                                         @foreach (var group in sources.GroupBy(o => o.Group))
@@ -153,10 +154,34 @@
             }
         </div>
     }
-    <div class="inline">
-        <input @bind="_newStepName" placeholder="Get customer" />
-        <button class="button" @onclick="AddStep">Add step</button>
-    </div>
+    @if (!_picking)
+    {
+        <button class="button primary" @onclick="() => { _picking = true; _search = string.Empty; }">Add step</button>
+    }
+    else
+    {
+        <div class="picker">
+            <div class="inline">
+                <input class="grow" @bind="_search" @bind:event="oninput" placeholder="Search endpoints, e.g. orders" />
+                <button class="link" @onclick="() => _picking = false">Close</button>
+            </div>
+            @foreach (var s in _snapshot.Services.OrderBy(s => s.Name))
+            {
+                var matches = s.Endpoints.Where(e => Matches(s, e)).ToList();
+                if (matches.Count == 0) continue;
+                <h3>@s.Name</h3>
+                @foreach (var ep in matches)
+                {
+                    <div class="picker-row">
+                        <div><strong>@(ep.Summary ?? Slug.Humanize(ep.Id))</strong> <code class="muted">@ep.Method @ep.Path</code></div>
+                        <button class="button" @onclick="() => AddStep(s, ep)">Add</button>
+                    </div>
+                }
+            }
+            @if (_snapshot.Services.All(s => s.Endpoints.Count == 0)) { <p class="muted">No endpoints yet. <a href="/services">Add a service</a> first.</p> }
+        </div>
+    }
+    @if (_form.Steps.Count > 0) { <p class="hint">Values marked <span class="tag suggested">suggested</span> were filled in for you. Check them, then try it in step 5.</p> }
 </section>
 
 @* ------------------------------------------------------------------ 4. Response *@
@@ -182,7 +207,14 @@
             }
         </tbody>
     </table>
-    <button class="button" @onclick="() => _form.Response.Add(new ResponseField())">Add field</button>
+    <div class="inline">
+        @foreach (var step in _form.Steps)
+        {
+            <button class="button" @onclick="() => AddFieldsFrom(step)">Add fields from @step.DisplayName</button>
+        }
+        <button class="link" @onclick="() => _form.Response.Add(new ResponseField())">Add one field</button>
+        @if (_form.Response.Count > 0) { <button class="link" @onclick="() => _form.Response.Clear()">Clear (return everything)</button> }
+    </div>
 </section>
 
 @* ------------------------------------------------------------------ 5. Test and publish *@
@@ -217,7 +249,11 @@
                     {
                         <tr>
                             <td>@(t.DisplayName ?? t.Alias)</td><td>@t.Outcome</td><td>@t.HttpStatus</td><td>@t.DurationMs ms</td>
-                            <td><code>@t.Request</code> @(t.Calls > 1 ? $"×{t.Calls}" : "")</td><td>@t.Message</td>
+                            <td><code>@t.Request</code> @(t.Calls > 1 ? $"×{t.Calls}" : "")</td><td>
+                                @t.Message
+                                @if (t.Detail is not null) { <span> — @t.Detail</span> }
+                                @if (t.ErrorCode is not null) { <span class="tag" title="@(t.Retryable ? "Worth trying again later" : "Trying again won't help")">@t.ErrorCode</span> }
+                            </td>
                         </tr>
                     }
                 </tbody>
@@ -237,7 +273,8 @@
     private ConfigSnapshot? _snapshot;
     private TestOutcome? _test;
     private string? _status;
-    private string _newStepName = "";
+    private bool _picking;
+    private string _search = "";
     private readonly Dictionary<int, string> _extraTarget = new();
 
     protected override async Task OnInitializedAsync()
@@ -294,11 +331,31 @@
                 _form.Inputs.Add(new InputForm { Source = "route", Name = m.Groups[1].Value, Required = true });
     }
 
-    private void AddStep()
+    private bool Matches(ApiService s, ApiEndpoint e) =>
+        string.IsNullOrWhiteSpace(_search)
+        || $"{s.Name} {e.Summary} {e.Id} {e.Method} {e.Path}".Contains(_search.Trim(), StringComparison.OrdinalIgnoreCase);
+
+    private void AddStep(ApiService service, ApiEndpoint endpoint)
     {
-        var name = string.IsNullOrWhiteSpace(_newStepName) ? $"Step {_form.Steps.Count + 1}" : _newStepName.Trim();
-        _form.Steps.Add(new StepForm { DisplayName = name, Alias = _form.NewAlias(name) });
-        _newStepName = "";
+        var name = endpoint.Summary ?? Slug.Humanize(endpoint.Id);
+        var step = new StepForm { DisplayName = name, Alias = _form.NewAlias(name) };
+        _form.Steps.Add(step);
+        OnEndpointChanged(step, $"{service.Id}/{endpoint.Id}");
+        _picking = false;
+    }
+
+    /// <summary>Adds one response field per top-level field of the step's response (or the whole body if unknown).</summary>
+    private void AddFieldsFrom(StepForm step)
+    {
+        var endpoint = _snapshot!.FindEndpoint(step.Endpoint, out _);
+        var fields = endpoint?.ResponseSchema?["properties"] is JsonObject props ? props.Select(p => p.Key).ToList() : [];
+        if (fields.Count == 0)
+        {
+            _form.Response.Add(new ResponseField { Name = step.Alias, Expression = $"{step.Alias}.body" });
+            return;
+        }
+        foreach (var f in fields.Where(f => !_form.Response.Any(r => r.Name == f)))
+            _form.Response.Add(new ResponseField { Name = f, Expression = $"{step.Alias}.body.{f}" });
     }
 
     private void OnEndpointChanged(StepForm step, string? reference)
@@ -308,10 +365,17 @@
         var endpoint = _snapshot!.FindEndpoint(step.Endpoint, out _);
         if (endpoint is null) return;
 
-        foreach (Match m in Regex.Matches(endpoint.Path, @"\{([A-Za-z0-9_]+)\}"))
-            step.Bindings[$"path.{m.Groups[1].Value}"] = new BindingForm();
+        foreach (var p in AutoBinder.PathParams(endpoint.Path))
+            step.Bindings[$"path.{p}"] = new BindingForm();
         foreach (var p in endpoint.Parameters.Where(p => p.In != "path"))
             step.Bindings[$"{p.In}.{p.Name}"] = new BindingForm();
+
+        // Pre-fill what we can; the user confirms or changes it.
+        foreach (var suggestion in AutoBinder.Suggest(_form.ToRecipe(), step.Alias, _snapshot))
+            step.Bindings[suggestion.Target] = new BindingForm
+            {
+                Mode = BindingMode.FromSource, Expression = suggestion.Expression, Suggested = true, Reason = suggestion.Reason
+            };
     }
 
     private static string SelectValue(BindingForm b) => b.Mode switch
@@ -323,6 +387,7 @@
 
     private static void OnBindingChanged(BindingForm binding, string? value)
     {
+        binding.Suggested = false;
         if (value is null || value == "none") { binding.Mode = BindingMode.None; return; }
         if (value == "fixed") { binding.Mode = BindingMode.FixedValue; return; }
         binding.Mode = BindingMode.FromSource;

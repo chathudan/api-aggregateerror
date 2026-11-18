@@ -13,3 +13,4 @@ decision; write a new ADR that supersedes it. Use `.claude/skills/write-adr` or 
 | [0006](0006-drafts-test-gate-append-only-history.md) | Drafts apart from published; test before publish; append-only history | Accepted |
 | [0007](0007-file-config-store-first.md) | File config store first, PostgreSQL behind the same interface next | Accepted |
 | [0008](0008-blazor-admin-ui.md) | Blazor (interactive server) for the admin UI | Proposed |
+| [0009](0009-error-contract-and-logging.md) | Downstream error contract (problem details, codes) and structured logging | Accepted |

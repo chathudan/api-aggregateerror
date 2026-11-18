@@ -1,5 +1,7 @@
 using System.Collections.Concurrent;
+using ApiAggregator.Engine.Logging;
 using Microsoft.Extensions.Caching.Memory;
+using Microsoft.Extensions.Logging;
 
 namespace ApiAggregator.Engine.Auth;
 
@@ -11,7 +13,7 @@ public sealed record CachedCredential(IReadOnlyDictionary<string, string> Header
 /// with an expired session, only ONE login call is made and the other 199 wait for it.
 /// Credentials never leave the process and are never written to logs or disk.
 /// </summary>
-public sealed class DownstreamCredentialCache(IMemoryCache cache)
+public sealed class DownstreamCredentialCache(IMemoryCache cache, ILogger<DownstreamCredentialCache> logger)
 {
     private readonly ConcurrentDictionary<string, SemaphoreSlim> _locks = new(StringComparer.Ordinal);
 
@@ -27,14 +29,16 @@ public sealed class DownstreamCredentialCache(IMemoryCache cache)
 
             var created = await create(ct);
             cache.Set(key, created, created.ExpiresAt);
+            logger.CredentialObtained(key, created.ExpiresAt); // the key is auth:<profile>:<step>, never a secret
             return created;
         }
         finally { gate.Release(); }
     }
 
     /// <summary>Forget credentials for a profile, e.g. after the service answered 401.</summary>
-    public void InvalidateProfile(string profileId, int stepCount)
+    public void InvalidateProfile(string profileId, int stepCount, string reason)
     {
         for (var i = 0; i < stepCount; i++) cache.Remove($"auth:{profileId}:{i}");
+        logger.CredentialInvalidated(profileId, reason);
     }
 }

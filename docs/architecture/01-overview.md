@@ -106,15 +106,46 @@ reads `a.body.id`, then `b` waits for `a`. Nobody has to wire dependencies by ha
 
 ## Outcomes the caller can see
 
-| Situation | HTTP | Body |
+Every error is RFC 7807 problem details (`application/problem+json`) with a stable `code`, a
+`correlationId` and `retryable`. See [ADR 0009](../adr/0009-error-contract-and-logging.md).
+
+| Situation | HTTP | `code` |
 |---|---|---|
-| Everything succeeded | 200 | Response template |
-| An **optional** step failed | 200 | Response template plus `_errors`, and header `X-Aggregator-Partial: true` |
-| A **required** step failed | 502 | `{ title, errors }` naming the root cause only |
-| Inputs missing or invalid | 400 | `{ title, errors }` in plain English |
-| No or invalid token / missing scope | 401 / 403 | — |
-| Too many requests from one caller | 429 | — |
-| No published endpoint at that path | 404 | — |
+| Everything succeeded | 200 | — (response template) |
+| An **optional** step failed | 200 | `_errors[]` entries in the body, plus `X-Aggregator-Partial: true` |
+| A **required** step failed | 502 | Root cause, e.g. `auth_failed`, `unauthorized`, `server_error`, `unreachable` |
+| A required step timed out (all root causes) | 504 | `timeout` |
+| Inputs missing or invalid | 400 | `invalid_input` |
+| No or invalid token | 401 | `unauthenticated` |
+| Token lacks the recipe's scope | 403 | `insufficient_scope` |
+| No published endpoint at that path | 404 | `not_found` |
+| Too many requests from one caller | 429 | `rate_limited` (with `Retry-After`) |
+| Unexpected gateway error | 500 | `internal_error` (no exception details) |
+
+Example: the gateway can't sign in to Service B, which a recipe requires.
+
+```http
+HTTP/1.1 502 Bad Gateway
+Content-Type: application/problem+json
+X-Correlation-Id: 6f1c2a9e8b3d4e0f
+
+{
+  "type": "urn:api-aggregator:error:auth_failed",
+  "title": "The gateway couldn't authenticate with a required service.",
+  "status": 502,
+  "code": "auth_failed",
+  "detail": "Get orders: The gateway couldn't sign in to Service B (orders).",
+  "correlationId": "6f1c2a9e8b3d4e0f",
+  "retryable": false,
+  "errors": [
+    { "step": "b", "name": "Get orders", "service": "service-b", "code": "auth_failed",
+      "status": null, "message": "The gateway couldn't sign in to Service B (orders).", "retryable": false }
+  ]
+}
+```
+
+The reason it failed (for example, "Login for profile 'service-b-session' failed with 401") goes to
+the logs under the same correlation id, and to admin "Try it". Gateway callers never see it.
 
 ## Technology
 

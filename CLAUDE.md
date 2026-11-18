@@ -28,6 +28,7 @@ service (Basic, session login, OAuth/JWT, API key, pass-through) in any combinat
   can't be bound (`RecipeValidator.BlockedHeaders`).
 - Downstream HttpClients use `UseCookies = false` and `AllowAutoRedirect = false` (`ServiceCollectionExtensions`).
 - **Secrets only as `secret:<name>` references.** Never log, return or cache secret values per user.
+  The admin API may *store* a value only in Development (`config/secrets.local.json`, git-ignored) and never returns one.
 - **Caching is off by default and per caller by default.** Keys are hashed and include the recipe
   and config version. Never cache partial or non-2xx responses.
 - **No scripting in recipes.** The path language and the transform list are fixed (ADR 0002).
@@ -50,13 +51,13 @@ If a change touches any of these, run the `security-review` skill and add or adj
 | `…/Execution` | `InputBinder`, `RequestBuilder`, `CompositionExecutor`, `Conditions`, `ResponseCache` |
 | `…/Auth` | `IAuthStep` + `Steps/*`, `DownstreamAuthenticator`, `DownstreamCredentialCache` |
 | `…/Config` | `IConfigStore`, `FileConfigStore` (published / drafts / history), `ConfigSnapshot` |
-| `…/Authoring` | `SourceCatalog` (wizard dropdown options, schema inference) |
+| `…/Authoring` | `SourceCatalog` (wizard dropdown options, schema inference), `AutoBinder` (pre-filled values) |
 | `src/ApiAggregator.Gateway` | `Program.cs` (one handler for `/bff/{**path}`), `GatewayOpenApi` |
 | `src/ApiAggregator.Admin.Api` | `Program.cs` (all admin endpoints), `OpenApiImporter` |
-| `src/ApiAggregator.Admin.UI` | `Components/Pages/EndpointEditor.razor` (the wizard), `Services/RecipeForm.cs` |
-| `src/ApiAggregator.Hosting` | `InboundAuth` (JWT setup, scopes, caller context) |
+| `src/ApiAggregator.Admin.UI` | `Pages/EndpointEditor.razor` (wizard), `Pages/Services.razor` (add service, endpoints, sign-in), `Shared/SignInEditor.razor`; form models in `Services/` (`RecipeForm`, `SignInForm` + `SignInKinds`, `ServiceForms`) |
+| `src/ApiAggregator.Hosting` | `InboundAuth` (JWT setup, scopes, caller context), `LocalSecrets` (Development-only secrets file) |
 | `tools/ApiAggregator.Cli` | `aggregator validate | run` |
-| `samples/MockServices` | Service A (Basic `svc-a/pass-a`), B (session `svc-b/pass-b`), C (OAuth `client-c/secret-c`) on :5100 |
+| `samples/MockServices` | Service A (Basic `svc-a/pass-a`), B (session `svc-b/pass-b`), C (OAuth `client-c/secret-c`), D (API key `X-Api-Key: key-d`, spec at `/d/openapi.json`, not in the sample config: use it to try **Add service**) on :5100 |
 | `config/` | Sample services, profiles, published recipes |
 
 ## Commands
@@ -78,7 +79,7 @@ Hosting and the tests use packages.
 
 | Task | Skill / place |
 |---|---|
-| New downstream auth kind | `.claude/skills/add-auth-step` |
+| New downstream auth kind | `.claude/skills/add-auth-step` (and add a row to `SignInKinds` in the UI) |
 | New value transform | `.claude/skills/add-transform` (rarely; see ADR 0002) |
 | Write or fix a recipe | `.claude/skills/author-recipe` |
 | Record a decision | `.claude/skills/write-adr` |

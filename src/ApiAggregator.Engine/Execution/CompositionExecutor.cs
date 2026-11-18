@@ -7,6 +7,7 @@ using System.Text.Json.Nodes;
 using ApiAggregator.Engine.Auth;
 using ApiAggregator.Engine.Config;
 using ApiAggregator.Engine.Expressions;
+using ApiAggregator.Engine.Logging;
 using ApiAggregator.Engine.Model;
 using ApiAggregator.Engine.Planning;
 using Microsoft.Extensions.Logging;
@@ -35,13 +36,31 @@ public sealed class CompositionExecutor(
 
     public async Task<CompositionResult> ExecuteAsync(Recipe recipe, InboundRequest inbound, CallerContext caller, ExecutionMode mode, CancellationToken ct)
     {
+        // Every log line written during this run carries these fields.
+        using var scope = logger.BeginScope(new LogScope(("CorrelationId", caller.CorrelationId), ("RecipeId", recipe.Id), ("RecipeVersion", recipe.Version)));
+        return await RunAsync(recipe, inbound, caller, mode, ct);
+    }
+
+    private async Task<CompositionResult> RunAsync(Recipe recipe, InboundRequest inbound, CallerContext caller, ExecutionMode mode, CancellationToken ct)
+    {
         var clock = Stopwatch.StartNew();
         var config = await store.GetSnapshotAsync(ct);
+        logger.CompositionStarted(recipe.Id, recipe.Version, caller.Subject ?? "anonymous");
 
         // 1. inputs
         var (request, inputErrors) = InputBinder.Bind(recipe, inbound, caller);
         if (inputErrors.Count > 0)
-            return new CompositionResult { StatusCode = 400, Body = Problem("Some inputs are missing or invalid.", inputErrors), DurationMs = clock.ElapsedMilliseconds };
+        {
+            logger.InputRejected(recipe.Id, inputErrors.Count); // the count only: input values can be personal data
+            var errors = new JsonArray(inputErrors.Select(e => (JsonNode?)new JsonObject { ["code"] = ErrorBody.InvalidInput, ["message"] = e }).ToArray());
+            return new CompositionResult
+            {
+                StatusCode = 400,
+                Body = ErrorBody.Problem(ErrorBody.InvalidInput, "Some inputs are missing or invalid.", 400, caller.CorrelationId, errors: errors),
+                ErrorCode = ErrorBody.InvalidInput,
+                DurationMs = clock.ElapsedMilliseconds
+            };
+        }
 
         // 2. response cache
         string? responseKey = null;
@@ -50,7 +69,11 @@ public sealed class CompositionExecutor(
             var callerKey = CacheKeys.CallerPart(recipe.Cache.PerCaller, caller.Subject);
             responseKey = CacheKeys.Response(recipe.Id, recipe.Version, config.Version, callerKey, request.ToJsonString());
             if (cache.TryGet(responseKey, out var cached))
+            {
+                logger.ResponseCacheHit("recipe", recipe.Id);
+                logger.CompositionCompleted(recipe.Id, recipe.Version, 200, clock.ElapsedMilliseconds, "", true, false);
                 return new CompositionResult { StatusCode = 200, Body = JsonNode.Parse(cached), FromCache = true, DurationMs = clock.ElapsedMilliseconds };
+            }
         }
 
         // 3. steps
@@ -78,22 +101,20 @@ public sealed class CompositionExecutor(
         }
 
         var trace = recipe.Steps.Select(s => runs[s.Alias].Trace).ToList();
+        var stepSummary = string.Join(",", trace.Select(t => $"{t.Alias}:{t.Outcome}"));
 
         // 4/5. response
         var failures = runs.Values.Where(r => r.Failed).ToList();
         var requiredFailures = failures.Where(r => r.Step.Required).ToList();
+        // Report root causes only, not the steps that were skipped because of them.
+        var rootCauses = failures.Where(f => !f.Cascaded).ToList();
         CompositionResult result;
 
         if (requiredFailures.Count > 0)
         {
-            result = new CompositionResult
-            {
-                StatusCode = 502,
-                // Report root causes only, not the steps that were skipped because of them.
-                Body = Problem("A required service call failed.", failures.Where(f => !f.Cascaded).Select(Describe)),
-                Trace = trace,
-                DurationMs = clock.ElapsedMilliseconds
-            };
+            result = FailedResult(rootCauses, caller, trace, clock.ElapsedMilliseconds);
+            logger.CompositionFailed(recipe.Id, recipe.Version, result.StatusCode, result.ErrorCode,
+                string.Join(",", rootCauses.Select(r => $"{r.Step.Alias}:{r.Trace.ErrorCode}")), result.DurationMs);
         }
         else
         {
@@ -103,22 +124,59 @@ public sealed class CompositionExecutor(
 
             var partial = failures.Count > 0;
             if (partial && body is JsonObject obj)
-                obj["_errors"] = new JsonArray(failures.Where(f => !f.Cascaded).Select(f => (JsonNode?)JsonValue.Create(Describe(f))).ToArray());
+                obj["_errors"] = new JsonArray(rootCauses.Select(f => (JsonNode?)ErrorEntry(f)).ToArray());
 
             result = new CompositionResult { StatusCode = 200, Body = body, Partial = partial, Trace = trace, DurationMs = clock.ElapsedMilliseconds };
 
             if (responseKey is not null && !partial && body is not null)
                 cache.Set(responseKey, Encoding.UTF8.GetBytes(body.ToJsonString()), TimeSpan.FromSeconds(recipe.Cache.TtlSeconds));
-        }
 
-        // Audit line: who, what, outcome. Never values.
-        logger.LogInformation(
-            "Composition {RecipeId} v{Version} for {Subject} -> {Status} in {Duration} ms; steps {Steps}; correlation {CorrelationId}",
-            recipe.Id, recipe.Version, caller.Subject ?? "anonymous", result.StatusCode, result.DurationMs,
-            string.Join(",", trace.Select(t => $"{t.Alias}:{t.Outcome}")), caller.CorrelationId);
+            // Audit line: what ran and how it ended. Never values.
+            logger.CompositionCompleted(recipe.Id, recipe.Version, result.StatusCode, result.DurationMs, stepSummary, false, partial);
+        }
 
         return result;
     }
+
+    /// <summary>The 502/504 response for a failed required step, as RFC 7807 problem details.</summary>
+    private static CompositionResult FailedResult(List<StepRun> rootCauses, CallerContext caller, List<StepTrace> trace, long durationMs)
+    {
+        var first = rootCauses[0].Trace;
+        var retryable = rootCauses.Any(r => r.Trace.Retryable);
+
+        // 504 only when every root cause was a timeout; anything else is a bad gateway.
+        var status = rootCauses.All(r => r.Trace.ErrorCode == DownstreamErrorCode.Timeout) ? 504 : 502;
+        var title = DownstreamErrorCode.IsAuthProblem(first.ErrorCode)
+            ? "The gateway couldn't authenticate with a required service."
+            : "A required service call failed.";
+
+        var body = ErrorBody.Problem(first.ErrorCode!, title, status, caller.CorrelationId,
+            detail: $"{first.DisplayName ?? first.Alias}: {first.Message}",
+            retryable: retryable,
+            errors: new JsonArray(rootCauses.Select(r => (JsonNode?)ErrorEntry(r)).ToArray()));
+
+        return new CompositionResult
+        {
+            StatusCode = status,
+            Body = body,
+            ErrorCode = first.ErrorCode,
+            Retryable = retryable,
+            Trace = trace,
+            DurationMs = durationMs
+        };
+    }
+
+    /// <summary>One entry of "errors" / "_errors". Only safe, caller-facing text: never the internal detail.</summary>
+    private static JsonObject ErrorEntry(StepRun run) => new()
+    {
+        ["step"] = run.Step.Alias,
+        ["name"] = run.Step.DisplayName ?? run.Step.Alias,
+        ["service"] = run.Trace.ServiceId,
+        ["code"] = run.Trace.ErrorCode,
+        ["status"] = run.Trace.HttpStatus,
+        ["message"] = run.Trace.Message,
+        ["retryable"] = run.Trace.Retryable
+    };
 
     // ------------------------------------------------------------------ steps
 
@@ -127,65 +185,106 @@ public sealed class CompositionExecutor(
     {
         var clock = Stopwatch.StartNew();
 
+        // "serviceId/endpointId": known from the recipe alone, so even a failed lookup can be reported.
+        var slash = step.Endpoint.IndexOf('/');
+        var serviceId = slash > 0 ? step.Endpoint[..slash] : step.Endpoint;
+        var endpointId = slash > 0 ? step.Endpoint[(slash + 1)..] : "";
+        var serviceName = config.GetService(serviceId) is { } known ? Name(known) : $"Service '{serviceId}'";
+        string? profileId = null;
+
+        using var stepScope = logger.BeginScope(new LogScope(("Step", step.Alias), ("ServiceId", serviceId)));
+
         // Dependencies: a failed upstream fails this step; a skipped upstream skips it.
         foreach (var dep in plan.DependsOn[step.Alias])
         {
             var upstream = previous[dep];
-            if (upstream.Failed) return StepRun.Fail(step, $"Not run because '{dep}' failed.", null, clock, 0) with { Cascaded = true };
-            if (upstream.Trace.Outcome == StepOutcome.Skipped) return StepRun.Skip(step, $"Not run because '{dep}' was skipped.", clock);
+            if (upstream.Failed)
+            {
+                var reason = $"Not run because '{dep}' failed.";
+                logger.StepSkipped(step.Alias, reason);
+                return StepRun.Fail(step, new StepFailure(DownstreamErrorCode.DependencyFailed, reason, null, null, 0), serviceId, mode, clock) with { Cascaded = true };
+            }
+            if (upstream.Trace.Outcome == StepOutcome.Skipped) return Skip(step, $"Not run because '{dep}' was skipped.", clock);
         }
 
         try
         {
             if (step.When is not null && !Conditions.IsTrue(step.When, scope))
-                return StepRun.Skip(step, "Condition not met.", clock);
+                return Skip(step, "Condition not met.", clock);
 
             var endpoint = config.FindEndpoint(step.Endpoint, out var service)
                 ?? throw new BindingException($"Endpoint '{step.Endpoint}' no longer exists.");
             var profile = config.GetAuthProfile(endpoint.AuthProfileId ?? service!.AuthProfileId);
+            profileId = profile?.Id;
             var call = new CallTarget(step, service!, endpoint, profile);
 
+            StepRun run;
             if (step.ForEach is null)
             {
                 var single = await CallAsync(call, scope, caller, mode, token);
-                return StepRun.Ok(step, single.Output, single.Status, clock, 1, single.FromCache, single.Request);
+                run = StepRun.Ok(step, single.Output, single.Status, clock, 1, single.FromCache, single.Request, serviceId);
+            }
+            else
+            {
+                // forEach: one call per item, bounded concurrency, output is an array in item order.
+                var items = Template.Resolve(step.ForEach, scope) as JsonArray ?? [];
+                if (items.Count > _options.MaxForEachItems)
+                    throw new BindingException($"For-each has {items.Count} items; the limit is {_options.MaxForEachItems}.");
+
+                using var gate = new SemaphoreSlim(step.MaxConcurrency);
+                var tasks = items.Select(async (item, index) =>
+                {
+                    await gate.WaitAsync(token);
+                    try { return await CallAsync(call, scope.With("item", item, "index", index), caller, mode, token); }
+                    finally { gate.Release(); }
+                }).ToList();
+                var outputs = await Task.WhenAll(tasks);
+
+                run = StepRun.Ok(step, new JsonArray(outputs.Select(o => (JsonNode?)o.Output).ToArray()),
+                    outputs.Length > 0 ? outputs.Max(o => o.Status) : 200, clock, outputs.Length, outputs.All(o => o.FromCache), outputs.FirstOrDefault()?.Request, serviceId);
             }
 
-            // forEach: one call per item, bounded concurrency, output is an array in item order.
-            var items = Template.Resolve(step.ForEach, scope) as JsonArray ?? [];
-            if (items.Count > _options.MaxForEachItems)
-                throw new BindingException($"For-each has {items.Count} items; the limit is {_options.MaxForEachItems}.");
-
-            using var gate = new SemaphoreSlim(step.MaxConcurrency);
-            var tasks = items.Select(async (item, index) =>
-            {
-                await gate.WaitAsync(token);
-                try { return await CallAsync(call, scope.With("item", item, "index", index), caller, mode, token); }
-                finally { gate.Release(); }
-            }).ToList();
-            var outputs = await Task.WhenAll(tasks);
-
-            return StepRun.Ok(step, new JsonArray(outputs.Select(o => (JsonNode?)o.Output).ToArray()),
-                outputs.Length > 0 ? outputs.Max(o => o.Status) : 200, clock, outputs.Length, outputs.All(o => o.FromCache), outputs.FirstOrDefault()?.Request);
+            logger.StepSucceeded(step.Alias, serviceId, endpointId, run.Trace.HttpStatus, run.Trace.DurationMs, run.Trace.Calls, run.Trace.FromCache);
+            return run;
         }
-        catch (DownstreamException ex) { return StepRun.Fail(step, ex.Message, ex.Status, clock, 1); }
-        catch (BindingException ex) { return StepRun.Fail(step, ex.Message, null, clock, 0); }
-        catch (AuthFailedException ex)
+        catch (Exception ex) when (IsStepFailure(ex, callerToken))
         {
-            logger.LogWarning("Downstream auth failed in step {Step}: {Message}", step.Alias, ex.Message);
-            return StepRun.Fail(step, "Couldn't sign in to the service.", null, clock, 0);
-        }
-        catch (FormatException ex) { return StepRun.Fail(step, ex.Message, null, clock, 0); }
-        catch (OperationCanceledException) when (!callerToken.IsCancellationRequested)
-        {
-            return StepRun.Fail(step, "Timed out.", (int)HttpStatusCode.GatewayTimeout, clock, 1);
-        }
-        catch (HttpRequestException ex)
-        {
-            logger.LogWarning(ex, "Step {Step} could not reach its service", step.Alias);
-            return StepRun.Fail(step, "Service unreachable.", null, clock, 1);
+            var failure = Classify(ex, serviceName);
+            if (ex is AuthFailedException) logger.DownstreamAuthFailed(profileId ?? "none", serviceId, ex.Message);
+            // The internal detail is always logged; whether the trace shows it depends on the mode.
+            logger.StepFailed(step.Alias, serviceId, endpointId, failure.Code, failure.Status, clock.ElapsedMilliseconds, failure.Detail ?? failure.Message);
+            return StepRun.Fail(step, failure, serviceId, mode, clock);
         }
     }
+
+    private StepRun Skip(StepDef step, string reason, Stopwatch clock)
+    {
+        logger.StepSkipped(step.Alias, reason);
+        return StepRun.Skip(step, reason, clock);
+    }
+
+    /// <summary>The exceptions that mean "this step failed". Anything else is a bug and is allowed to surface.</summary>
+    private static bool IsStepFailure(Exception ex, CancellationToken callerToken) => ex switch
+    {
+        DownstreamException or BindingException or AuthFailedException or FormatException or HttpRequestException => true,
+        // A cancellation we didn't ask for is a step or recipe timeout. If the caller hung up, let it propagate.
+        OperationCanceledException => !callerToken.IsCancellationRequested,
+        _ => false
+    };
+
+    /// <summary>
+    /// Turns an exception into a stable code, a SAFE message for the caller, and an internal detail.
+    /// Messages never include secret values, URLs or downstream bodies.
+    /// </summary>
+    private static StepFailure Classify(Exception ex, string serviceName) => ex switch
+    {
+        DownstreamException d => new StepFailure(d.Code, d.Message, d.Status, d.Detail, 1),
+        BindingException or FormatException => new StepFailure(DownstreamErrorCode.MissingValue, ex.Message, null, null, 0),
+        AuthFailedException => new StepFailure(DownstreamErrorCode.AuthFailed, $"The gateway couldn't sign in to {serviceName}.", null, ex.Message, 0),
+        HttpRequestException h => new StepFailure(DownstreamErrorCode.Unreachable, $"{serviceName} couldn't be reached.", null, $"Connection problem: {h.HttpRequestError}.", 1),
+        OperationCanceledException => new StepFailure(DownstreamErrorCode.Timeout, $"{serviceName} didn't answer in time.", null, null, 1),
+        _ => throw new InvalidOperationException("Not a step failure.") // IsStepFailure keeps us from getting here
+    };
 
     private async Task<CallResult> CallAsync(CallTarget call, IValueScope scope, CallerContext caller, ExecutionMode mode, CancellationToken token)
     {
@@ -197,7 +296,10 @@ public sealed class CompositionExecutor(
         {
             stepKey = CacheKeys.Step(call.Service.Id, call.Endpoint.Id, CacheKeys.CallerPart(call.Step.Cache.PerCaller, caller.Subject), built.Fingerprint());
             if (cache.TryGet(stepKey, out var hit))
+            {
+                logger.ResponseCacheHit("step", call.Step.Alias);
                 return new CallResult(JsonNode.Parse(hit)!.AsObject(), 200, true, described);
+            }
         }
 
         using var stepTimeout = CancellationTokenSource.CreateLinkedTokenSource(token);
@@ -215,19 +317,19 @@ public sealed class CompositionExecutor(
             // An expired session or token: forget it, sign in again, retry once.
             if (response.StatusCode == HttpStatusCode.Unauthorized && attempt == 0 && HasCachedCredentials(call.Profile))
             {
-                authenticator.Invalidate(call.Profile);
+                authenticator.Invalidate(call.Profile, "service answered 401");
                 continue;
             }
 
             var status = (int)response.StatusCode;
             if (!response.IsSuccessStatusCode)
-                throw new DownstreamException($"{Name(call.Service)} answered {status}.", status);
+                throw new DownstreamException(DownstreamErrorCode.ForStatus(status), $"{Name(call.Service)} answered {status}.", status);
 
             var output = new JsonObject
             {
                 ["status"] = status,
                 ["headers"] = ReadHeaders(response),
-                ["body"] = await ReadBodyAsync(response, stepTimeout.Token)
+                ["body"] = await ReadBodyAsync(response, Name(call.Service), stepTimeout.Token)
             };
 
             if (stepKey is not null)
@@ -237,10 +339,10 @@ public sealed class CompositionExecutor(
         }
     }
 
-    private async Task<JsonNode?> ReadBodyAsync(HttpResponseMessage response, CancellationToken ct)
+    private async Task<JsonNode?> ReadBodyAsync(HttpResponseMessage response, string serviceName, CancellationToken ct)
     {
         if (response.Content.Headers.ContentLength > _options.MaxResponseBytes)
-            throw new DownstreamException("The service response is too large.", (int)response.StatusCode);
+            throw new DownstreamException(DownstreamErrorCode.InvalidResponse, $"The response from {serviceName} was too large.", (int)response.StatusCode);
 
         await using var stream = await response.Content.ReadAsStreamAsync(ct);
         using var buffer = new MemoryStream();
@@ -249,7 +351,7 @@ public sealed class CompositionExecutor(
         while ((read = await stream.ReadAsync(chunk, ct)) > 0)
         {
             if (buffer.Length + read > _options.MaxResponseBytes)
-                throw new DownstreamException("The service response is too large.", (int)response.StatusCode);
+                throw new DownstreamException(DownstreamErrorCode.InvalidResponse, $"The response from {serviceName} was too large.", (int)response.StatusCode);
             buffer.Write(chunk, 0, read);
         }
         if (buffer.Length == 0) return null;
@@ -258,7 +360,7 @@ public sealed class CompositionExecutor(
         if (mediaType.Contains("json", StringComparison.OrdinalIgnoreCase))
         {
             try { return JsonNode.Parse(buffer.GetBuffer().AsSpan(0, (int)buffer.Length)); }
-            catch (JsonException) { throw new DownstreamException("The service returned invalid JSON.", (int)response.StatusCode); }
+            catch (JsonException) { throw new DownstreamException(DownstreamErrorCode.InvalidResponse, $"{serviceName} returned an invalid response.", (int)response.StatusCode); }
         }
         return mediaType.StartsWith("text/", StringComparison.OrdinalIgnoreCase)
             ? JsonValue.Create(Encoding.UTF8.GetString(buffer.GetBuffer(), 0, (int)buffer.Length))
@@ -287,15 +389,7 @@ public sealed class CompositionExecutor(
         return body;
     }
 
-    private static string Describe(StepRun run) => $"{run.Step.DisplayName ?? run.Step.Alias}: {run.Trace.Message}";
-
     private static string Name(ApiService service) => string.IsNullOrEmpty(service.Name) ? service.Id : service.Name;
-
-    private static JsonObject Problem(string title, IEnumerable<string> errors) => new()
-    {
-        ["title"] = title,
-        ["errors"] = new JsonArray(errors.Select(e => (JsonNode?)JsonValue.Create(e)).ToArray())
-    };
 
     // ------------------------------------------------------------------ small types
 
@@ -303,10 +397,16 @@ public sealed class CompositionExecutor(
 
     private sealed record CallResult(JsonObject Output, int Status, bool FromCache, string? Request);
 
-    private sealed class DownstreamException(string message, int status) : Exception(message)
+    /// <summary>A downstream call that came back unusable. Message is caller-safe; Detail is internal.</summary>
+    private sealed class DownstreamException(string code, string message, int status, string? detail = null) : Exception(message)
     {
+        public string Code { get; } = code;
         public int Status { get; } = status;
+        public string? Detail { get; } = detail;
     }
+
+    /// <summary>Why a step failed, before it is turned into a trace.</summary>
+    private sealed record StepFailure(string Code, string Message, int? Status, string? Detail, int Calls);
 
     private sealed record StepRun(StepDef Step, JsonNode? Output, StepTrace Trace)
     {
@@ -315,11 +415,13 @@ public sealed class CompositionExecutor(
         /// <summary>Failed only because an upstream step failed.</summary>
         public bool Cascaded { get; init; }
 
-        public static StepRun Ok(StepDef s, JsonNode? output, int status, Stopwatch clock, int calls, bool fromCache, string? request) =>
-            new(s, output, new StepTrace(s.Alias, s.DisplayName, StepOutcome.Succeeded, status, clock.ElapsedMilliseconds, calls, fromCache, null, request));
+        public static StepRun Ok(StepDef s, JsonNode? output, int status, Stopwatch clock, int calls, bool fromCache, string? request, string serviceId) =>
+            new(s, output, new StepTrace(s.Alias, s.DisplayName, StepOutcome.Succeeded, status, clock.ElapsedMilliseconds, calls, fromCache, null, request, ServiceId: serviceId));
 
-        public static StepRun Fail(StepDef s, string message, int? status, Stopwatch clock, int calls) =>
-            new(s, null, new StepTrace(s.Alias, s.DisplayName, StepOutcome.Failed, status, clock.ElapsedMilliseconds, calls, false, message));
+        /// <summary>The internal Detail only goes into the trace for admin test runs.</summary>
+        public static StepRun Fail(StepDef s, StepFailure f, string serviceId, ExecutionMode mode, Stopwatch clock) =>
+            new(s, null, new StepTrace(s.Alias, s.DisplayName, StepOutcome.Failed, f.Status, clock.ElapsedMilliseconds, f.Calls, false, f.Message,
+                ErrorCode: f.Code, ServiceId: serviceId, Retryable: DownstreamErrorCode.Retryable(f.Code), Detail: mode.IncludeRequestDetails ? f.Detail : null));
 
         public static StepRun Skip(StepDef s, string message, Stopwatch clock) =>
             new(s, null, new StepTrace(s.Alias, s.DisplayName, StepOutcome.Skipped, null, clock.ElapsedMilliseconds, 0, false, message));

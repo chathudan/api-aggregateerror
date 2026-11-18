@@ -1,4 +1,5 @@
 using System.Text.Json;
+using ApiAggregator.Engine.Logging;
 using ApiAggregator.Engine.Model;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -65,12 +66,12 @@ public sealed class FileConfigStore : IConfigStore
             {
                 _snapshot = await LoadAsync(stamp, ct);
                 _lastStamp = stamp;
-                _logger.LogInformation("Configuration loaded: {Services} services, {Recipes} recipes", _snapshot.Services.Count, _snapshot.Recipes.Count);
+                _logger.ConfigLoaded(_snapshot.Services.Count, _snapshot.Recipes.Count, _snapshot.Version);
             }
             catch (Exception ex) when (_snapshot is not null && ex is JsonException or IOException)
             {
                 // A half-saved or broken file must never take the gateway down: keep serving the last good config.
-                _logger.LogError(ex, "Configuration reload failed; still serving the previous version");
+                _logger.ConfigReloadFailed(ex);
             }
             return _snapshot!;
         }

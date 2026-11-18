@@ -12,6 +12,18 @@ using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.Extensions.Http.Resilience;
 
 var builder = WebApplication.CreateBuilder(args);
+builder.AddLocalSecretsFile(); // Development only: secrets saved from the admin UI
+
+// Logs: readable single lines on a developer machine, one JSON object per line (with scopes) everywhere else.
+if (builder.Environment.IsDevelopment())
+    builder.Logging.AddSimpleConsole(o => { o.IncludeScopes = true; o.SingleLine = true; });
+else
+    builder.Logging.ClearProviders().AddJsonConsole(o =>
+    {
+        o.IncludeScopes = true;
+        o.UseUtcTimestamp = true;
+        o.TimestampFormat = "yyyy-MM-ddTHH:mm:ss.fffZ ";
+    });
 
 builder.WebHost.ConfigureKestrel(k =>
 {
@@ -39,6 +51,15 @@ builder.Services.AddAuthorization();
 builder.Services.AddRateLimiter(o =>
 {
     o.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+    // Too many requests: same problem-details shape as every other error, and say when to come back.
+    o.OnRejected = async (context, ct) =>
+    {
+        var http = context.HttpContext;
+        http.Response.StatusCode = StatusCodes.Status429TooManyRequests;
+        http.Response.Headers.RetryAfter = "60";
+        await GatewayProblems.WriteAsync(http, ErrorBody.Problem("rate_limited", "Too many requests. Wait a minute and try again.", 429,
+            InboundAuth.CorrelationIdFrom(http), retryable: true), ct);
+    };
     o.AddPolicy("per-caller", http => RateLimitPartition.GetFixedWindowLimiter(
         http.User.FindFirst("sub")?.Value ?? http.Connection.RemoteIpAddress?.ToString() ?? "unknown",
         _ => new FixedWindowRateLimiterOptions
@@ -49,18 +70,37 @@ builder.Services.AddRateLimiter(o =>
 });
 
 builder.Services.AddHealthChecks();
-builder.Services.AddProblemDetails();
+
+// Unexpected errors: a generic problem-details body. The exception message is never sent to the caller.
+builder.Services.AddProblemDetails(o => o.CustomizeProblemDetails = context =>
+{
+    var problem = context.ProblemDetails;
+    problem.Type = "urn:api-aggregator:error:internal_error";
+    problem.Title = "Something went wrong in the gateway.";
+    problem.Detail = null;
+    problem.Extensions["code"] = "internal_error";
+    problem.Extensions["correlationId"] = InboundAuth.CorrelationIdFrom(context.HttpContext);
+});
 
 var app = builder.Build();
 
-app.UseExceptionHandler();
+app.UseCorrelationId(); // first, so every response and log line has the id
+app.UseMiddleware<RequestLogMiddleware>();
+// Security headers on EVERY response, including error pages written by the exception handler
+// (which clears headers set earlier), hence OnStarting rather than setting them up front.
 app.Use(async (http, next) =>
 {
-    http.Response.Headers.XContentTypeOptions = "nosniff";
-    http.Response.Headers.CacheControl = "no-store"; // responses may hold personal data: never cache in browsers or proxies
-    http.Response.Headers["Referrer-Policy"] = "no-referrer";
+    http.Response.OnStarting(() =>
+    {
+        var h = http.Response.Headers;
+        h.XContentTypeOptions = "nosniff";
+        h.CacheControl = "no-store"; // responses may hold personal data: never cache in browsers or proxies
+        h["Referrer-Policy"] = "no-referrer";
+        return Task.CompletedTask;
+    });
     await next();
 });
+app.UseExceptionHandler();
 app.UseAuthentication();
 app.UseAuthorization();
 app.UseRateLimiter();
@@ -80,11 +120,24 @@ app.MapGet("/bff/openapi.json", async (IConfigStore store, CancellationToken ct)
 app.Map("/bff/{**path}", async (HttpContext http, string? path, RecipeRouter router, CompositionExecutor executor, CancellationToken ct) =>
 {
     var match = await router.MatchAsync(http.Request.Method, path ?? "", ct);
-    if (match is null) return Results.Json(new { title = "There's no aggregated endpoint at this address." }, statusCode: 404);
+    var correlationId = InboundAuth.CorrelationIdFrom(http);
+    if (match is null)
+        return GatewayProblems.Result(ErrorBody.Problem("not_found", "There's no aggregated endpoint at this address.", 404, correlationId));
 
     var recipe = match.Recipe;
-    if (recipe.RequireAuthentication && http.User.Identity?.IsAuthenticated != true) return Results.Unauthorized();
-    if (recipe.RequiredScope is { Length: > 0 } scope && !InboundAuth.HasScope(http.User, scope)) return Results.Forbid();
+    http.Items[GatewayLog.EndpointItemKey] = recipe.Id; // for the request log line: the recipe id, never the raw path
+
+    if (recipe.RequireAuthentication && http.User.Identity?.IsAuthenticated != true)
+    {
+        http.Response.Headers.WWWAuthenticate = "Bearer";
+        return GatewayProblems.Result(ErrorBody.Problem("unauthenticated", "Sign in to use this endpoint.", 401, correlationId));
+    }
+    if (recipe.RequiredScope is { Length: > 0 } scope && !InboundAuth.HasScope(http.User, scope))
+    {
+        var forbidden = ErrorBody.Problem("insufficient_scope", "Your sign-in doesn't have permission to use this endpoint.", 403, correlationId);
+        forbidden["requiredScope"] = scope;
+        return GatewayProblems.Result(forbidden);
+    }
 
     var caller = InboundAuth.CallerFrom(http);
     var inbound = new InboundRequest
@@ -96,10 +149,14 @@ app.Map("/bff/{**path}", async (HttpContext http, string? path, RecipeRouter rou
 
     var result = await executor.ExecuteAsync(recipe, inbound, caller, ExecutionMode.Gateway, ct);
 
-    http.Response.Headers["X-Correlation-Id"] = caller.CorrelationId;
     if (result.Partial) http.Response.Headers["X-Aggregator-Partial"] = "true";
     if (result.FromCache) http.Response.Headers["X-Aggregator-Cache"] = "hit";
-    return Results.Json(result.Body, statusCode: result.StatusCode);
+
+    if (result.StatusCode < 400) return Results.Json(result.Body, statusCode: result.StatusCode);
+
+    // Temporary problems: tell well-behaved clients to wait a little before trying again.
+    if (result.Retryable && result.StatusCode is 502 or 503 or 504) http.Response.Headers.RetryAfter = "5";
+    return GatewayProblems.Result(result.Body, result.StatusCode);
 }).RequireRateLimiting("per-caller");
 
 // Development-only token issuer so QA can call the gateway without an identity provider.

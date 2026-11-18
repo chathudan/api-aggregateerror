@@ -44,6 +44,13 @@ when 200 requests arrive with an expired session, exactly **one** login call is 
 never logged, never written to disk and never cached per user. On a `401`, the cached credential
 is dropped and the call is retried once.
 
+**When downstream auth fails.** The caller gets a problem-details response with code `auth_failed`
+(the gateway couldn't sign in) or `unauthorized` / `forbidden` (the service refused the credentials),
+plus the service id, `retryable: false` and a correlation id. They never get the profile name,
+setting names or secret names. Those go to the log (event 1200 `DownstreamAuthFailed`, 1101
+`StepFailed`) and to admin "Try it". In the admin UI, **Check sign-in** runs the same sign-in on
+demand.
+
 **Secrets.** Settings whose value starts with `secret:` are resolved at run time through
 `ISecretResolver`. Development reads `Secrets:<name>` from configuration (user-secrets or
 environment variables). Production should use Azure Key Vault (the Key Vault configuration provider
@@ -64,7 +71,8 @@ puts a password, secret, token or key value in plain text.
 | Fan-out amplification | `forEach` capped at 100 items with bounded concurrency; 25 steps max | `CompositionExecutor`, `RecipeValidator` |
 | Abuse / brute force | Per-caller fixed-window rate limit (default 600/min) | Gateway |
 | Downstream outages | Standard resilience handler: retries **only idempotent methods**, circuit breaker, timeouts | Gateway |
-| Leaking internals in errors | Callers see "Service X answered 404", never downstream bodies or stack traces | `CompositionExecutor` |
+| Leaking internals in errors | Callers get a code and a safe message ("Service X answered 404"); internal detail only in logs and admin traces; never downstream bodies or stack traces | `CompositionExecutor`, ADR 0009 |
+| Identifiers or tokens in logs | Default HttpClient logging removed; our own logs carry ids, codes and timings only; the request log uses the recipe id, not the raw path | `EngineLog`, gateway request log |
 | Browser/proxy caching of personal data | `Cache-Control: no-store`, `nosniff`, `no-referrer`; no `Server` header | Gateway |
 | Unreviewed changes going live | Drafts are separate; publish needs `aggregator.publisher` **and** a passing test of the exact draft | Admin API |
 | SSRF via OpenAPI import | Admin-only; http(s) only; no redirects; optional host allow-list `Admin:OpenApiAllowedHosts` | `OpenApiImporter` |

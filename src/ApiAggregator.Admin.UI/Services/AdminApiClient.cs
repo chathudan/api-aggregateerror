@@ -36,7 +36,7 @@ public sealed record RecipeSummary(string Id, string Name, string Method, string
 
 public sealed record TestOutcome(bool Passed, int StatusCode, long DurationMs, bool Partial, List<TraceRow>? Trace, JsonNode? Body, List<IssueRow>? Issues);
 
-public sealed record TraceRow(string Alias, string? DisplayName, string Outcome, int? HttpStatus, long DurationMs, int Calls, bool FromCache, string? Message, string? Request);
+public sealed record TraceRow(string Alias, string? DisplayName, string Outcome, int? HttpStatus, long DurationMs, int Calls, bool FromCache, string? Message, string? Request, string? ErrorCode, string? ServiceId, bool Retryable, string? Detail);
 
 public sealed record IssueRow(string Where, string Message);
 
@@ -53,6 +53,18 @@ public sealed class AdminApiClient(HttpClient http, AdminTokenProvider tokens)
     public Task<string?> SaveDraftAsync(Recipe recipe, CancellationToken ct = default) => SendAsync(HttpMethod.Put, $"admin/recipes/{recipe.Id}", recipe, ct);
     public Task<string?> PublishAsync(string id, CancellationToken ct = default) => SendAsync(HttpMethod.Post, $"admin/recipes/{id}/publish", null, ct);
     public Task<string?> SaveServiceAsync(ApiService service, CancellationToken ct = default) => SendAsync(HttpMethod.Put, $"admin/services/{service.Id}", service, ct);
+    public Task<string?> SaveAuthProfileAsync(AuthProfile profile, CancellationToken ct = default) => SendAsync(HttpMethod.Put, $"admin/auth-profiles/{profile.Id}", profile, ct);
+    public Task<string?> SaveSecretAsync(string name, string value, CancellationToken ct = default) => SendAsync(HttpMethod.Put, $"admin/secrets/{name}", new { value }, ct);
+
+    public async Task<bool> CanSaveSecretsAsync(CancellationToken ct = default) =>
+        (await GetAsync<JsonObject>("admin/capabilities", ct))?["canSaveSecrets"]?.GetValue<bool>() == true;
+
+    public async Task<(bool Ok, string Message)> CheckSignInAsync(string profileId, CancellationToken ct = default)
+    {
+        using var response = await SendRawAsync(HttpMethod.Post, $"admin/auth-profiles/{profileId}/check", null, ct);
+        var json = await response.Content.ReadFromJsonAsync<JsonObject>(Json, ct);
+        return (json?["ok"]?.GetValue<bool>() == true, json?["message"]?.ToString() ?? json?["title"]?.ToString() ?? "Couldn't check the sign-in.");
+    }
 
     public async Task<TestOutcome?> TestAsync(string id, Dictionary<string, string?> route, Dictionary<string, string?> query, Dictionary<string, string?> headers, CancellationToken ct = default)
     {

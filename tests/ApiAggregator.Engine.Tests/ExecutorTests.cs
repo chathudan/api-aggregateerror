@@ -1,26 +1,15 @@
 using System.Net;
 using ApiAggregator.Engine.Auth;
-using ApiAggregator.Engine.Config;
 using ApiAggregator.Engine.Execution;
 using ApiAggregator.Engine.Model;
-using Microsoft.Extensions.Caching.Memory;
-using Microsoft.Extensions.Logging.Abstractions;
-using Microsoft.Extensions.Options;
 using static ApiAggregator.Engine.Tests.TestData;
 
 namespace ApiAggregator.Engine.Tests;
 
 public class ExecutorTests
 {
-    private static (CompositionExecutor Executor, FakeDownstream Downstream) Create(Recipe recipe, FakeDownstream downstream)
-    {
-        var options = Options.Create(new EngineOptions());
-        var auth = new DownstreamAuthenticator([], new ConfigurationSecretResolver(new Microsoft.Extensions.Configuration.ConfigurationBuilder().Build()),
-            new DownstreamCredentialCache(new MemoryCache(new MemoryCacheOptions())), downstream);
-        var executor = new CompositionExecutor(new InMemoryConfigStore(Snapshot(recipe)), auth, downstream,
-            new MemoryResponseCache(options), options, NullLogger<CompositionExecutor>.Instance);
-        return (executor, downstream);
-    }
+    private static (CompositionExecutor Executor, FakeDownstream Downstream) Create(Recipe recipe, FakeDownstream downstream) =>
+        (Executor(Snapshot(recipe), downstream), downstream);
 
     private static InboundRequest Customer(string id) => new() { Route = new Dictionary<string, string?> { ["id"] = id } };
 
@@ -66,7 +55,7 @@ public class ExecutorTests
 
         Assert.Equal(200, result.StatusCode);
         Assert.True(result.Partial);
-        Assert.NotNull(result.Body!["_errors"]);
+        Assert.Single(result.Body!["_errors"]!.AsArray());
     }
 
     [Fact]
@@ -78,6 +67,7 @@ public class ExecutorTests
 
         Assert.Equal(502, result.StatusCode);
         Assert.Single(result.Body!["errors"]!.AsArray());
+        Assert.Equal("not_found", result.ErrorCode);
         Assert.Equal(StepOutcome.Failed, result.Trace.Single(t => t.Alias == "b").Outcome);
         Assert.Single(downstream.Requests); // B and C were never called
     }

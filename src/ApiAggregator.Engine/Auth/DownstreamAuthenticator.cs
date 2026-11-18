@@ -37,9 +37,10 @@ public sealed class DownstreamAuthenticator(
         }
     }
 
-    public void Invalidate(AuthProfile? profile)
+    /// <summary>Forget the profile's cached credentials. The reason is only logged (e.g. "service answered 401").</summary>
+    public void Invalidate(AuthProfile? profile, string reason)
     {
-        if (profile is not null) cache.InvalidateProfile(profile.Id, profile.Steps.Count);
+        if (profile is not null) cache.InvalidateProfile(profile.Id, profile.Steps.Count, reason);
     }
 
     /// <summary>Plain-English problems with a profile (unknown kind, missing setting). Used by the admin API.</summary>

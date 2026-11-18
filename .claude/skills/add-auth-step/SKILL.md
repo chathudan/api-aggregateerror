@@ -24,7 +24,8 @@ SessionLogin. Check first that a combination of these doesn't already cover the 
 4. **401 retry:** if the step caches credentials, add its kind to `CompositionExecutor.HasCachedCredentials`.
 5. **Tests:** add a test that applies the step to an `HttpRequestMessage` and asserts the headers, plus one for the missing-setting error.
 6. **Docs:** add a row to the auth table in `docs/architecture/03-auth-and-security.md`. If it changes the trust model (for example forwarding user identity), write an ADR (`write-adr` skill).
-7. **Mock (optional):** add a matching endpoint to `samples/MockServices/Program.cs` and a profile to `config/auth-profiles.json`.
+7. **UI:** add a `SignInKind` row in `src/ApiAggregator.Admin.UI/Services/SignInForm.cs` (`SignInKinds.All`) with plain-English labels; mark secret fields `Secret: true`.
+8. **Mock (optional):** add a matching endpoint to `samples/MockServices/Program.cs` and a profile to `config/auth-profiles.json`.
 
 ## Rules
 

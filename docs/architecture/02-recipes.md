@@ -114,14 +114,18 @@ hop-by-hop or length headers, because auth profiles and the HTTP stack handle th
 
 ## Failure semantics
 
-- A step fails when its service answers non-2xx, times out, can't be reached, returns invalid JSON,
-  returns more than `MaxResponseBytes` (5 MB), or sign-in fails.
-- Steps that depend on a failed step fail too. They're recorded as "not run because…", but only
-  the **root cause** is reported to the caller.
-- If a `required` step fails (the default), the call returns **502**. If an optional step fails,
-  the call returns **200** with `_errors`.
+- Each failed step gets an **error code**: `auth_failed`, `unauthorized`, `forbidden`, `not_found`,
+  `bad_request`, `rate_limited`, `server_error`, `timeout`, `unreachable`, `invalid_response`,
+  `missing_value`. The full table is in [ADR 0009](../adr/0009-error-contract-and-logging.md).
+- Steps that depend on a failed step get `dependency_failed` and aren't run. Only **root causes**
+  are reported to the caller.
+- If a `required` step fails (the default), the call returns **502**, or **504** when every root cause
+  is a timeout. The body is problem details with `errors[]`.
+- If an optional step fails, the call returns **200** with `_errors[]`, entries of the same shape
+  (`step`, `name`, `service`, `code`, `status`, `message`, `retryable`).
 - On a `401` from a service whose profile uses a cached session or token, the engine drops the
-  cached credential, signs in again and retries **once**.
+  cached credential, signs in again and retries **once**. If it still gets 401, the code is
+  `unauthorized`. If signing in itself fails, the code is `auth_failed`.
 
 ## Caching (on/off)
 

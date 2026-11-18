@@ -1,0 +1,96 @@
+@* Picks how the gateway signs in to a service. Secret values are typed here but never shown again. *@
+
+<div class="signin">
+    <div class="kinds">
+        <button class="kind @(Form.None ? "selected" : "")" @onclick="() => { Form.None = true; Form.Steps.Clear(); }">
+            <strong>No sign-in</strong><span>The service is open on your network.</span>
+        </button>
+        @foreach (var kind in SignInKinds.All)
+        {
+            var selected = !Form.None && Form.Steps.Count == 1 && Form.Steps[0].Kind == kind.Kind;
+            <button class="kind @(selected ? "selected" : "")" @onclick="() => Pick(kind.Kind)">
+                <strong>@kind.Title</strong><span>@kind.Description</span>
+            </button>
+        }
+    </div>
+
+    @for (var i = 0; i < Form.Steps.Count; i++)
+    {
+        var step = Form.Steps[i];
+        var kind = SignInKinds.Get(step.Kind);
+        <div class="signin-step">
+            @if (Form.Steps.Count > 1)
+            {
+                <div class="header-row">
+                    <strong>Step @(i + 1): @kind.Title</strong>
+                    <button class="link" @onclick="() => Form.Steps.Remove(step)">Remove</button>
+                </div>
+            }
+            <div class="grid">
+                @foreach (var field in kind.Fields.Where(f => !f.Advanced || step.ShowAdvanced))
+                {
+                    <label>
+                        @field.Label@(field.Required ? "" : " (optional)")
+                        @if (field.Secret)
+                        {
+                            <input type="password" autocomplete="new-password"
+                                   placeholder="@(step.SecretRefs.ContainsKey(field.Setting) ? "Saved. Type to replace" : "")"
+                                   value="@step.SecretInputs.GetValueOrDefault(field.Setting)"
+                                   @onchange="e => step.SecretInputs[field.Setting] = e.Value?.ToString() ?? string.Empty" />
+                            @if (!CanSaveSecrets)
+                            {
+                                <span class="hint">Stored in Key Vault as <code>@SecretName(field, i)</code>. Ask an admin to add it there.</span>
+                            }
+                        }
+                        else if (field.Options is not null)
+                        {
+                            <select value="@(step.Values.GetValueOrDefault(field.Setting) ?? field.Options[0])" @onchange="e => step.Values[field.Setting] = e.Value?.ToString() ?? string.Empty">
+                                @foreach (var o in field.Options) { <option>@o</option> }
+                            </select>
+                        }
+                        else
+                        {
+                            <input placeholder="@field.Placeholder" value="@step.Values.GetValueOrDefault(field.Setting)"
+                                   @onchange="e => step.Values[field.Setting] = e.Value?.ToString() ?? string.Empty" />
+                        }
+                    </label>
+                }
+            </div>
+            @if (kind.Fields.Any(f => f.Advanced))
+            {
+                <button class="link" @onclick="() => step.ShowAdvanced = !step.ShowAdvanced">@(step.ShowAdvanced ? "Fewer options" : "More options")</button>
+            }
+        </div>
+    }
+
+    @if (!Form.None)
+    {
+        <div class="inline">
+            <select @bind="_extraKind">
+                @foreach (var kind in SignInKinds.All) { <option value="@kind.Kind">@kind.Title</option> }
+            </select>
+            <button class="link" @onclick="AddStep">Combine with another sign-in step</button>
+        </div>
+        <p class="hint">Most services need one. Combine when a service wants, for example, an API key and a login session.</p>
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public SignInForm Form { get; set; } = new();
+    [Parameter] public string ServiceId { get; set; } = "service";
+    [Parameter] public bool CanSaveSecrets { get; set; }
+
+    private string _extraKind = "ApiKey";
+
+    private void Pick(string kind)
+    {
+        Form.None = false;
+        Form.Steps.Clear();
+        Form.Steps.Add(new SignInStepForm { Kind = kind });
+    }
+
+    private void AddStep() => Form.Steps.Add(new SignInStepForm { Kind = _extraKind });
+
+    private string SecretName(SignInField field, int index) =>
+        (Form.Steps.Count == 1 ? $"{ServiceId}-{field.Setting}" : $"{ServiceId}-{index + 1}-{field.Setting}").ToLowerInvariant();
+}

@@ -139,6 +139,10 @@ public enum BindingMode { None, FromSource, FixedValue }
 public sealed class BindingForm
 {
     public BindingMode Mode { get; set; }
+
+    /// <summary>Filled in automatically; shown with a "suggested" tag until the user confirms or changes it.</summary>
+    public bool Suggested { get; set; }
+    public string? Reason { get; set; }
     public string? Expression { get; set; }
     public string? FixedValue { get; set; }
 }

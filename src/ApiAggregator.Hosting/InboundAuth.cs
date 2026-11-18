@@ -1,6 +1,7 @@
 using System.Security.Claims;
 using System.Text;
 using System.Text.Json.Nodes;
+using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Configuration;
@@ -67,16 +68,48 @@ public static class InboundAuth
         }
 
         var authorization = http.Request.Headers.Authorization.ToString();
-        var incomingId = http.Request.Headers["X-Correlation-Id"].ToString();
 
         return new CallerContext
         {
             Subject = http.User.FindFirst("sub")?.Value,
             BearerToken = authorization.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase) ? authorization[7..] : null,
             Claims = claims,
-            CorrelationId = IsSafeId(incomingId) ? incomingId : Guid.NewGuid().ToString("n")
+            CorrelationId = CorrelationIdFrom(http)
         };
     }
+
+    private const string CorrelationItemKey = "ApiAggregator.CorrelationId";
+
+    /// <summary>
+    /// The correlation id of this request: the caller's X-Correlation-Id when it is short and made of
+    /// safe characters, otherwise a new one. Worked out once per request and remembered, so every
+    /// response, log line and downstream call uses the same id.
+    /// </summary>
+    public static string CorrelationIdFrom(HttpContext http)
+    {
+        if (http.Items.TryGetValue(CorrelationItemKey, out var existing) && existing is string id) return id;
+
+        var incoming = http.Request.Headers["X-Correlation-Id"].ToString();
+        id = IsSafeId(incoming) ? incoming : Guid.NewGuid().ToString("n");
+        http.Items[CorrelationItemKey] = id;
+        return id;
+    }
+
+    /// <summary>
+    /// Resolves the correlation id first thing and puts it on every response (including errors).
+    /// Added to the response as it starts, because the exception handler clears headers set earlier.
+    /// </summary>
+    public static IApplicationBuilder UseCorrelationId(this IApplicationBuilder app) =>
+        app.Use(async (http, next) =>
+        {
+            var id = CorrelationIdFrom(http);
+            http.Response.OnStarting(() =>
+            {
+                http.Response.Headers["X-Correlation-Id"] = id;
+                return Task.CompletedTask;
+            });
+            await next();
+        });
 
     private static bool IsSafeId(string id) =>
         id.Length is > 0 and <= 64 && id.All(c => char.IsAsciiLetterOrDigit(c) || c is '-' or '_');

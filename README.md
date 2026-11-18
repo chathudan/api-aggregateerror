@@ -28,7 +28,7 @@ GET /bff/customer/C-10042/overview
 ```bash
 dotnet --version              # 10.x (or build with -p:AggregatorTargetFramework=net9.0)
 dotnet restore && dotnet build
-dotnet test                   # 52 engine tests
+dotnet test                   # engine tests
 
 ./scripts/dev-run.sh          # mocks :5100, gateway :5200, admin API :5210, admin UI :5300
 ./scripts/try-gateway.sh      # in another terminal: dev token + calls to the sample endpoints
@@ -44,6 +44,23 @@ export Secrets__service-a-password=pass-a Secrets__service-b-password=pass-b Sec
 dotnet run --project tools/ApiAggregator.Cli -- validate
 dotnet run --project tools/ApiAggregator.Cli -- run customer-overview --route id=C-10042 --query status=open --repeat 2
 ```
+
+## Where everything is stored
+
+All configuration lives in `config/` as plain JSON, so it can be reviewed in pull requests. The
+admin UI and admin API write these files; the gateway reloads them within 2 seconds.
+
+| File | Holds |
+|---|---|
+| `config/services.json` | Every service: base address, sign-in profile id, endpoints (method, path, parameters, response fields) |
+| `config/auth-profiles.json` | How the gateway signs in to each service. Secrets appear only as `secret:<name>` references |
+| `config/recipes/<id>.json` | Published aggregated endpoints, which the gateway serves |
+| `config/drafts/<id>.json` | Work in progress from the wizard (never served) |
+| `config/history/<id>.v<n>.json` | Every published version, kept for audit and rollback |
+| `config/secrets.local.json` | **Development only**: secret values typed in the UI. Git-ignored; use Key Vault elsewhere |
+
+For production with several gateway instances, the same data moves to PostgreSQL behind
+`IConfigStore` (see [roadmap](docs/roadmap.md)).
 
 ## Repository map
 

@@ -56,7 +56,10 @@ public static class ServiceCollectionExtensions
                     PooledConnectionLifetime = TimeSpan.FromMinutes(5),
                     ConnectTimeout = TimeSpan.FromSeconds(5)
                 })
-                .ConfigureHttpClient(c => c.Timeout = Timeout.InfiniteTimeSpan); // the engine applies per-step timeouts
+                .ConfigureHttpClient(c => c.Timeout = Timeout.InfiniteTimeSpan) // the engine applies per-step timeouts
+                // The default HttpClient logging writes full URLs (including query values) at Information.
+                // Query values can be personal data, so remove it: the engine logs ids, codes and timings itself.
+                .RemoveAllLoggers();
         }
 
         return services;
