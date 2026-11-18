@@ -1,0 +1,6 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+  <!-- Three fake downstream services in one process, each with a different auth style. No NuGet packages. -->
+  <PropertyGroup>
+    <RootNamespace>MockServices</RootNamespace>
+  </PropertyGroup>
+</Project>

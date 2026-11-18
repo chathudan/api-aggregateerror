@@ -1,0 +1,123 @@
+// aggregator - validate and run recipes from the command line.
+//
+//   aggregator validate [--config ./config]                       validate every recipe (exit code 1 on problems; use in CI)
+//   aggregator run <recipeId> [--route id=C-10042] [--query status=open] [--header X-Tenant=t1]
+//                  [--sub test-user] [--repeat 3] [--config ./config]
+//
+// Secrets for "secret:" references come from environment variables, e.g.
+//   export Secrets__service-a-password=pass-a
+
+using System.Diagnostics;
+using System.Text.Json;
+using ApiAggregator.Engine;
+using ApiAggregator.Engine.Auth;
+using ApiAggregator.Engine.Config;
+using ApiAggregator.Engine.Execution;
+using ApiAggregator.Engine.Validation;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
+
+if (args.Length == 0 || args[0] is "-h" or "--help")
+{
+    Console.WriteLine("Usage: aggregator validate [--config dir] | aggregator run <recipeId> [--route k=v] [--query k=v] [--header k=v] [--sub user] [--repeat n]");
+    return 0;
+}
+
+var options = Options.Parse(args);
+var builder = Host.CreateApplicationBuilder();
+builder.Configuration["Aggregator:Config:Directory"] = options.ConfigDir;
+builder.Logging.ClearProviders().AddSimpleConsole(o => o.SingleLine = true).SetMinimumLevel(LogLevel.Warning);
+builder.Services.AddAggregatorEngine(builder.Configuration);
+using var host = builder.Build();
+
+var store = host.Services.GetRequiredService<IConfigStore>();
+var snapshot = await store.GetSnapshotAsync();
+
+switch (args[0])
+{
+    case "validate":
+    {
+        var failed = 0;
+        foreach (var recipe in snapshot.Recipes.OrderBy(r => r.Id))
+        {
+            var result = RecipeValidator.Validate(recipe, snapshot);
+            Console.WriteLine($"{(result.IsValid ? "OK  " : "FAIL")} {recipe.Id} v{recipe.Version} ({recipe.Method} /bff/{recipe.Route})");
+            foreach (var issue in result.Issues) Console.WriteLine($"       {issue.Where}: {issue.Message}");
+            if (!result.IsValid) failed++;
+        }
+        var auth = host.Services.GetRequiredService<DownstreamAuthenticator>();
+        foreach (var profile in snapshot.AuthProfiles)
+            foreach (var problem in auth.Check(profile)) { Console.WriteLine($"FAIL auth-profile {profile.Id}: {problem}"); failed++; }
+        Console.WriteLine(failed == 0 ? "All good." : $"{failed} problem(s).");
+        return failed == 0 ? 0 : 1;
+    }
+
+    case "run" when args.Length > 1:
+    {
+        var recipe = snapshot.GetRecipe(args[1]);
+        if (recipe is null) { Console.Error.WriteLine($"Recipe '{args[1]}' not found in {options.ConfigDir}."); return 2; }
+
+        var validation = RecipeValidator.Validate(recipe, snapshot);
+        if (!validation.IsValid)
+        {
+            foreach (var issue in validation.Issues) Console.Error.WriteLine($"{issue.Where}: {issue.Message}");
+            return 1;
+        }
+
+        var executor = host.Services.GetRequiredService<CompositionExecutor>();
+        var caller = new CallerContext { Subject = options.Subject };
+        var inbound = new InboundRequest { Route = options.Route, Query = options.Query, Headers = options.Headers };
+        var mode = new ExecutionMode { UseCache = true, IncludeRequestDetails = true };
+
+        for (var i = 1; i <= options.Repeat; i++)
+        {
+            var clock = Stopwatch.StartNew();
+            var result = await executor.ExecuteAsync(recipe, inbound, caller, mode, CancellationToken.None);
+            Console.WriteLine($"--- run {i}: HTTP {result.StatusCode} in {clock.ElapsedMilliseconds} ms{(result.FromCache ? " (from cache)" : "")}{(result.Partial ? " (partial)" : "")}");
+            foreach (var t in result.Trace)
+                Console.WriteLine($"    {t.Outcome,-9} {t.Alias,-10} {t.HttpStatus?.ToString() ?? "-",-4} {t.DurationMs,5} ms  calls={t.Calls}{(t.FromCache ? " cached" : "")}  {t.Request}{(t.Message is null ? "" : "  " + t.Message)}");
+            if (i == options.Repeat) Console.WriteLine(result.Body?.ToJsonString(new JsonSerializerOptions { WriteIndented = true, Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping }));
+        }
+        return 0;
+    }
+
+    default:
+        Console.Error.WriteLine($"Unknown command '{args[0]}'. Try --help.");
+        return 2;
+}
+
+sealed class Options
+{
+    public string ConfigDir { get; private set; } = "config";
+    public string? Subject { get; private set; } = "cli-user";
+    public int Repeat { get; private set; } = 1;
+    public Dictionary<string, string?> Route { get; } = new(StringComparer.OrdinalIgnoreCase);
+    public Dictionary<string, string?> Query { get; } = new(StringComparer.OrdinalIgnoreCase);
+    public Dictionary<string, string?> Headers { get; } = new(StringComparer.OrdinalIgnoreCase);
+
+    public static Options Parse(string[] args)
+    {
+        var o = new Options();
+        for (var i = 0; i < args.Length - 1; i++)
+        {
+            var value = args[i + 1];
+            switch (args[i])
+            {
+                case "--config": o.ConfigDir = value; break;
+                case "--sub": o.Subject = value; break;
+                case "--repeat": o.Repeat = Math.Max(1, int.Parse(value)); break;
+                case "--route": Put(o.Route, value); break;
+                case "--query": Put(o.Query, value); break;
+                case "--header": Put(o.Headers, value); break;
+            }
+        }
+        return o;
+    }
+
+    private static void Put(Dictionary<string, string?> target, string pair)
+    {
+        var eq = pair.IndexOf('=');
+        if (eq > 0) target[pair[..eq]] = pair[(eq + 1)..];
+    }
+}

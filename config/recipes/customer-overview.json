@@ -1,0 +1,68 @@
+{
+  "id": "customer-overview",
+  "name": "Customer overview",
+  "version": 1,
+  "status": "published",
+  "method": "GET",
+  "route": "customer/{id}/overview",
+  "requireAuthentication": true,
+  "requiredScope": "customer.read",
+  "inputs": {
+    "route.id":     { "type": "string", "required": true, "pattern": "^[A-Za-z0-9-]{1,40}$" },
+    "query.status": { "type": "string", "enum": ["open", "closed"], "default": "open" },
+    "query.page":   { "type": "int", "min": 1, "max": 100, "default": "1" }
+  },
+  "steps": [
+    {
+      "alias": "a",
+      "displayName": "Get customer",
+      "endpoint": "service-a/getCustomer",
+      "bind": [ { "from": "request.route.id", "to": "path.customerId" } ]
+    },
+    {
+      "alias": "b",
+      "displayName": "Get orders",
+      "endpoint": "service-b/getOrders",
+      "bind": [
+        { "from": "a.body.id",            "to": "header.X-Customer-Id" },
+        { "from": "a.body.accountNo",     "to": "query.account" },
+        { "from": "request.query.status", "to": "query.status" },
+        { "from": "request.query.page",   "to": "query.page" }
+      ]
+    },
+    {
+      "alias": "c",
+      "displayName": "Get recommendations",
+      "endpoint": "service-c/getRecommendations",
+      "required": false,
+      "bind": [
+        { "from": "a.body.segmentCode", "to": "query.segment" },
+        { "from": "b.body.tier",        "to": "header.X-Tier" }
+      ]
+    },
+    {
+      "alias": "lines",
+      "displayName": "Get lines for the latest 3 orders",
+      "endpoint": "service-b/getOrderLines",
+      "required": false,
+      "when": "{{a.body.isPremium}} == true",
+      "forEach": "{{b.body.items[0:3].id}}",
+      "maxConcurrency": 3,
+      "bind": [ { "from": "item", "to": "path.orderId" } ]
+    }
+  ],
+  "response": {
+    "customer": {
+      "id": "{{a.body.id}}",
+      "name": "{{a.body.name}}",
+      "segment": "{{a.body.segmentCode}}"
+    },
+    "tier": "{{b.body.tier}}",
+    "recentOrders": "{{b.body.items[0:5]}}",
+    "orderCount": "{{b.body.items | count}}",
+    "orderLines": "{{lines[*].body}}",
+    "recommendations": "{{c.body.items}}"
+  },
+  "cache": { "enabled": false },
+  "timeoutMs": 8000
+}

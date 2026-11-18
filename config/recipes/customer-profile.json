@@ -1,0 +1,36 @@
+{
+  "id": "customer-profile",
+  "name": "Customer profile with addresses",
+  "version": 1,
+  "status": "published",
+  "method": "GET",
+  "route": "customer/{id}/profile",
+  "requireAuthentication": true,
+  "requiredScope": "customer.read",
+  "inputs": {
+    "route.id": { "type": "string", "required": true, "pattern": "^[A-Za-z0-9-]{1,40}$" }
+  },
+  "steps": [
+    {
+      "alias": "customer",
+      "displayName": "Get customer",
+      "endpoint": "service-a/getCustomer",
+      "bind": [ { "from": "request.route.id", "to": "path.customerId" } ],
+      "cache": { "enabled": true, "ttlSeconds": 60 }
+    },
+    {
+      "alias": "addresses",
+      "displayName": "Get addresses",
+      "endpoint": "service-a/getAddresses",
+      "required": false,
+      "bind": [ { "from": "request.route.id", "to": "path.customerId" } ]
+    }
+  ],
+  "response": {
+    "id": "{{customer.body.id}}",
+    "name": "{{customer.body.name}}",
+    "addresses": "{{addresses.body}}"
+  },
+  "cache": { "enabled": true, "ttlSeconds": 30, "perCaller": true },
+  "timeoutMs": 5000
+}

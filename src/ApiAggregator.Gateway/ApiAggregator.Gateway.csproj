@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+  <PropertyGroup>
+    <RootNamespace>ApiAggregator.Gateway</RootNamespace>
+    <UserSecretsId>api-aggregator-gateway</UserSecretsId>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.Http.Resilience" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="../ApiAggregator.Engine/ApiAggregator.Engine.csproj" />
+    <ProjectReference Include="../ApiAggregator.Hosting/ApiAggregator.Hosting.csproj" />
+  </ItemGroup>
+</Project>

@@ -1,0 +1,48 @@
+# Local development stack: mock services + gateway + admin API + admin UI.
+#   docker compose up --build
+# All four containers share one network namespace (the gateway's), so the sample config's
+# "http://localhost:5100" service URLs work unchanged inside Docker.
+#
+#   http://localhost:5100/_stats   mock services (call counters)
+#   http://localhost:5200/bff/...  gateway
+#   http://localhost:5210/admin    admin API
+#   http://localhost:5300          admin UI
+#
+# DEVELOPMENT ONLY: uses the dev token issuer and mock secrets from appsettings.Development.json.
+
+x-app: &app
+  build: { context: . }
+  environment: &env
+    ASPNETCORE_ENVIRONMENT: Development
+    Aggregator__Config__Directory: /config
+
+services:
+  gateway:
+    <<: *app
+    build: { context: ., args: { PROJECT: src/ApiAggregator.Gateway/ApiAggregator.Gateway.csproj } }
+    command: ["ApiAggregator.Gateway.dll"]
+    environment: { <<: *env, ASPNETCORE_URLS: "http://+:5200" }
+    volumes: ["./config:/config:ro"]
+    ports: ["5100:5100", "5200:5200", "5210:5210", "5300:5300"]
+
+  mocks:
+    <<: *app
+    build: { context: ., args: { PROJECT: samples/MockServices/MockServices.csproj } }
+    command: ["MockServices.dll"]
+    environment: { <<: *env, ASPNETCORE_URLS: "http://+:5100" }
+    network_mode: "service:gateway"
+
+  admin-api:
+    <<: *app
+    build: { context: ., args: { PROJECT: src/ApiAggregator.Admin.Api/ApiAggregator.Admin.Api.csproj } }
+    command: ["ApiAggregator.Admin.Api.dll"]
+    environment: { <<: *env, ASPNETCORE_URLS: "http://+:5210" }
+    volumes: ["./config:/config"]
+    network_mode: "service:gateway"
+
+  admin-ui:
+    <<: *app
+    build: { context: ., args: { PROJECT: src/ApiAggregator.Admin.UI/ApiAggregator.Admin.UI.csproj } }
+    command: ["ApiAggregator.Admin.UI.dll"]
+    environment: { <<: *env, ASPNETCORE_URLS: "http://+:5300", AdminApi__BaseUrl: "http://localhost:5210/" }
+    network_mode: "service:gateway"

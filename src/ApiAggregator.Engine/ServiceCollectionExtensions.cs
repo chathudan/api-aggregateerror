@@ -1,0 +1,64 @@
+using System.Net;
+using ApiAggregator.Engine.Auth;
+using ApiAggregator.Engine.Auth.Steps;
+using ApiAggregator.Engine.Config;
+using ApiAggregator.Engine.Execution;
+using ApiAggregator.Engine.Routing;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
+
+namespace ApiAggregator.Engine;
+
+public static class ServiceCollectionExtensions
+{
+    /// <summary>
+    /// Registers the engine. Configuration sections:
+    ///   Aggregator:Config   -> FileConfigOptions
+    ///   Aggregator:Engine   -> EngineOptions
+    ///   Secrets:*           -> values for "secret:" references (development only)
+    /// </summary>
+    public static IServiceCollection AddAggregatorEngine(this IServiceCollection services, IConfiguration configuration)
+    {
+        services.Configure<FileConfigOptions>(configuration.GetSection("Aggregator:Config"));
+        services.Configure<EngineOptions>(configuration.GetSection("Aggregator:Engine"));
+
+        services.TryAddSingleton<IConfigStore, FileConfigStore>();
+        services.TryAddSingleton<ISecretResolver, ConfigurationSecretResolver>();
+        services.TryAddSingleton<IResponseCache, MemoryResponseCache>();
+
+        services.AddMemoryCache();
+        services.AddSingleton<DownstreamCredentialCache>();
+
+        services.AddSingleton<IAuthStep, BasicAuthStep>();
+        services.AddSingleton<IAuthStep, ApiKeyStep>();
+        services.AddSingleton<IAuthStep, StaticBearerStep>();
+        services.AddSingleton<IAuthStep, PassThroughUserTokenStep>();
+        services.AddSingleton<IAuthStep, OAuthClientCredentialsStep>();
+        services.AddSingleton<IAuthStep, SessionLoginStep>();
+        services.AddSingleton<DownstreamAuthenticator>();
+
+        services.AddSingleton<CompositionExecutor>();
+        services.AddSingleton<RecipeRouter>();
+
+        // Security-relevant handler settings for every downstream call:
+        //  - UseCookies = false: no shared cookie jar, so one user's session can never leak to another.
+        //  - AllowAutoRedirect = false: credentials are never replayed to a redirect target.
+        //  - PooledConnectionLifetime: picks up DNS changes; connections are reused for speed.
+        foreach (var name in new[] { EngineHttpClients.Downstream, EngineHttpClients.Auth })
+        {
+            services.AddHttpClient(name)
+                .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler
+                {
+                    UseCookies = false,
+                    AllowAutoRedirect = false,
+                    AutomaticDecompression = DecompressionMethods.All,
+                    PooledConnectionLifetime = TimeSpan.FromMinutes(5),
+                    ConnectTimeout = TimeSpan.FromSeconds(5)
+                })
+                .ConfigureHttpClient(c => c.Timeout = Timeout.InfiniteTimeSpan); // the engine applies per-step timeouts
+        }
+
+        return services;
+    }
+}

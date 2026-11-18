@@ -1,0 +1,16 @@
+<Project>
+  <!--
+    Single place to change the target framework for every project.
+    .NET 10 is the current LTS. Override per build if needed:
+      dotnet build -p:AggregatorTargetFramework=net9.0
+  -->
+  <PropertyGroup>
+    <AggregatorTargetFramework Condition="'$(AggregatorTargetFramework)' == ''">net10.0</AggregatorTargetFramework>
+    <TargetFramework>$(AggregatorTargetFramework)</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+    <InvariantGlobalization>true</InvariantGlobalization>
+  </PropertyGroup>
+</Project>

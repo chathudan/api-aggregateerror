@@ -1,0 +1,136 @@
+{
+  "id": "customer-overview",
+  "name": "Customer overview",
+  "version": 2,
+  "status": "draft",
+  "method": "GET",
+  "route": "customer/{id}/overview",
+  "requireAuthentication": true,
+  "requiredScope": "customer.read",
+  "inputs": {
+    "route.id": {
+      "type": "string",
+      "required": true,
+      "pattern": "^[A-Za-z0-9-]{1,40}$",
+      "maxLength": 200
+    },
+    "query.status": {
+      "type": "string",
+      "required": false,
+      "maxLength": 200,
+      "default": "open"
+    },
+    "query.page": {
+      "type": "int",
+      "required": false,
+      "maxLength": 200,
+      "default": "1"
+    }
+  },
+  "steps": [
+    {
+      "alias": "a",
+      "displayName": "Get customer",
+      "endpoint": "service-a/getCustomer",
+      "bind": [
+        {
+          "from": "request.route.id",
+          "to": "path.customerId"
+        }
+      ],
+      "required": true,
+      "maxConcurrency": 4,
+      "cache": {
+        "enabled": false,
+        "ttlSeconds": 30,
+        "perCaller": true
+      }
+    },
+    {
+      "alias": "b",
+      "displayName": "Get orders",
+      "endpoint": "service-b/getOrders",
+      "bind": [
+        {
+          "from": "a.body.id",
+          "to": "header.X-Customer-Id"
+        },
+        {
+          "from": "a.body.accountNo",
+          "to": "query.account"
+        },
+        {
+          "from": "request.query.status",
+          "to": "query.status"
+        },
+        {
+          "from": "request.query.page",
+          "to": "query.page"
+        }
+      ],
+      "required": true,
+      "maxConcurrency": 4,
+      "cache": {
+        "enabled": false,
+        "ttlSeconds": 30,
+        "perCaller": true
+      }
+    },
+    {
+      "alias": "c",
+      "displayName": "Get recommendations",
+      "endpoint": "service-c/getRecommendations",
+      "bind": [
+        {
+          "from": "a.body.segmentCode",
+          "to": "query.segment"
+        },
+        {
+          "from": "b.body.tier",
+          "to": "header.X-Tier"
+        }
+      ],
+      "required": false,
+      "maxConcurrency": 4,
+      "cache": {
+        "enabled": false,
+        "ttlSeconds": 30,
+        "perCaller": true
+      }
+    },
+    {
+      "alias": "lines",
+      "displayName": "Get lines for the latest 3 orders",
+      "endpoint": "service-b/getOrderLines",
+      "bind": [
+        {
+          "from": "item",
+          "to": "path.orderId"
+        }
+      ],
+      "required": false,
+      "when": "{{a.body.isPremium}} == true",
+      "forEach": "{{b.body.items[0:3].id}}",
+      "maxConcurrency": 4,
+      "cache": {
+        "enabled": false,
+        "ttlSeconds": 30,
+        "perCaller": true
+      }
+    }
+  ],
+  "response": {
+    "customer": "{{a.body.accountNo}}",
+    "tier": "{{b.body.tier}}",
+    "recentOrders": "{{b.body.items[0:5]}}",
+    "orderCount": "{{b.body.items | count}}",
+    "orderLines": "{{lines[*].body}}",
+    "recommendations": "{{c.body.items}}"
+  },
+  "cache": {
+    "enabled": false,
+    "ttlSeconds": 30,
+    "perCaller": true
+  },
+  "timeoutMs": 8000
+}

@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Command-line tool for QA and CI: validate recipes and run them without the gateway. No NuGet packages. -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <AssemblyName>aggregator</AssemblyName>
+    <RootNamespace>ApiAggregator.Cli</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    <ProjectReference Include="../../src/ApiAggregator.Engine/ApiAggregator.Engine.csproj" />
+  </ItemGroup>
+</Project>

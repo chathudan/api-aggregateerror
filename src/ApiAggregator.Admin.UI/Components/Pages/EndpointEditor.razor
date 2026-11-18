@@ -1,0 +1,365 @@
+@page "/endpoints/new"
+@page "/endpoints/{Id}"
+@using System.Text.RegularExpressions
+@using ApiAggregator.Engine.Planning
+@inject AdminApiClient Api
+@inject NavigationManager Nav
+
+<PageTitle>@(IsNew ? "New endpoint" : _form.Name)</PageTitle>
+
+@if (_snapshot is null)
+{
+    <p class="muted">Loading…</p>
+    return;
+}
+
+<h1>@(IsNew ? "New aggregated endpoint" : _form.Name)</h1>
+<p class="muted">Address: <code>@_form.Method /bff/@_form.Route.Trim('/')</code></p>
+
+@* ------------------------------------------------------------------ 1. Endpoint *@
+<section class="card">
+    <h2>1. Endpoint</h2>
+    <div class="grid">
+        <label>Name <input value="@_form.Name" @onchange="e => OnNameChanged(e.Value?.ToString())" placeholder="Customer overview" /></label>
+        <label>Id <input @bind="_form.Id" disabled="@(!IsNew)" placeholder="customer-overview" /></label>
+        <label>Method
+            <select @bind="_form.Method">
+                @foreach (var m in new[] { "GET", "POST", "PUT", "PATCH", "DELETE" }) { <option>@m</option> }
+            </select>
+        </label>
+        <label>Route <input value="@_form.Route" @onchange="e => OnRouteChanged(e.Value?.ToString())" placeholder="customer/{id}/overview" /></label>
+    </div>
+    <div class="grid">
+        <label class="check"><input type="checkbox" @bind="_form.RequireAuthentication" /> Callers must sign in</label>
+        <label>Required scope <input @bind="_form.RequiredScope" placeholder="customer.read" /></label>
+        <label class="check"><input type="checkbox" @bind="_form.CacheEnabled" /> Cache responses</label>
+        @if (_form.CacheEnabled)
+        {
+            <label>Keep for (seconds) <input type="number" min="1" max="86400" @bind="_form.CacheTtlSeconds" /></label>
+        }
+    </div>
+    @if (_form.CacheEnabled) { <p class="hint">Each caller gets their own cached copy, so nobody can see another person's data.</p> }
+</section>
+
+@* ------------------------------------------------------------------ 2. Inputs *@
+<section class="card">
+    <h2>2. Inputs</h2>
+    <p class="hint">What the caller sends. Anything not listed here is ignored and never passed on.</p>
+    <table class="list">
+        <thead><tr><th>From</th><th>Name</th><th>Type</th><th>Required</th><th>Default</th><th>Test value</th><th></th></tr></thead>
+        <tbody>
+            @foreach (var input in _form.Inputs)
+            {
+                <tr>
+                    <td>
+                        <select @bind="input.Source">
+                            <option value="route">route</option><option value="query">query</option><option value="header">header</option>
+                        </select>
+                    </td>
+                    <td><input @bind="input.Name" /></td>
+                    <td>
+                        <select @bind="input.Type">
+                            @foreach (var t in new[] { "string", "int", "number", "bool", "date" }) { <option>@t</option> }
+                        </select>
+                    </td>
+                    <td><input type="checkbox" @bind="input.Required" /></td>
+                    <td><input @bind="input.Default" /></td>
+                    <td><input @bind="input.TestValue" placeholder="for Try it" /></td>
+                    <td><button class="link" @onclick="() => _form.Inputs.Remove(input)">Remove</button></td>
+                </tr>
+            }
+        </tbody>
+    </table>
+    <button class="button" @onclick="() => _form.Inputs.Add(new InputForm())">Add input</button>
+</section>
+
+@* ------------------------------------------------------------------ 3. Steps *@
+<section class="card">
+    <h2>3. Steps</h2>
+    <p class="hint">Each step calls one service endpoint. Fill each value from the caller's inputs or from an earlier step. The run order is worked out for you.</p>
+
+    @for (var i = 0; i < _form.Steps.Count; i++)
+    {
+        var step = _form.Steps[i];
+        var number = i + 1;
+        <div class="step">
+            <div class="header-row">
+                <input class="step-name" value="@step.DisplayName" @onchange="e => step.DisplayName = e.Value?.ToString() ?? step.DisplayName" />
+                <button class="link" @onclick="() => _form.Steps.Remove(step)">Remove step</button>
+            </div>
+
+            <label>Calls
+                <select value="@step.Endpoint" @onchange="e => OnEndpointChanged(step, e.Value?.ToString())">
+                    <option value="">Pick a service endpoint…</option>
+                    @foreach (var s in _snapshot.Services.OrderBy(s => s.Name))
+                    {
+                        <optgroup label="@s.Name">
+                            @foreach (var ep in s.Endpoints) { <option value="@($"{s.Id}/{ep.Id}")">@ep.Method @ep.Path @(ep.Summary is null ? "" : $"· {ep.Summary}")</option> }
+                        </optgroup>
+                    }
+                </select>
+            </label>
+
+            @if (step.Bindings.Count > 0)
+            {
+                var sources = SourcesFor(step);
+                <table class="list bindings">
+                    <thead><tr><th>Value</th><th>Sent as</th><th>Use value from</th></tr></thead>
+                    <tbody>
+                        @foreach (var (target, binding) in step.Bindings.OrderBy(b => b.Key))
+                        {
+                            var parts = target.Split('.', 2);
+                            <tr>
+                                <td>@parts[1]</td>
+                                <td><span class="tag">@parts[0]</span></td>
+                                <td>
+                                    <select value="@SelectValue(binding)" @onchange="e => OnBindingChanged(binding, e.Value?.ToString())">
+                                        <option value="none">Leave empty</option>
+                                        @foreach (var group in sources.GroupBy(o => o.Group))
+                                        {
+                                            <optgroup label="@group.Key">
+                                                @foreach (var o in group) { <option value="@($"src:{o.Expression}")">@o.Label</option> }
+                                            </optgroup>
+                                        }
+                                        <option value="fixed">Fixed value…</option>
+                                    </select>
+                                    @if (binding.Mode == BindingMode.FixedValue)
+                                    {
+                                        <input @bind="binding.FixedValue" placeholder="Type the value" />
+                                    }
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+                <div class="inline">
+                    <input @bind="_extraTarget[number]" placeholder="header.X-Something or query.name" />
+                    <button class="link" @onclick="() => AddExtraValue(step, number)">Add another value</button>
+                </div>
+            }
+
+            @if (RunsAfter(step) is { Length: > 0 } after) { <p class="hint">Runs after @after</p> }
+
+            <button class="link" @onclick="() => step.ShowAdvanced = !step.ShowAdvanced">@(step.ShowAdvanced ? "Hide advanced" : "Advanced")</button>
+            @if (step.ShowAdvanced)
+            {
+                <div class="grid">
+                    <label class="check"><input type="checkbox" @bind="step.Required" /> If this call fails, fail the whole endpoint</label>
+                    <label>Only run when <input @bind="step.When" placeholder="{{getCustomer.body.isPremium}} == true" /></label>
+                    <label>Run once for each item in <input @bind="step.ForEach" placeholder="{{getOrders.body.items[0:3].id}}" /></label>
+                    <label class="check"><input type="checkbox" @bind="step.CacheEnabled" /> Cache this call</label>
+                    @if (step.CacheEnabled) { <label>Keep for (seconds) <input type="number" min="1" @bind="step.CacheTtlSeconds" /></label> }
+                </div>
+            }
+        </div>
+    }
+    <div class="inline">
+        <input @bind="_newStepName" placeholder="Get customer" />
+        <button class="button" @onclick="AddStep">Add step</button>
+    </div>
+</section>
+
+@* ------------------------------------------------------------------ 4. Response *@
+<section class="card">
+    <h2>4. Response</h2>
+    <p class="hint">Choose what the caller gets back. With no fields, each step's full response is returned under its name.</p>
+    @{ var allSources = SourcesFor(null); }
+    <table class="list">
+        <thead><tr><th>Field name</th><th>Value</th><th></th></tr></thead>
+        <tbody>
+            @foreach (var field in _form.Response)
+            {
+                <tr>
+                    <td><input @bind="field.Name" /></td>
+                    <td>
+                        <select @bind="field.Expression">
+                            <option value="">Pick a value…</option>
+                            @foreach (var o in allSources) { <option value="@o.Expression">@o.Label</option> }
+                        </select>
+                    </td>
+                    <td><button class="link" @onclick="() => _form.Response.Remove(field)">Remove</button></td>
+                </tr>
+            }
+        </tbody>
+    </table>
+    <button class="button" @onclick="() => _form.Response.Add(new ResponseField())">Add field</button>
+</section>
+
+@* ------------------------------------------------------------------ 5. Test and publish *@
+<section class="card">
+    <h2>5. Test and publish</h2>
+
+    @if (Issues.Count > 0)
+    {
+        <div class="issues">
+            <strong>Things to fix</strong>
+            <ul>@foreach (var issue in Issues) { <li><code>@issue.Where</code> @issue.Message</li> }</ul>
+        </div>
+    }
+
+    <div class="inline">
+        <button class="button" @onclick="SaveDraft">Save draft</button>
+        <button class="button" @onclick="RunTest">Try it</button>
+        <button class="button primary" @onclick="Publish">Publish</button>
+    </div>
+
+    @if (_test is not null)
+    {
+        <p class="@(_test.Passed ? "ok" : "bad")">
+            @(_test.Passed ? "Test passed" : "Test didn't pass") · HTTP @_test.StatusCode · @_test.DurationMs ms @(_test.Partial ? "· partial response" : "")
+        </p>
+        @if (_test.Trace is { Count: > 0 })
+        {
+            <table class="list">
+                <thead><tr><th>Step</th><th>Result</th><th>Status</th><th>Time</th><th>Call</th><th>Note</th></tr></thead>
+                <tbody>
+                    @foreach (var t in _test.Trace)
+                    {
+                        <tr>
+                            <td>@(t.DisplayName ?? t.Alias)</td><td>@t.Outcome</td><td>@t.HttpStatus</td><td>@t.DurationMs ms</td>
+                            <td><code>@t.Request</code> @(t.Calls > 1 ? $"×{t.Calls}" : "")</td><td>@t.Message</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        }
+        @if (_test.Body is not null) { <pre class="json">@_test.Body.ToJsonString(new JsonSerializerOptions { WriteIndented = true })</pre> }
+    }
+
+    @if (_status is not null) { <p class="status">@_status</p> }
+</section>
+
+@code {
+    [Parameter] public string? Id { get; set; }
+
+    private bool IsNew => Id is null;
+    private RecipeForm _form = new();
+    private ConfigSnapshot? _snapshot;
+    private TestOutcome? _test;
+    private string? _status;
+    private string _newStepName = "";
+    private readonly Dictionary<int, string> _extraTarget = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        var services = await Api.GetServicesAsync() ?? [];
+        var profiles = await Api.GetAuthProfilesAsync() ?? [];
+        _snapshot = new ConfigSnapshot(services, profiles, [], "admin-ui");
+
+        if (!IsNew && await Api.GetRecipeAsync(Id!) is { } recipe) _form = RecipeForm.FromRecipe(recipe);
+        for (var i = 1; i <= 20; i++) _extraTarget[i] = "";
+    }
+
+    // ------------------------------------------------------------------ live checks (same validator as the server)
+
+    private IReadOnlyList<ValidationIssue> Issues
+    {
+        get
+        {
+            try { return RecipeValidator.Validate(_form.ToRecipe(), _snapshot!).Issues; }
+            catch (Exception ex) { return [new ValidationIssue("form", ex.Message)]; }
+        }
+    }
+
+    private IReadOnlyList<SourceOption> SourcesFor(StepForm? step)
+    {
+        try { return new SourceCatalog().For(_form.ToRecipe(), step?.Alias, _snapshot!); }
+        catch (Exception) { return []; }
+    }
+
+    private string RunsAfter(StepForm step)
+    {
+        try
+        {
+            var plan = ExecutionPlanner.Plan(_form.ToRecipe());
+            var names = plan.DependsOn[step.Alias].Select(a => _form.Steps.FirstOrDefault(s => s.Alias == a)?.DisplayName ?? a);
+            return string.Join(" and ", names);
+        }
+        catch (Exception) { return ""; }
+    }
+
+    // ------------------------------------------------------------------ form events
+
+    private void OnNameChanged(string? name)
+    {
+        _form.Name = name ?? "";
+        if (IsNew) _form.Id = Regex.Replace(_form.Name.ToLowerInvariant(), "[^a-z0-9]+", "-").Trim('-');
+    }
+
+    private void OnRouteChanged(string? route)
+    {
+        _form.Route = route ?? "";
+        foreach (Match m in Regex.Matches(_form.Route, @"\{([A-Za-z0-9_]+)\}"))
+            if (!_form.Inputs.Any(i => i.Source == "route" && i.Name == m.Groups[1].Value))
+                _form.Inputs.Add(new InputForm { Source = "route", Name = m.Groups[1].Value, Required = true });
+    }
+
+    private void AddStep()
+    {
+        var name = string.IsNullOrWhiteSpace(_newStepName) ? $"Step {_form.Steps.Count + 1}" : _newStepName.Trim();
+        _form.Steps.Add(new StepForm { DisplayName = name, Alias = _form.NewAlias(name) });
+        _newStepName = "";
+    }
+
+    private void OnEndpointChanged(StepForm step, string? reference)
+    {
+        step.Endpoint = reference ?? "";
+        step.Bindings.Clear();
+        var endpoint = _snapshot!.FindEndpoint(step.Endpoint, out _);
+        if (endpoint is null) return;
+
+        foreach (Match m in Regex.Matches(endpoint.Path, @"\{([A-Za-z0-9_]+)\}"))
+            step.Bindings[$"path.{m.Groups[1].Value}"] = new BindingForm();
+        foreach (var p in endpoint.Parameters.Where(p => p.In != "path"))
+            step.Bindings[$"{p.In}.{p.Name}"] = new BindingForm();
+    }
+
+    private static string SelectValue(BindingForm b) => b.Mode switch
+    {
+        BindingMode.FromSource => $"src:{b.Expression}",
+        BindingMode.FixedValue => "fixed",
+        _ => "none"
+    };
+
+    private static void OnBindingChanged(BindingForm binding, string? value)
+    {
+        if (value is null || value == "none") { binding.Mode = BindingMode.None; return; }
+        if (value == "fixed") { binding.Mode = BindingMode.FixedValue; return; }
+        binding.Mode = BindingMode.FromSource;
+        binding.Expression = value["src:".Length..];
+    }
+
+    private void AddExtraValue(StepForm step, int number)
+    {
+        var target = _extraTarget[number].Trim();
+        if (target.Contains('.')) step.Bindings[target] = new BindingForm();
+        _extraTarget[number] = "";
+    }
+
+    // ------------------------------------------------------------------ actions
+
+    private async Task<bool> SaveDraft()
+    {
+        var error = await Api.SaveDraftAsync(_form.ToRecipe());
+        _status = error ?? "Draft saved. The live endpoint is unchanged until you publish.";
+        if (error is null && IsNew) Nav.NavigateTo($"/endpoints/{_form.Id}", replace: true);
+        return error is null;
+    }
+
+    private async Task RunTest()
+    {
+        if (!await SaveDraft()) return;
+        string? V(InputForm i) => string.IsNullOrWhiteSpace(i.TestValue) ? null : i.TestValue;
+        _test = await Api.TestAsync(_form.Id,
+            _form.Inputs.Where(i => i.Source == "route").ToDictionary(i => i.Name, V),
+            _form.Inputs.Where(i => i.Source == "query").ToDictionary(i => i.Name, V),
+            _form.Inputs.Where(i => i.Source == "header").ToDictionary(i => i.Name, V));
+        _status = _test is null ? "The test couldn't run. Check that the Admin API is reachable." : null;
+    }
+
+    private async Task Publish()
+    {
+        var error = await Api.PublishAsync(_form.Id);
+        _status = error ?? $"Published. Callers can use {_form.Method} /bff/{_form.Route.Trim('/')} now.";
+    }
+}

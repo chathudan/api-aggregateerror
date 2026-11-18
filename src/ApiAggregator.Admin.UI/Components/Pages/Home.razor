@@ -1,0 +1,45 @@
+@page "/"
+@inject AdminApiClient Api
+
+<PageTitle>Aggregated endpoints</PageTitle>
+
+<div class="header-row">
+    <h1>Aggregated endpoints</h1>
+    <a class="button primary" href="/endpoints/new">Create endpoint</a>
+</div>
+
+@if (_recipes is null)
+{
+    <p class="muted">Loading…</p>
+}
+else if (_recipes.Count == 0)
+{
+    <div class="card empty">
+        <h2>Create your first aggregated endpoint</h2>
+        <p>Combine calls to your services into one endpoint for web and mobile apps.</p>
+        <a class="button" href="/endpoints/new">Create endpoint</a>
+    </div>
+}
+else
+{
+    <table class="list">
+        <thead><tr><th>Name</th><th>Address</th><th>Live version</th><th>Draft</th></tr></thead>
+        <tbody>
+            @foreach (var r in _recipes)
+            {
+                <tr>
+                    <td><a href="/endpoints/@r.Id">@(string.IsNullOrEmpty(r.Name) ? r.Id : r.Name)</a></td>
+                    <td><code>@r.Method @r.Route</code></td>
+                    <td>@(r.PublishedVersion is { } v ? $"v{v}" : "Not published")</td>
+                    <td>@(r.HasDraft ? "Unpublished changes" : "")</td>
+                </tr>
+            }
+        </tbody>
+    </table>
+}
+
+@code {
+    private List<RecipeSummary>? _recipes;
+
+    protected override async Task OnInitializedAsync() => _recipes = await Api.GetRecipesAsync() ?? [];
+}

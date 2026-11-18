@@ -1,0 +1,103 @@
+@page "/services"
+@inject AdminApiClient Api
+
+<PageTitle>Services</PageTitle>
+
+<h1>Services</h1>
+<p class="muted">The APIs you can combine. Developers or admins register them and set up how to sign in; anyone can browse their endpoints.</p>
+
+@if (_services is null)
+{
+    <p class="muted">Loading…</p>
+}
+else
+{
+    @foreach (var s in _services)
+    {
+        <section class="card">
+            <div class="header-row">
+                <div>
+                    <h2>@(string.IsNullOrEmpty(s.Name) ? s.Id : s.Name)</h2>
+                    <p class="muted"><code>@s.BaseUrl</code> · sign-in: @(s.AuthProfileId ?? "none")</p>
+                </div>
+                <button class="button" @onclick="() => StartImport(s)">Import from OpenAPI</button>
+            </div>
+
+            <table class="list">
+                <thead><tr><th>Endpoint</th><th>Call</th><th>Parameters</th><th>From</th></tr></thead>
+                <tbody>
+                    @foreach (var e in s.Endpoints)
+                    {
+                        <tr>
+                            <td>@(e.Summary ?? e.Id)</td>
+                            <td><code>@e.Method @e.Path</code></td>
+                            <td>@string.Join(", ", e.Parameters.Select(p => $"{p.Name} ({p.In}{(p.Required ? ", required" : "")})"))</td>
+                            <td>@e.Source</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+
+            @if (_importFor == s.Id)
+            {
+                <div class="import">
+                    <label>Spec address <input @bind="_specUrl" placeholder="https://service.example/openapi.json" /></label>
+                    <button class="button" @onclick="() => Preview(s)">Load operations</button>
+
+                    @if (_candidates is not null)
+                    {
+                        <p class="muted">Pick the operations to import. Existing endpoints with the same id are updated.</p>
+                        @foreach (var c in _candidates)
+                        {
+                            var id = c["operationId"]!.ToString();
+                            <label class="check">
+                                <input type="checkbox" checked="@_selected.Contains(id)" @onchange="e => Toggle(id, (bool)e.Value!)" />
+                                <code>@c["method"] @c["path"]</code> @c["summary"]
+                            </label>
+                        }
+                        <button class="button primary" @onclick="() => Import(s)">Import @_selected.Count operation(s)</button>
+                    }
+                </div>
+            }
+        </section>
+    }
+}
+
+@if (_message is not null) { <p class="status">@_message</p> }
+
+@code {
+    private List<ApiService>? _services;
+    private string? _importFor;
+    private string _specUrl = "";
+    private List<JsonNode>? _candidates;
+    private readonly HashSet<string> _selected = [];
+    private string? _message;
+
+    protected override async Task OnInitializedAsync() => _services = await Api.GetServicesAsync() ?? [];
+
+    private void StartImport(ApiService s)
+    {
+        _importFor = s.Id;
+        _specUrl = s.OpenApiSource ?? "";
+        _candidates = null;
+        _selected.Clear();
+    }
+
+    private async Task Preview(ApiService s)
+    {
+        var preview = await Api.PreviewOpenApiAsync(s.Id, _specUrl);
+        _candidates = (preview?["endpoints"] as JsonArray)?.Where(n => n is not null).Select(n => n!).ToList();
+        _message = _candidates is null ? preview?["title"]?.ToString() ?? "Couldn't read that spec." : null;
+        foreach (var c in _candidates ?? []) _selected.Add(c["operationId"]!.ToString());
+    }
+
+    private void Toggle(string id, bool on) { if (on) _selected.Add(id); else _selected.Remove(id); }
+
+    private async Task Import(ApiService s)
+    {
+        var error = await Api.ImportOpenApiAsync(s.Id, _specUrl, _selected.ToArray());
+        _message = error ?? $"Imported {_selected.Count} operation(s) into {s.Name}.";
+        _importFor = null;
+        _services = await Api.GetServicesAsync() ?? [];
+    }
+}

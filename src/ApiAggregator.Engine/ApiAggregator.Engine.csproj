@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- The engine has NO NuGet dependencies on purpose: only the ASP.NET Core shared framework. -->
+  <PropertyGroup>
+    <RootNamespace>ApiAggregator.Engine</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="ApiAggregator.Engine.Tests" />
+  </ItemGroup>
+</Project>

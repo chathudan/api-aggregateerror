@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Small shared code for the two web hosts (gateway, admin API): inbound JWT validation and caller context. -->
+  <PropertyGroup>
+    <RootNamespace>ApiAggregator.Hosting</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="../ApiAggregator.Engine/ApiAggregator.Engine.csproj" />
+  </ItemGroup>
+</Project>
