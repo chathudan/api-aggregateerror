@@ -7,19 +7,25 @@ namespace ApiAggregator.Admin.Application;
 /// (/admin/*); the service never sees which. Roles:
 ///   author     add services and sign-ins, build and test drafts
 ///   publisher  everything an author can do, plus publish, roll back and delete endpoints
+///   admin      change installation settings such as browser access (CORS, ADR 0015). A separate role: it doesn't
+///              make someone an author or publisher, and authors and publishers don't get it
 /// </summary>
-public sealed record AdminActor(string? Subject, string? DisplayName, bool IsAuthor, bool IsPublisher)
+public sealed record AdminActor(string? Subject, string? DisplayName, bool IsAuthor, bool IsPublisher, bool IsAdmin = false)
 {
     public const string AuthorRole = "aggregator.author";
     public const string PublisherRole = "aggregator.publisher";
+    public const string AdminRole = "aggregator.admin";
 
     /// <summary>Nobody signed in: may do nothing.</summary>
     public static AdminActor Anonymous { get; } = new(null, null, false, false);
 
+    /// <summary>Has any role at all, so may look at installation settings.</summary>
+    public bool HasAnyRole => IsAuthor || IsAdmin;
+
     /// <summary>
     /// Reads the roles from the scopes of a token (<c>scope</c> or <c>scp</c>, space separated) or from role claims
     /// (<c>roles</c>, <c>role</c> or the .NET role type), so access tokens and app roles from any identity provider work.
-    /// A publisher is always an author too.
+    /// A publisher is always an author too. The admin role stands on its own.
     /// </summary>
     public static AdminActor From(ClaimsPrincipal? user)
     {
@@ -34,7 +40,7 @@ public sealed record AdminActor(string? Subject, string? DisplayName, bool IsAut
 
         var subject = user.FindFirst("sub")?.Value ?? user.FindFirst(ClaimTypes.NameIdentifier)?.Value;
         var name = user.FindFirst("name")?.Value ?? user.FindFirst(ClaimTypes.Name)?.Value;
-        return new AdminActor(subject, string.IsNullOrWhiteSpace(name) ? null : name, author, publisher);
+        return new AdminActor(subject, string.IsNullOrWhiteSpace(name) ? null : name, author, publisher, granted.Contains(AdminRole));
     }
 
     /// <summary>How the person shows up in the UI: their name, or their id when the sign-in has no name.</summary>

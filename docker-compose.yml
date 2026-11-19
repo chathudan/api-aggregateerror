@@ -15,6 +15,9 @@ x-app: &app
   environment: &env
     ASPNETCORE_ENVIRONMENT: Development
     Aggregator__Config__Directory: /config
+    # Browser access to /bff/* (ADR 0015): the same values for the gateway and the admin app. Development already
+    # allows http://localhost:3000 and :5173 (appsettings.Development.json); add more with __2, __3, ...
+    # Gateway__Cors__AllowedOrigins__2: http://localhost:4200
 
 services:
   gateway:

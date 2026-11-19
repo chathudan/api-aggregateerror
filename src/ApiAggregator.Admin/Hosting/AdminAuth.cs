@@ -28,6 +28,9 @@ internal static class AdminAuth
     /// <summary>Policies for /admin/*: bearer tokens only.</summary>
     public const string ApiAuthor = "api-author";
     public const string ApiPublisher = "api-publisher";
+    /// <summary>/admin/cors: anyone with a role may look (viewer); only the admin role may change it.</summary>
+    public const string ApiViewer = "api-viewer";
+    public const string ApiAdmin = "api-admin";
 
     /// <summary>Claim holding a random id for this sign-in, so the person's access token can be kept server side.</summary>
     public const string SessionClaim = "sid";
@@ -91,7 +94,11 @@ internal static class AdminAuth
             .AddPolicy(ApiAuthor, p => p.AddAuthenticationSchemes(BearerScheme).RequireAuthenticatedUser()
                 .RequireAssertion(c => AdminActor.From(c.User).IsAuthor))
             .AddPolicy(ApiPublisher, p => p.AddAuthenticationSchemes(BearerScheme).RequireAuthenticatedUser()
-                .RequireAssertion(c => AdminActor.From(c.User).IsPublisher));
+                .RequireAssertion(c => AdminActor.From(c.User).IsPublisher))
+            .AddPolicy(ApiViewer, p => p.AddAuthenticationSchemes(BearerScheme).RequireAuthenticatedUser()
+                .RequireAssertion(c => AdminActor.From(c.User).HasAnyRole))
+            .AddPolicy(ApiAdmin, p => p.AddAuthenticationSchemes(BearerScheme).RequireAuthenticatedUser()
+                .RequireAssertion(c => AdminActor.From(c.User).IsAdmin));
         builder.Services.AddCascadingAuthenticationState();
     }
 
@@ -140,13 +147,13 @@ internal static class AdminAuth
     {
         if (app.Environment.IsDevelopment())
         {
-            app.MapPost("/signin/dev", async ([FromForm] string? name, [FromForm] string? role, [FromForm] string? returnUrl, HttpContext http) =>
+            app.MapPost("/signin/dev", async ([FromForm] string? name, [FromForm] string? role, [FromForm] string? admin, [FromForm] string? returnUrl, HttpContext http) =>
             {
                 var problem = DevSignIn.Problem(name, role);
                 if (problem is not null)
                     return Results.Redirect($"/signin?error={Uri.EscapeDataString(problem)}&returnUrl={Uri.EscapeDataString(SafeReturnUrl(returnUrl))}");
 
-                await http.SignInAsync(CookieScheme, DevSignIn.Principal(name!, role!));
+                await http.SignInAsync(CookieScheme, DevSignIn.Principal(name!, role!, admin == "yes"));
                 return Results.LocalRedirect(SafeReturnUrl(returnUrl));
             }).WithMetadata(new RequireAntiforgeryTokenAttribute()); // also implied by [FromForm]; stated so it can't be lost
         }
@@ -205,9 +212,10 @@ internal static class DevSignIn
 
     /// <summary>
     /// sub is "dev:" plus the name in lowercase with dashes ("Dana Tester" → dev:dana-tester), so history entries
-    /// from development are easy to tell apart. A publisher is an author too.
+    /// from development are easy to tell apart. A publisher is an author too. <paramref name="admin"/> adds the
+    /// separate admin role (browser access settings).
     /// </summary>
-    public static ClaimsPrincipal Principal(string name, string role)
+    public static ClaimsPrincipal Principal(string name, string role, bool admin = false)
     {
         name = name.Trim();
         var slug = new string(name.ToLowerInvariant().Select(c => char.IsAsciiLetterOrDigit(c) ? c : '-').ToArray()).Trim('-');
@@ -218,6 +226,7 @@ internal static class DevSignIn
             new("role", AdminActor.AuthorRole)
         };
         if (role == PublisherChoice) claims.Add(new Claim("role", AdminActor.PublisherRole));
+        if (admin) claims.Add(new Claim("role", AdminActor.AdminRole));
         claims.Add(new Claim(AdminAuth.SessionClaim, Guid.NewGuid().ToString("n")));
         return new ClaimsPrincipal(new ClaimsIdentity(claims, "dev-sign-in", "name", "role"));
     }

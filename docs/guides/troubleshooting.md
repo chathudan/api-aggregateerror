@@ -176,6 +176,7 @@ warning and doesn't block publishing.
 | 502/504 `server_error`, `unreachable`, `timeout` | The service's own health | The service owner. The app should retry later |
 | 429 `rate_limited` | Whether one user or app is calling in a loop | The app developer |
 | 500 `internal_error` | The gateway logs for the correlation id | The platform team |
+| The browser console says *blocked by CORS policy* (the web app gets no answer at all) | **Settings → Browser access (CORS)**: **Test an origin** with the page's origin. The Logs page shows "Browser origin … is not allowed" | Someone with the admin role adding the origin, written exactly (`https`, `www.`, port). See [Calling from a browser](for-app-developers.md#calling-from-a-browser) |
 
 Still stuck? Collect the correlation id, the endpoint and the time, and ask the platform team. Never send
 tokens, passwords or real customer data in the request.

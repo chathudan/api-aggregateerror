@@ -24,6 +24,9 @@ public sealed class GatewayApp : WebApplicationFactory<Program>
 
     public GatewayApp() => WriteConfig(_configDir);
 
+    /// <summary>The config folder this gateway serves, for tests that change it while it runs.</summary>
+    public string ConfigDir => _configDir;
+
     /// <summary>Extra configuration, e.g. a lower rate limit.</summary>
     public Dictionary<string, string> Settings { get; init; } = new();
 
@@ -95,12 +98,15 @@ public sealed class GatewayApp : WebApplicationFactory<Program>
             """);
     }
 
-    /// <summary>Answers people.test/api/people/P-1; everything else is 404.</summary>
+    /// <summary>Answers people.test/api/people/P-1; slow.test never answers in time; everything else is 404.</summary>
     private sealed class StubDownstream : HttpMessageHandler
     {
-        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct) =>
-            Task.FromResult(request.RequestUri is { Host: "people.test", AbsolutePath: "/api/people/P-1" }
+        protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct)
+        {
+            if (request.RequestUri?.Host == "slow.test") await Task.Delay(TimeSpan.FromSeconds(30), ct); // the step timeout cancels it
+            return request.RequestUri is { Host: "people.test", AbsolutePath: "/api/people/P-1" }
                 ? new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(PersonJson, Encoding.UTF8, "application/json") }
-                : new HttpResponseMessage(HttpStatusCode.NotFound));
+                : new HttpResponseMessage(HttpStatusCode.NotFound);
+        }
     }
 }

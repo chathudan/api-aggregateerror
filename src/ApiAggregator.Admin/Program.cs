@@ -4,7 +4,8 @@
 //   Pages     cookie sign-in: the development sign-in (Development) or OpenID Connect (Auth:Oidc)
 //   /admin/*  bearer tokens only (Auth:Authority / Auth:Audience, or /dev/token in Development)
 //
-// Roles: aggregator.author (services, sign-ins, drafts, Try it) and aggregator.publisher (also publish, roll back, delete).
+// Roles: aggregator.author (services, sign-ins, drafts, Try it), aggregator.publisher (also publish, roll back, delete)
+// and aggregator.admin (a separate role: browser access for the gateway, ADR 0015).
 
 using System.Text.Json;
 using ApiAggregator.Admin.Application;
@@ -13,6 +14,7 @@ using ApiAggregator.Admin.Hosting;
 using ApiAggregator.Admin.Services;
 using ApiAggregator.Engine;
 using ApiAggregator.Engine.Authoring;
+using ApiAggregator.Engine.BrowserAccess;
 using ApiAggregator.Engine.Config;
 using ApiAggregator.Engine.Logging.Live;
 using ApiAggregator.Hosting;
@@ -42,10 +44,16 @@ builder.Services.AddHttpClient(OpenApiImporter.HttpClientName)
     .ConfigureHttpClient(c => c.Timeout = TimeSpan.FromSeconds(10))
     .RemoveAllLoggers(); // no default HttpClient logging: it would write full URLs (see ServiceCollectionExtensions)
 builder.Services.AddSingleton<ISecretWriter, LocalSecretWriter>();
+// Browser access (CORS) for the GATEWAY (ADR 0015): the same Gateway:Cors limits the gateway reads, checked at startup
+// here too. This app itself answers no cross-origin requests: there is deliberately no AddCors/UseCors in it.
+var browserAccess = builder.Configuration.GetSection(BrowserAccessSettings.Section).Get<BrowserAccessSettings>() ?? new BrowserAccessSettings();
+OriginRules.ValidateSettings(browserAccess, builder.Environment.IsDevelopment());
 builder.Services.AddSingleton(sp => new AdminOptions
 {
     RequireTestBeforePublish = builder.Configuration.GetValue("Admin:RequireTestBeforePublish", true),
     CanSaveSecrets = builder.Environment.IsDevelopment(),
+    IsDevelopment = builder.Environment.IsDevelopment(),
+    BrowserAccess = browserAccess,
     ConfigDirectory = sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<FileConfigOptions>>().Value.Directory
 });
 builder.Services.AddSingleton<AdminService>();
@@ -96,7 +104,7 @@ if (app.Environment.IsDevelopment() && !string.IsNullOrEmpty(builder.Configurati
     // Development only: a bearer token for scripts calling /admin/* (and the gateway, which shares the dev key).
     app.MapGet("/dev/token", (string? sub, string? scope) => Results.Ok(new
     {
-        access_token = InboundAuth.CreateDevToken(builder.Configuration.GetSection("Auth"), sub ?? "dev-admin", scope ?? "aggregator.author aggregator.publisher customer.read")
+        access_token = InboundAuth.CreateDevToken(builder.Configuration.GetSection("Auth"), sub ?? "dev-admin", scope ?? "aggregator.author aggregator.publisher aggregator.admin customer.read")
     }));
 }
 

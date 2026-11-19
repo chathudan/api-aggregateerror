@@ -11,6 +11,7 @@
         <NavLink href="/endpoints">Endpoints</NavLink>
         <NavLink href="/services">Services</NavLink>
         <NavLink href="/logs">Logs</NavLink>
+        <NavLink href="/settings/browser-access">Settings</NavLink>
         <a href="@DocsUrl" target="_blank" rel="noopener">API docs <span aria-hidden="true">↗</span><span class="visually-hidden"> (opens in a new tab)</span></a>
         <NavLink href="/help">Help</NavLink>
     </nav>
@@ -21,7 +22,7 @@
     @if (_me is not null)
     {
         <div class="who">
-            <span>@_me.Label · @(_me.IsPublisher ? "Publisher" : _me.IsAuthor ? "Author" : "No role")</span>
+            <span>@_me.Label · @RoleLabel(_me)</span>
             <form method="post" action="/signout">
                 <AntiforgeryToken />
                 <button class="link" type="submit">Sign out</button>
@@ -37,6 +38,18 @@
 @code {
     private bool _sampleData;
     private AdminActor? _me;
+
+    private static string RoleLabel(AdminActor me)
+    {
+        var role = me.IsPublisher ? "Publisher" : me.IsAuthor ? "Author" : null;
+        return (role, me.IsAdmin) switch
+        {
+            (not null, true) => $"{role} · Admin",
+            (not null, false) => role,
+            (null, true) => "Admin",
+            _ => "No role"
+        };
+    }
 
     private string DocsUrl => (Config["Gateway:BaseUrl"] ?? "http://localhost:5200/").TrimEnd('/') + "/bff/docs";
 

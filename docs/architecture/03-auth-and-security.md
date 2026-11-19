@@ -12,8 +12,9 @@ flowchart LR
 
 1. **Inbound (caller → gateway, or a script → `/admin/*`).** A JWT validated by ASP.NET Core JWT bearer against
    your OpenID Connect provider (`Auth:Authority`, `Auth:Audience`). Each recipe can require a
-   **scope**, for example `customer.read`. Admin roles are `aggregator.author` and `aggregator.publisher`,
-   as scopes or role claims. People using the admin **pages** sign in separately, see
+   **scope**, for example `customer.read`. Admin roles are `aggregator.author`, `aggregator.publisher` and the
+   separate `aggregator.admin` (browser access settings, [ADR 0015](../adr/0015-cors-for-the-gateway.md)), as scopes
+   or role claims. People using the admin **pages** sign in separately, see
    [Admin sign-in](#admin-sign-in-and-csrf). In Development only, `Auth:DevSigningKey` enables a local token issuer at
    `/dev/token`. Startup **fails** if that key is set in any other environment.
 2. **Downstream (gateway → service).** Each service has an **auth profile**. The caller's token is
@@ -77,6 +78,7 @@ puts a password, secret, token or key value in plain text.
 | Browser/proxy caching of personal data | `Cache-Control: no-store`, `nosniff`, `no-referrer`; no `Server` header | Gateway |
 | Unreviewed changes going live | Drafts are separate; publish needs `aggregator.publisher` **and** a passing test of the exact draft. Checked inside `AdminService`, so pages and `/admin/*` follow the same rule | `AdminService` |
 | Cross-site request forgery on the admin app | `/admin/*` accepts bearer tokens only, never the page cookie; the cookie is `HttpOnly`, `SameSite=Lax`, `Secure`; sign-in and sign-out need an antiforgery token; the Blazor connection must come from the app's own origin | `AdminAuth` |
+| Other websites' pages reading answers (CORS) | CORS on `/bff/*` only, for exact listed origins (operations' settings plus admin entries within operations' patterns); never `Access-Control-Allow-Credentials`; methods and headers limited to what published recipes use; `*`, `null` and non-https (outside Development and localhost) refused; changes need `aggregator.admin` and are kept in append-only history. The admin app sends no CORS headers at all. CORS isn't access control: tokens and scopes still apply ([ADR 0015](../adr/0015-cors-for-the-gateway.md)) | `OriginRules`, `BffCorsPolicyProvider` |
 | SSRF via OpenAPI import | Admin-only; http(s) only; no redirects; optional host allow-list `Admin:OpenApiAllowedHosts` | `OpenApiImporter` |
 | Code injection through recipes | No scripting: a fixed path language and a fixed transform list | `ValuePath`, `Transforms` |
 
@@ -95,7 +97,7 @@ The admin app ([ADR 0014](../adr/0014-one-admin-app.md)) has two schemes that ne
 | | Pages | `/admin/*` |
 |---|---|---|
 | Credential | Cookie `aggregator.admin`: `HttpOnly`, `SameSite=Lax`, `Secure` outside Development, 8 hours sliding | Bearer token (JWT) only |
-| Who issues it | **Development:** `/signin`, a name and a role (author or publisher), no password. Only mapped in Development. **Production:** OpenID Connect, authorization code flow with PKCE (`Auth:Oidc:Authority`, `ClientId`, `ClientSecret` from Key Vault or user secrets; `RoleClaim`, default `roles`; `Scopes`) | Your identity provider, or `/dev/token` in Development |
+| Who issues it | **Development:** `/signin`, a name and a role (author or publisher, optionally also admin), no password. Only mapped in Development. **Production:** OpenID Connect, authorization code flow with PKCE (`Auth:Oidc:Authority`, `ClientId`, `ClientSecret` from Key Vault or user secrets; `RoleClaim`, default `roles`; `Scopes`) | Your identity provider, or `/dev/token` in Development |
 | CSRF | Sign-in and sign-out are POST forms with an antiforgery token. The Blazor connection (`/_blazor`) is refused when its `Origin` header isn't this app. `SameSite=Lax` keeps the cookie off cross-site posts, frames and WebSocket requests | The policies name only the bearer scheme, so the cookie is never read: a request with only the cookie gets **401** |
 
 - Outside Development the admin app **refuses to start** without `Auth:Oidc:Authority` and `ClientId`.
@@ -103,7 +105,8 @@ The admin app ([ADR 0014](../adr/0014-one-admin-app.md)) has two schemes that ne
 - The person's OIDC access token is kept in server memory only, keyed by a random session id (never in the
   cookie or the page), and is dropped on sign-out. It's used for Try it against "caller's own token" services
   and to read the gateway's live logs.
-- History records `by` (the person's `sub`) and `byName` (their display name, when the sign-in gives one).
+- History records `by` (the person's `sub`) and `byName` (their display name, when the sign-in gives one). So do
+  browser-access changes (`config/history/cors/`).
 
 ## Health and personal data (needs specialist review)
 

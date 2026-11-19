@@ -1,6 +1,7 @@
 // aggregator - validate and run recipes from the command line.
 //
-//   aggregator validate [--config ./config]                       validate every recipe (exit code 1 on problems; use in CI)
+//   aggregator validate [--config ./config]                       validate every recipe, auth profile and browser origin
+//                                                                 (exit code 1 on problems; use in CI)
 //   aggregator run <recipeId> [--route id=C-10042] [--query status=open] [--header X-Tenant=t1]
 //                  [--sub test-user] [--token <caller's token>] [--repeat 3] [--config ./config]
 //
@@ -13,6 +14,7 @@ using System.Diagnostics;
 using System.Text.Json;
 using ApiAggregator.Engine;
 using ApiAggregator.Engine.Auth;
+using ApiAggregator.Engine.BrowserAccess;
 using ApiAggregator.Engine.Config;
 using ApiAggregator.Engine.Execution;
 using ApiAggregator.Engine.Validation;
@@ -51,6 +53,15 @@ switch (args[0])
         var auth = host.Services.GetRequiredService<DownstreamAuthenticator>();
         foreach (var profile in snapshot.AuthProfiles)
             foreach (var problem in auth.Check(profile)) { Console.WriteLine($"FAIL auth-profile {profile.Id}: {problem}"); failed++; }
+        // Browser origins added in the admin app (cors.json, ADR 0015). The form only: the limits (patterns, plain http)
+        // are host settings, which the gateway checks again when it loads them.
+        foreach (var entry in snapshot.BrowserOrigins)
+        {
+            var check = OriginRules.CheckOrigin(entry.Origin, isDevelopment: true);
+            var problem = check.Problem ?? (check.Value != entry.Origin ? $"write it as {check.Value}, the form browsers send." : null)
+                ?? OriginRules.CheckNote(entry.Note);
+            if (problem is not null) { Console.WriteLine($"FAIL cors.json origin {entry.Origin}: {problem}"); failed++; }
+        }
         Console.WriteLine(failed == 0 ? "All good." : $"{failed} problem(s).");
         return failed == 0 ? 0 : 1;
     }

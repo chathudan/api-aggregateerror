@@ -1,5 +1,6 @@
 using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
+using ApiAggregator.Engine.BrowserAccess;
 using ApiAggregator.Engine.Config;
 using ApiAggregator.Engine.Execution;
 using ApiAggregator.Engine.Validation;
@@ -20,6 +21,12 @@ public sealed class AdminOptions
 
     /// <summary>The config folder, to tell whether it's the sample data (it carries SAMPLE-DATA.md).</summary>
     public string ConfigDirectory { get; init; } = "config";
+
+    /// <summary>The browser-access limits operations set (Gateway:Cors), the same values the gateway reads.</summary>
+    public BrowserAccessSettings BrowserAccess { get; init; } = new();
+
+    /// <summary>Development allows plain http:// origins (ADR 0015).</summary>
+    public bool IsDevelopment { get; init; }
 }
 
 /// <summary>Saves a secret value (Development only). The host provides it; the service never writes files itself.</summary>
@@ -88,3 +95,25 @@ public sealed record HistoryRow(int Version, HistoryAction Action, DateTimeOffse
 public sealed record RollbackResult(string Id, int Version, int RestoredFrom);
 
 public sealed record EndpointDeleted(string Id, int? UnpublishedVersion, bool DraftDiscarded);
+
+// ---------------------------------------------------------------- browser access (CORS, ADR 0015)
+
+/// <summary>
+/// The Browser access page: which websites may call /bff/* from a browser, and what they may send. Credentials are
+/// never allowed (<see cref="AllowsCredentials"/> is always false; it's there so the page and scripts can say so).
+/// </summary>
+public sealed record BrowserAccessView(
+    IReadOnlyList<AllowedOrigin> Origins,
+    IReadOnlyList<SkippedOrigin> Skipped,
+    IReadOnlyList<string> Patterns,
+    IReadOnlyList<string> Methods,
+    IReadOnlyList<string> Headers,
+    IReadOnlyList<string> ExposedHeaders,
+    int PreflightMaxAgeSeconds,
+    bool AllowsCredentials,
+    int MaxAdminEntries,
+    bool CanChange);
+
+public sealed record AddOriginRequest(string? Origin, string? Note);
+public sealed record OriginTestRequest(string? Origin);
+public sealed record OriginRemoved(string Origin);

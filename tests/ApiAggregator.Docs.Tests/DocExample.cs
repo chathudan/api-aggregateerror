@@ -15,7 +15,8 @@ namespace ApiAggregator.Docs.Tests;
 /// <list type="bullet">
 /// <item><c>run &lt;recipe&gt; [CLI options]</c>: runs <c>aggregator run</c> against the mocks.</item>
 /// <item><c>validate</c>: runs <c>aggregator validate</c>.</item>
-/// <item><c>gateway &lt;METHOD&gt; &lt;path&gt; [scope=a,b | token=none] [header:Name=value]</c>: calls the gateway as an app would.</item>
+/// <item><c>gateway &lt;METHOD&gt; &lt;path&gt; [scope=a,b | token=none] [header:Name=value] [cors-headers]</c>: calls the gateway as an
+/// app would. With <c>cors-headers</c> the output is the response's <c>Access-Control-*</c> and <c>Vary</c> headers, one per line.</item>
 /// </list>
 /// Options for every kind: <c>expect=502</c> (expected HTTP status, default 200) and <c>partial</c> (the guide shows only
 /// some properties of each object). A <c>json</c> block is compared as JSON; a <c>text</c> block's lines must appear in

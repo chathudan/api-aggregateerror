@@ -6,6 +6,7 @@ using System.Text.Json.Nodes;
 using ApiAggregator.Engine;
 using ApiAggregator.Engine.Auth;
 using ApiAggregator.Engine.Authoring;
+using ApiAggregator.Engine.BrowserAccess;
 using ApiAggregator.Engine.Config;
 using ApiAggregator.Engine.Execution;
 using ApiAggregator.Engine.Model;
@@ -46,6 +47,12 @@ public sealed class AdminService(
 
     private static AdminFailure? NeedsPublisher(AdminActor actor) =>
         actor.IsPublisher ? null : Refuse.Forbidden("You need the publisher role to do this. Ask a publisher.");
+
+    private static AdminFailure? NeedsAnyRole(AdminActor actor) =>
+        actor.HasAnyRole ? null : Refuse.Forbidden("You need the author, publisher or admin role to see this.");
+
+    private static AdminFailure? NeedsAdmin(AdminActor actor) =>
+        actor.IsAdmin ? null : Refuse.Forbidden("You need the admin role to change browser access. Ask an administrator.");
 
     // ---------------------------------------------------------------- services and endpoints
 
@@ -400,6 +407,104 @@ public sealed class AdminService(
         }
         finally { _liveChanges.Release(); }
     }
+
+    // ---------------------------------------------------------------- browser access (CORS, ADR 0015)
+
+    /// <summary>What the gateway allows browsers to do, built exactly as the gateway builds it. Anyone with a role may look.</summary>
+    public async Task<AdminResult<BrowserAccessView>> GetBrowserAccessAsync(AdminActor actor, CancellationToken ct = default)
+    {
+        if (NeedsAnyRole(actor) is { } no) return no;
+        var policy = await BrowserPolicy(ct);
+        return new BrowserAccessView(policy.Origins, policy.Skipped, policy.Patterns, policy.Methods, policy.Headers,
+            BrowserAccessPolicy.ExposedHeaders, policy.PreflightMaxAgeSeconds, AllowsCredentials: false, OriginRules.MaxAdminEntries, actor.IsAdmin);
+    }
+
+    /// <summary>"Test an origin": would a page on this origin be allowed, and why.</summary>
+    public async Task<AdminResult<OriginTest>> TestOriginAsync(AdminActor actor, OriginTestRequest request, CancellationToken ct = default)
+    {
+        if (NeedsAnyRole(actor) is { } no) return no;
+        return (await BrowserPolicy(ct)).Test(request.Origin, options.IsDevelopment);
+    }
+
+    /// <summary>Adds an origin within the operations limits. Recorded in the history; the gateway applies it without a restart.</summary>
+    public async Task<AdminResult<BrowserOrigin>> AddBrowserOriginAsync(AdminActor actor, AddOriginRequest request, CancellationToken ct = default)
+    {
+        if (NeedsAdmin(actor) is { } no) return no;
+        var note = string.IsNullOrWhiteSpace(request.Note) ? null : request.Note.Trim();
+
+        await _liveChanges.WaitAsync(ct);
+        try
+        {
+            var current = (await store.GetSnapshotAsync(ct)).BrowserOrigins;
+            var check = OriginRules.CheckAdminEntry(request.Origin, note, current, options.BrowserAccess, options.IsDevelopment);
+            if (!check.Ok) return Refuse.BadRequest(check.Problem, ("field", check.Problem == OriginRules.CheckNote(note) ? "note" : "origin"));
+
+            var now = DateTimeOffset.UtcNow;
+            var added = new BrowserOrigin { Origin = check.Value!, Note = note, AddedAt = now, AddedBy = actor.Subject, AddedByName = actor.DisplayName };
+            var change = new BrowserAccessHistoryEntry
+            {
+                Number = await NextBrowserAccessNumber(ct), Action = BrowserAccessAction.Added, Origin = added.Origin, Note = note,
+                At = now, By = actor.Subject, ByName = actor.DisplayName
+            };
+            try { await store.SaveBrowserOriginsAsync([.. current, added], change, ct); }
+            catch (HistoryConflictException) { return ChangedMeanwhile(); }
+
+            log.LogInformation("Browser access change {Number} ({Action}) by {Subject}", change.Number, change.Action, actor.Subject);
+            return added;
+        }
+        finally { _liveChanges.Release(); }
+    }
+
+    /// <summary>Removes an origin added here. Origins operations set can only be changed in the app settings.</summary>
+    public async Task<AdminResult<OriginRemoved>> RemoveBrowserOriginAsync(AdminActor actor, string? origin, CancellationToken ct = default)
+    {
+        if (NeedsAdmin(actor) is { } no) return no;
+        var value = origin?.Trim() ?? "";
+
+        await _liveChanges.WaitAsync(ct);
+        try
+        {
+            var current = (await store.GetSnapshotAsync(ct)).BrowserOrigins;
+            // Match the entry as stored, so an entry the gateway skips (not in the exact form) can still be removed.
+            var entry = current.FirstOrDefault(e => string.Equals(e.Origin, value, StringComparison.OrdinalIgnoreCase));
+            if (entry is null)
+            {
+                var canonical = OriginRules.CheckOrigin(value, isDevelopment: true).Value;
+                return canonical is not null && OriginRules.OperationsOrigins(options.BrowserAccess, options.IsDevelopment).Contains(canonical)
+                    ? Refuse.BadRequest("Operations set this origin in the app settings, so it can't be removed here. Ask operations.")
+                    : Refuse.NotFound("That origin isn't on the list.");
+            }
+
+            var change = new BrowserAccessHistoryEntry
+            {
+                Number = await NextBrowserAccessNumber(ct), Action = BrowserAccessAction.Removed, Origin = entry.Origin, Note = entry.Note,
+                At = DateTimeOffset.UtcNow, By = actor.Subject, ByName = actor.DisplayName
+            };
+            try { await store.SaveBrowserOriginsAsync(current.Where(e => e != entry).ToList(), change, ct); }
+            catch (HistoryConflictException) { return ChangedMeanwhile(); }
+
+            log.LogInformation("Browser access change {Number} ({Action}) by {Subject}", change.Number, change.Action, actor.Subject);
+            return new OriginRemoved(entry.Origin);
+        }
+        finally { _liveChanges.Release(); }
+    }
+
+    /// <summary>Who added or removed which origin, and when. Newest first.</summary>
+    public async Task<AdminResult<IReadOnlyList<BrowserAccessHistoryEntry>>> GetBrowserAccessHistoryAsync(AdminActor actor, CancellationToken ct = default)
+    {
+        if (NeedsAnyRole(actor) is { } no) return no;
+        return AdminResult<IReadOnlyList<BrowserAccessHistoryEntry>>.Success(await store.GetBrowserAccessHistoryAsync(ct));
+    }
+
+    private async Task<BrowserAccessPolicy> BrowserPolicy(CancellationToken ct) =>
+        BrowserAccessPolicy.From(await store.GetSnapshotAsync(ct), options.BrowserAccess, options.IsDevelopment);
+
+    /// <summary>History numbers are never reused, like recipe versions.</summary>
+    private async Task<int> NextBrowserAccessNumber(CancellationToken ct) =>
+        (await store.GetBrowserAccessHistoryAsync(ct)).Select(e => e.Number).DefaultIfEmpty(0).Max() + 1;
+
+    private static AdminFailure ChangedMeanwhile() =>
+        Refuse.Conflict("Someone else changed browser access at the same moment. Reload the page and try again.");
 
     // ---------------------------------------------------------------- helpers
 

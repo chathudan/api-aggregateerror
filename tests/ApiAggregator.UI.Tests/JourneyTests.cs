@@ -88,6 +88,49 @@ public class JourneyTests(StackFixture stack)
         await Expect(page.Locator(".log-table")).ToContainTextAsync("customer-profile");
     }
 
+    [UiFact]
+    public async Task Let_a_website_call_the_gateway_from_a_browser_then_take_it_away()
+    {
+        const string origin = "http://portal.localhost.test:4200"; // plain http is fine in Development
+        var page = await stack.OpenAsync("/settings/browser-access");
+
+        await page.GetByRole(AriaRole.Button, new() { Name = "Add origin", Exact = true }).ClickAsync();
+        await page.GetByRole(AriaRole.Textbox, new() { Name = "Origin", Exact = true }).FillAsync(origin);
+        await page.GetByLabel("Note").FillAsync("UI test portal");
+        await page.GetByRole(AriaRole.Button, new() { Name = "Add origin", Exact = true }).ClickAsync();
+        await Expect(page.Locator(".toast").First).ToContainTextAsync($"Added {origin}");
+        var list = page.GetByRole(AriaRole.Region, new() { Name = "Allowed origins" });
+        await Expect(list.GetByRole(AriaRole.Row, new() { Name = origin })).ToContainTextAsync("Added here");
+
+        // The gateway answers the browser's preflight for it, without a restart.
+        var allowed = await Poll(() => PreflightAllowsAsync(origin), ok => ok);
+        Assert.True(allowed, "The gateway should allow the new origin within a few seconds.\n" + stack.LogOf("ApiAggregator.Gateway"));
+
+        await page.GetByLabel("Origin to test").FillAsync(origin);
+        await page.GetByRole(AriaRole.Button, new() { Name = "Test", Exact = true }).ClickAsync();
+        await Expect(page.GetByRole(AriaRole.Status).Filter(new() { HasText = "Allowed" })).ToContainTextAsync($"Added here by {StackFixture.TesterName}");
+
+        // Remove asks first, and the history keeps both changes.
+        await list.GetByRole(AriaRole.Row, new() { Name = origin }).GetByRole(AriaRole.Button, new() { Name = "Remove" }).ClickAsync();
+        await page.GetByRole(AriaRole.Button, new() { Name = "Remove origin" }).ClickAsync();
+        await Expect(page.Locator(".toast", new() { HasText = $"Removed {origin}" })).ToBeVisibleAsync();
+        var history = page.Locator("section", new() { Has = page.GetByRole(AriaRole.Heading, new() { Name = "History" }) });
+        await Expect(history).ToContainTextAsync($"Removed {origin}");
+        await Expect(history).ToContainTextAsync($"Added {origin}");
+
+        Assert.False(await Poll(() => PreflightAllowsAsync(origin), ok => !ok), "The gateway should stop allowing the origin.");
+    }
+
+    private async Task<bool> PreflightAllowsAsync(string origin)
+    {
+        using var http = new HttpClient();
+        using var request = new HttpRequestMessage(HttpMethod.Options, stack.GatewayUrl + "/bff/customer/C-10042/profile");
+        request.Headers.Add("Origin", origin);
+        request.Headers.Add("Access-Control-Request-Method", "GET");
+        using var response = await http.SendAsync(request);
+        return response.Headers.TryGetValues("Access-Control-Allow-Origin", out var values) && values.Single() == origin;
+    }
+
     private static async Task<T> Poll<T>(Func<Task<T>> call, Func<T, bool> done)
     {
         var deadline = DateTime.UtcNow.AddSeconds(8);

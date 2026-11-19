@@ -20,6 +20,7 @@ decide. It doesn't give legal advice. The design detail is in
 | Secrets leaking from the configuration | Configuration holds secret **names** only. The admin app refuses plain values and never returns one |
 | Scripts or code hidden in endpoints | There's no scripting: a fixed path language and a fixed list of transforms |
 | Matching the wrong person's records together | Lists are combined only on an exact shared id, never on names, emails or dates of birth. The wizard warns if you try |
+| A web page on another website reading answers it shouldn't | Browser access (CORS) only on `/bff/*`, for listed origins, and never with cookies or credentials. `*` and `null` can't be listed; operations can limit which domains admins may add; only the admin role can change the list, and every change is kept. CORS isn't a permission: every call still needs a valid token and scope |
 | Personal data cached by browsers or proxies | Every response has `Cache-Control: no-store`, `X-Content-Type-Options: nosniff` and `Referrer-Policy: no-referrer` |
 | Overloading services | A per-user rate limit, timeouts, a 5 MB answer limit, at most 100 calls per "run for each" step, and at most 25 steps |
 | Error messages revealing internals | Apps get a code and a short message, never service answers, stack traces, sign-in names or secret names |

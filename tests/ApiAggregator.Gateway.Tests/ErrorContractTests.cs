@@ -1,3 +1,4 @@
+using ApiAggregator.Engine.BrowserAccess;
 using ApiAggregator.Engine.Config;
 using ApiAggregator.Engine.Model;
 using Microsoft.Extensions.DependencyInjection;
@@ -76,5 +77,7 @@ public class ErrorContractTests(GatewayApp app) : IClassFixture<GatewayApp>
         public Task<bool> UnpublishAsync(string id, ChangeInfo change, CancellationToken ct = default) => throw new InvalidOperationException(Message);
         public Task<IReadOnlyList<string>> GetHistoryIdsAsync(CancellationToken ct = default) => throw new InvalidOperationException(Message);
         public Task<IReadOnlyList<RecipeHistoryEntry>> GetHistoryAsync(string id, CancellationToken ct = default) => throw new InvalidOperationException(Message);
+        public Task SaveBrowserOriginsAsync(IReadOnlyList<BrowserOrigin> origins, BrowserAccessHistoryEntry change, CancellationToken ct = default) => throw new InvalidOperationException(Message);
+        public Task<IReadOnlyList<BrowserAccessHistoryEntry>> GetBrowserAccessHistoryAsync(CancellationToken ct = default) => throw new InvalidOperationException(Message);
     }
 }

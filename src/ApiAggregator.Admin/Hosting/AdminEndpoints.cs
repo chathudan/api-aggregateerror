@@ -29,6 +29,18 @@ internal static class AdminEndpoints
 
         static AdminActor Me(HttpContext http) => AdminActor.From(http.User);
 
+        // ------------------------------------------------------------ browser access (CORS for the gateway, ADR 0015)
+        // Its own group: admins who aren't authors may use it. Looking needs any role; changing needs the admin role.
+        // Origins contain ":" and "/", so they travel in the body or the query string, never in the path.
+        var cors = app.MapGroup("/admin/cors").RequireAuthorization(AdminAuth.ApiViewer).DisableAntiforgery();
+        cors.MapGet("", async (AdminService s, HttpContext h, CancellationToken ct) => (await s.GetBrowserAccessAsync(Me(h), ct)).ToHttp());
+        cors.MapGet("/history", async (AdminService s, HttpContext h, CancellationToken ct) => (await s.GetBrowserAccessHistoryAsync(Me(h), ct)).ToHttp());
+        cors.MapPost("/test", async (OriginTestRequest body, AdminService s, HttpContext h, CancellationToken ct) => (await s.TestOriginAsync(Me(h), body, ct)).ToHttp());
+        cors.MapPost("/origins", async (AddOriginRequest body, AdminService s, HttpContext h, CancellationToken ct) => (await s.AddBrowserOriginAsync(Me(h), body, ct)).ToHttp())
+            .RequireAuthorization(AdminAuth.ApiAdmin);
+        cors.MapDelete("/origins", async (string? origin, AdminService s, HttpContext h, CancellationToken ct) => (await s.RemoveBrowserOriginAsync(Me(h), origin, ct)).ToHttp())
+            .RequireAuthorization(AdminAuth.ApiAdmin);
+
         // ------------------------------------------------------------ services and endpoints
         admin.MapGet("/services", async (AdminService s, HttpContext h, CancellationToken ct) => (await s.GetServicesAsync(Me(h), ct)).ToHttp());
         admin.MapPut("/services/{id}", async (string id, ApiService body, AdminService s, HttpContext h, CancellationToken ct) => (await s.SaveServiceAsync(Me(h), id, body, ct)).ToHttp());

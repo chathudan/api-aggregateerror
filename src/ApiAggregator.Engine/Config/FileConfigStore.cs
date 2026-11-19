@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using ApiAggregator.Engine.BrowserAccess;
 using ApiAggregator.Engine.Logging;
 using ApiAggregator.Engine.Model;
 using Microsoft.Extensions.Logging;
@@ -22,9 +23,11 @@ public sealed class FileConfigOptions
 ///   config/auth-profiles.json     [ AuthProfile ]   (secrets are "secret:name" references only)
 ///   config/recipes/*.json         PUBLISHED recipes, one per file (what the gateway serves)
 ///   config/drafts/*.json          work in progress from the admin UI (never served)
+///   config/cors.json              { origins: [ BrowserOrigin ] } added in the admin app (ADR 0015)
 ///   config/history/               append-only history, for audit and rollback (ADR 0012):
 ///                                   <id>.v<n>.json              published or rolled back as version n
 ///                                   <id>.v<n>.unpublished.json  version n was taken down
+///                                   cors/<n>.json               change n to the browser origins (ADR 0015)
 /// </summary>
 public sealed class FileConfigStore : IConfigStore
 {
@@ -50,6 +53,8 @@ public sealed class FileConfigStore : IConfigStore
     private string RecipesDir => Path.Combine(_root, "recipes");
     private string DraftsDir => Path.Combine(_root, "drafts");
     private string HistoryDir => Path.Combine(_root, "history");
+    private string CorsFile => Path.Combine(_root, "cors.json");
+    private string CorsHistoryDir => Path.Combine(HistoryDir, "cors");
 
     public async ValueTask<ConfigSnapshot> GetSnapshotAsync(CancellationToken ct = default)
     {
@@ -187,6 +192,33 @@ public sealed class FileConfigStore : IConfigStore
         return Task.FromResult(ids);
     }
 
+    public async Task SaveBrowserOriginsAsync(IReadOnlyList<BrowserOrigin> origins, BrowserAccessHistoryEntry change, CancellationToken ct = default)
+    {
+        if (change.Number < 1) throw new ArgumentException("History numbers start at 1.");
+        await _gate.WaitAsync(ct);
+        try
+        {
+            System.IO.Directory.CreateDirectory(CorsHistoryDir);
+            // History first and write-once, as for recipes: if this number is taken, nothing changes.
+            await WriteOnceAsync(Path.Combine(CorsHistoryDir, $"{change.Number}.json"), JsonSerializer.Serialize(change, AggregatorJson.Options), ct);
+            await WriteAtomicAsync(CorsFile, JsonSerializer.Serialize(new BrowserAccessFile { Origins = origins.ToList() }, AggregatorJson.Options), ct);
+            _lastCheckUtc = DateTime.MinValue;
+        }
+        finally { _gate.Release(); }
+    }
+
+    public async Task<IReadOnlyList<BrowserAccessHistoryEntry>> GetBrowserAccessHistoryAsync(CancellationToken ct = default)
+    {
+        if (!System.IO.Directory.Exists(CorsHistoryDir)) return [];
+        var entries = new List<BrowserAccessHistoryEntry>();
+        foreach (var file in System.IO.Directory.EnumerateFiles(CorsHistoryDir, "*.json"))
+        {
+            await using var stream = File.OpenRead(file);
+            if (await JsonSerializer.DeserializeAsync<BrowserAccessHistoryEntry>(stream, AggregatorJson.Options, ct) is { } entry) entries.Add(entry);
+        }
+        return entries.OrderByDescending(e => e.Number).ToList();
+    }
+
     /// <summary>An ADR 0012 entry, or a file from before it: the bare recipe, without who and when.</summary>
     private static RecipeHistoryEntry? ReadHistoryEntry(string json)
     {
@@ -208,12 +240,13 @@ public sealed class FileConfigStore : IConfigStore
         var recipes = new List<Recipe>();
         foreach (var file in System.IO.Directory.EnumerateFiles(RecipesDir, "*.json").Order())
             if (await ReadRecipeAsync(file, ct) is { Status: RecipeStatus.Published } recipe) recipes.Add(recipe);
-        return new ConfigSnapshot(services, profiles, recipes, stamp);
+        var origins = File.Exists(CorsFile) ? (await ReadAsync<BrowserAccessFile>(CorsFile, ct))?.Origins ?? [] : [];
+        return new ConfigSnapshot(services, profiles, recipes, stamp, origins);
     }
 
     private string ComputeStamp()
     {
-        var files = new[] { ServicesFile, ProfilesFile }.Concat(System.IO.Directory.EnumerateFiles(RecipesDir, "*.json"));
+        var files = new[] { ServicesFile, ProfilesFile, CorsFile }.Concat(System.IO.Directory.EnumerateFiles(RecipesDir, "*.json"));
         long ticks = 0, count = 0;
         foreach (var f in files.Where(File.Exists))
         {
@@ -237,6 +270,12 @@ public sealed class FileConfigStore : IConfigStore
             throw new ArgumentException($"'{id}' is not a valid id.");
         if (id.Contains("..")) throw new ArgumentException($"'{id}' is not a valid id.");
         return Path.Combine(dir, id + ".json");
+    }
+
+    private static async Task<T?> ReadAsync<T>(string file, CancellationToken ct)
+    {
+        await using var stream = File.OpenRead(file);
+        return await JsonSerializer.DeserializeAsync<T>(stream, AggregatorJson.Options, ct);
     }
 
     private static async Task<List<T>> ReadListAsync<T>(string file, CancellationToken ct)

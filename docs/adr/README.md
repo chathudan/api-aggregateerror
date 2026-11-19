@@ -19,3 +19,4 @@ decision; write a new ADR that supersedes it. Use `.claude/skills/write-adr` or 
 | [0012](0012-history-entries-who-when-and-unpublish.md) | History entries record who and when; versions never reused; unpublish | Accepted |
 | [0013](0013-playwright-for-admin-ui-tests.md) | Playwright for admin UI tests and documentation screenshots (test-only) | Accepted |
 | [0014](0014-one-admin-app.md) | One admin app (UI + API), gateway separate; cookie for pages, bearer only for `/admin/*` | Accepted |
+| [0015](0015-cors-for-the-gateway.md) | CORS for the gateway, admin-editable within operations-set limits; never credentials | Accepted |

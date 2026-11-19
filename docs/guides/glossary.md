@@ -9,6 +9,7 @@ Words used in the admin UI and these guides, in plain English. The word in `code
 | **Auth profile** | The saved sign-in for a service: one or more sign-in steps | `service-k-key-and-login` |
 | **Base address** (`baseUrl`) | The part of a service's address every endpoint path is added to | `http://localhost:5100/a` |
 | **BFF** | *Backend for frontend*: a gateway shaped around what app screens need. All aggregated endpoints are under `/bff/` | |
+| **Browser access** (CORS) | Which other websites' pages may call the gateway from a browser and read the answer. Not a permission: calls still need a token | **Settings → Browser access (CORS)** |
 | **Cache** | A copy of an answer kept for a short time, so repeat calls are faster. Off unless turned on, and per user | `customer-profile`, 30 s |
 | **Combine lists** (`combine`) | Merging lists of the same kind of record from several services, on an exact shared id | `people-directory` |
 | **Condition** (`when`) | "Only run when": a step runs only if a value is true or equal to something | `{{a.body.isPremium}} == true` |
@@ -17,6 +18,7 @@ Words used in the admin UI and these guides, in plain English. The word in `code
 | **Endpoint (of a service)** | One operation of a service | `GET /customers/{customerId}` |
 | **Error code** (`code`) | The stable, machine-readable reason in an error answer | `auth_failed` |
 | **Gateway** | The program apps call. It runs the published endpoints | `http://localhost:5200` |
+| **Origin** | The start of a website's address: scheme, host and port only, no path | `https://portal.example.com` |
 | **History** | Every published version of an endpoint, with who and when. Never changed | `history/customer-overview.v3.json` |
 | **Input** | A value the caller may send: in the route, the query or a header. Nothing else gets through | `route.id`, `query.status` |
 | **Live** | The version apps get now | |

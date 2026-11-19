@@ -22,6 +22,7 @@
     <a href="/help#troubleshooting">Troubleshooting</a>
     <a href="/help#app-errors">Errors apps receive</a>
     <a href="/help#logs">Live logs</a>
+    <a href="/help#browser-access">Browser access (CORS)</a>
     <a href="/help#words">Words used here</a>
 </aside>
 
@@ -68,10 +69,11 @@
     <tbody>
         <tr><td>Author</td><td>Add services and their sign-ins, build endpoints, save drafts and use <strong>Try it</strong></td></tr>
         <tr><td>Publisher</td><td>Everything an author can, plus <strong>Publish</strong>, <strong>Roll back to this</strong> and <strong>Delete endpoint</strong></td></tr>
+        <tr><td>Admin</td><td>A separate role for the platform team: add and remove the websites allowed to call the gateway from a browser (<strong>Settings</strong>). It doesn't let you build or publish endpoints; ask for author or publisher too if you need them</td></tr>
     </tbody>
 </table>
 <ul>
-    <li><strong>On your own computer (development)</strong>, the sign-in asks only for a name and a role. There's no password. Pick <strong>Author</strong> to see what someone who can't publish sees.</li>
+    <li><strong>On your own computer (development)</strong>, the sign-in asks only for a name and a role (tick <strong>Also admin</strong> to try the Settings page). There's no password. Pick <strong>Author</strong> to see what someone who can't publish sees.</li>
     <li><strong>In test and production</strong>, you sign in with your organisation's account. Your role comes from there: ask your administrator if you need publisher.</li>
     <li>The history of each endpoint records who published it, with the name you signed in with.</li>
 </ul>
@@ -328,6 +330,7 @@
         <tr><td>Steps depend on each other in a loop</td><td>Step A uses step B and step B uses step A</td><td>Change one of the values so it comes from an earlier step or an input</td></tr>
         <tr><td>Header '…' can't be set here</td><td>Authorization and cookies are handled by the sign-in</td><td>Set it up under the service's <strong>Sign-in</strong> instead</td></tr>
         <tr><td>Run a successful test of this exact draft before publishing</td><td>The draft changed after the last test, or the test didn't pass</td><td>Choose <strong>Try it</strong> again, then <strong>Publish</strong></td></tr>
+        <tr><td>An app's page says <em>blocked by CORS policy</em></td><td>The website isn't on the browser access list, or is written differently (http/https, www., port)</td><td>Use <strong>Test an origin</strong> on <a href="/settings/browser-access">Settings → Browser access</a>; ask someone with the admin role to add it</td></tr>
         <tr><td>Couldn't read that spec</td><td>The spec address is wrong, needs a sign-in, or isn't OpenAPI</td><td>Open the address in a browser; ask the owner for the JSON or YAML spec address</td></tr>
     </tbody>
 </table>
@@ -373,10 +376,31 @@
 </section>
 
 @* ------------------------------------------------------------------ *@
+<section id="browser-access">
+<h2>Browser access (CORS) <GuideLink Guide="for-app-developers#calling-from-a-browser" /></h2>
+<p>A web app on another website, such as <code>https://portal.example.com</code>, can only read the gateway's answers if that website is on the list in <a href="/settings/browser-access">Settings → Browser access (CORS)</a>. Apps on phones and servers don't need this.</p>
+<ul>
+    <li><strong>Everyone with a role</strong> can see the list, see what browsers can send, and use <strong>Test an origin</strong>.</li>
+    <li><strong>People with the admin role</strong> can <strong>Add origin</strong> and <strong>Remove</strong> it. The gateway uses the change within a few seconds, without a restart. Every change is kept in the <strong>History</strong>, with who and when.</li>
+    <li>Origins marked <strong>Operations</strong> are set in the app settings by the platform team, and are changed there.</li>
+</ul>
+<p><strong>Writing an origin.</strong> Only the start of the address: <code>https://</code>, the host and, if it isn't the usual one, the port. No path and no slash at the end. <code>https://portal.example.com</code> is right; <code>https://portal.example.com/</code>, <code>https://portal.example.com/app</code> and <code>*</code> are refused. Outside development it must be <code>https://</code> (except <code>localhost</code>). Operations may limit which domains can be added, for example only <code>https://*.example.com</code>: the page says so when it refuses one.</p>
+<p><strong>Good to know.</strong></p>
+<ul>
+    <li>This isn't a permission. Apps still need a valid sign-in token and the endpoint's scope; it only lets the browser show the answer to the page.</li>
+    <li>Cookies are never accepted from other websites. Pages send their token in the Authorization header.</li>
+    <li>What browsers may send follows the published endpoints: publishing an endpoint with a header input allows that header straight away.</li>
+    <li>A browser may remember an answer for up to 10 minutes, so a removed website can keep working a little longer in a browser that already asked.</li>
+    <li>When a website that isn't on the list tries, the <strong>Logs</strong> page shows "Browser origin … is not allowed", with the website only.</li>
+</ul>
+</section>
+
+@* ------------------------------------------------------------------ *@
 <section id="words">
 <h2>Words used here <GuideLink Guide="glossary" /></h2>
 <dl>
     <dt>Service</dt><dd>A backend API the gateway calls, such as billing or orders.</dd>
+    <dt>Origin</dt><dd>The start of a website's address (scheme, host, port), for example <code>https://portal.example.com</code>. Used for browser access.</dd>
     <dt>Endpoint (of a service)</dt><dd>One operation of a service, for example <code>GET /invoices</code>.</dd>
     <dt>Aggregated endpoint</dt><dd>What apps call. It runs several steps and returns one answer.</dd>
     <dt>Step</dt><dd>One call to a service endpoint inside an aggregated endpoint.</dd>

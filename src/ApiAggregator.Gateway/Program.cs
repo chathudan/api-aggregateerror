@@ -4,6 +4,7 @@
 using System.Threading.RateLimiting;
 using ApiAggregator.Engine;
 using ApiAggregator.Engine.Authoring;
+using ApiAggregator.Engine.BrowserAccess;
 using ApiAggregator.Engine.Config;
 using ApiAggregator.Engine.Execution;
 using ApiAggregator.Engine.Logging.Live;
@@ -11,6 +12,7 @@ using ApiAggregator.Engine.Routing;
 using ApiAggregator.Gateway;
 using ApiAggregator.Hosting;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Cors.Infrastructure;
 using Microsoft.Extensions.Http.Resilience;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -54,6 +56,15 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
 // Who may read the live logs: the same people who author or publish recipes.
 builder.Services.AddAuthorizationBuilder()
     .AddPolicy("log-reader", p => p.RequireAssertion(c => InboundAuth.HasScope(c.User, "aggregator.author") || InboundAuth.HasScope(c.User, "aggregator.publisher")));
+
+// ---------------------------------------------------------------- browser access (CORS, ADR 0015)
+// /bff/* only. Origins: Gateway:Cors:AllowedOrigins (operations) plus those added in the admin app (config/cors.json),
+// within Gateway:Cors:AllowedOriginPatterns. Never credentials. Invalid settings stop the gateway here, with a plain message.
+var corsSettings = builder.Configuration.GetSection(BrowserAccessSettings.Section).Get<BrowserAccessSettings>() ?? new BrowserAccessSettings();
+OriginRules.ValidateSettings(corsSettings, builder.Environment.IsDevelopment());
+builder.Services.Configure<BrowserAccessSettings>(builder.Configuration.GetSection(BrowserAccessSettings.Section));
+builder.Services.AddCors();
+builder.Services.AddSingleton<ICorsPolicyProvider, BffCorsPolicyProvider>();
 
 // ---------------------------------------------------------------- abuse protection
 builder.Services.AddRateLimiter(o =>
@@ -104,11 +115,19 @@ app.Use(async (http, next) =>
         h.XContentTypeOptions = "nosniff";
         h.CacheControl = "no-store"; // responses may hold personal data: never cache in browsers or proxies
         h["Referrer-Policy"] = "no-referrer";
+        // The CORS answer depends on the Origin header. The framework only says so when several origins are allowed.
+        if (http.Request.Path.StartsWithSegments("/bff") && !h.Vary.Any(v => v?.Contains("Origin", StringComparison.OrdinalIgnoreCase) == true))
+            h.Append("Vary", "Origin");
         return Task.CompletedTask;
     });
     await next();
 });
 app.UseExceptionHandler();
+// Routing, then CORS (it answers preflights itself, so they never reach authentication, the rate limiter or the
+// catch-all), then authentication, authorization and the rate limiter. CORS headers on actual requests are added
+// as the response starts, so error responses (including the exception handler's) keep them.
+app.UseRouting();
+app.UseCors();
 app.UseAuthentication();
 app.UseAuthorization();
 app.UseRateLimiter();
@@ -206,7 +225,7 @@ app.Map("/bff/{**path}", async (HttpContext http, string? path, RecipeRouter rou
     // Temporary problems: tell well-behaved clients to wait a little before trying again.
     if (result.Retryable && result.StatusCode is 502 or 503 or 504) http.Response.Headers.RetryAfter = "5";
     return GatewayProblems.Result(result.Body, result.StatusCode);
-}).RequireRateLimiting("per-caller");
+}).RequireRateLimiting("per-caller").RequireCors(BffCorsPolicyProvider.PolicyName);
 
 // Development-only token issuer so QA can call the gateway without an identity provider.
 if (devTokenEnabled)

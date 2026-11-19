@@ -67,11 +67,17 @@ flowchart LR
 | `Gateway:OpenApi:Enabled` | true | Serves `/bff/openapi.json` (and `/bff/docs`); false gives 404 |
 | `Gateway:OpenApi:IncludeInternalDetails` | false | List internal service names in the spec (Development only in practice) |
 | `Gateway:ApiDocs:Enabled` | true in Development, else false | Swagger UI page at `/bff/docs` |
+| `Gateway:Cors:AllowedOrigins`, `AllowedOriginPatterns`, `PreflightMaxAgeSeconds` | none, none, 600 | Browser access to `/bff/*` ([ADR 0015](../adr/0015-cors-for-the-gateway.md)). The **same values on the gateway and the admin app**; admins add origins within the patterns |
 | `Auth:Authority`, `Auth:Audience` | — | Inbound JWT validation |
 | `Auth:DevSigningKey` | — | **Development only** |
 | `Secrets:<name>` | — | Development secrets. Use Key Vault in production |
 | `Admin:RequireTestBeforePublish` | true | Publish gate |
 | `Admin:OpenApiAllowedHosts` | [] | Optional import allow-list |
+
+**Request pipeline (gateway):** correlation id → request log → security headers → exception handler → routing →
+CORS → authentication → authorization → rate limiter → endpoint. Preflights stop at CORS (204), so they need no
+token and don't count towards the rate limit. CORS headers are added as the response starts, so every error keeps
+them. The admin app has no CORS middleware.
 
 ## Observability
 

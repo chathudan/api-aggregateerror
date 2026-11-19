@@ -219,3 +219,10 @@ details.more .menu { position: absolute; right: 0; top: calc(100% + 4px); z-inde
 .signin legend { padding: 0 4px; font-weight: 500; }
 .signin .button.primary { align-self: flex-start; }
 .banner.info { background: #eef4fb; border: 1px solid #b6cde6; }
+
+/* Browser access (CORS) page */
+.page-head .actions .button { white-space: nowrap; }
+.banner.warn { background: #fdf6e7; border: 1px solid #e6cf9a; } .banner.warn > .pill-icon { color: #8a5a00; }
+.facts { display: grid; grid-template-columns: minmax(140px, 240px) 1fr; gap: 6px 16px; margin: 8px 0; }
+.facts dt { color: var(--muted); } .facts dd { margin: 0; overflow-wrap: anywhere; }
+@media (max-width: 640px) { .facts { grid-template-columns: 1fr; } .facts dd { margin-bottom: 6px; } }

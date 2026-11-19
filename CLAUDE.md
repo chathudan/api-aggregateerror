@@ -41,6 +41,9 @@ service (Basic, session login, OAuth/JWT, API key, pass-through) in any combinat
   buttons. A signed-in person's access token stays in server memory, never in the cookie or the page.
 - Logs never contain request or response values; log ids, statuses and timings.
 - Responses carry `Cache-Control: no-store`.
+- **CORS only on `/bff/{**path}`, never with credentials** (ADR 0015). Origins are exact (`OriginRules`: no `*`,
+  `null`, paths or plain http outside Development/localhost); admin entries must fit `Gateway:Cors:AllowedOriginPatterns`
+  and the gateway re-checks them. Changing them needs `aggregator.admin` (a separate role). The admin app has no CORS.
 - **History is append-only.** Entries are written once and never changed; version numbers are never
   reused. Publish, roll back and delete endpoint need `aggregator.publisher` (ADR 0012).
 - `Auth:DevSigningKey` is Development-only (startup fails otherwise).
@@ -58,11 +61,12 @@ If a change touches any of these, run the `security-review` skill and add or adj
 | `…/Validation` | `RecipeValidator`: all plain-English checks |
 | `…/Execution` | `InputBinder`, `RequestBuilder`, `CompositionExecutor`, `Conditions`, `ResponseCache` |
 | `…/Auth` | `IAuthStep` + `Steps/*`, `DownstreamAuthenticator`, `DownstreamCredentialCache` |
-| `…/Config` | `IConfigStore`, `FileConfigStore` (published / drafts / history), `RecipeHistoryEntry` (ADR 0012), `ConfigSnapshot` |
+| `…/Config` | `IConfigStore`, `FileConfigStore` (published / drafts / history / `cors.json`), `RecipeHistoryEntry` (ADR 0012), `ConfigSnapshot` |
+| `…/BrowserAccess` | `OriginRules`, `BrowserAccessPolicy` (CORS for `/bff/*`, ADR 0015): shared by the gateway, the admin app and the CLI |
 | `…/Authoring` | `SourceCatalog` (wizard dropdown options, schema inference), `AutoBinder` (pre-filled values) |
-| `src/ApiAggregator.Gateway` | `Program.cs` (one handler for `/bff/{**path}`), `ApiDocsPage` (Swagger UI at `/bff/docs`); the spec comes from `Engine/Authoring/OpenApiDocumentBuilder` |
-| `src/ApiAggregator.Admin.Application` | `AdminService`: every admin use case with its rules and **role checks** (author / publisher), `AdminActor`, `AdminResult`, `OpenApiImporter`. No ASP.NET Core types (ADR 0014) |
-| `src/ApiAggregator.Admin` | The admin app on :5300 (ADR 0014). `Hosting/`: `AdminAuth` (cookie for pages, bearer only for `/admin/*`, dev sign-in, OIDC), `AdminEndpoints` (thin `/admin/*` wrappers over `AdminService`). Pages: `SignIn`, `Home` (dashboard), `Endpoints`, `EndpointEditor` (wizard: stepper, problems next to fields, run-order lanes, sticky footer), `Services`, `Logs`, `Help`. Shared: `PageShell` (every page: one primary action), `StatusPill` (icon + word, never colour alone), `ConfirmBox`, `ErrorBanner`, `Toasts`/`ToastService`, `FieldIssues`, `StepFlow`, `EmptyState`, `Loading`, `SignInEditor`. `Services/`: `CurrentUser` (the signed-in person), `LiveLogClient`, form models (`RecipeForm`, `SignInForm` + `SignInKinds`, `ServiceForms`) |
+| `src/ApiAggregator.Gateway` | `Program.cs` (one handler for `/bff/{**path}`), `BffCorsPolicyProvider` (CORS, rebuilt per config version), `ApiDocsPage` (Swagger UI at `/bff/docs`); the spec comes from `Engine/Authoring/OpenApiDocumentBuilder` |
+| `src/ApiAggregator.Admin.Application` | `AdminService`: every admin use case with its rules and **role checks** (author / publisher / admin), `AdminActor`, `AdminResult`, `OpenApiImporter`. No ASP.NET Core types (ADR 0014) |
+| `src/ApiAggregator.Admin` | The admin app on :5300 (ADR 0014). `Hosting/`: `AdminAuth` (cookie for pages, bearer only for `/admin/*`, dev sign-in, OIDC), `AdminEndpoints` (thin `/admin/*` wrappers over `AdminService`). Pages: `SignIn`, `Home` (dashboard), `Endpoints`, `EndpointEditor` (wizard: stepper, problems next to fields, run-order lanes, sticky footer), `Services`, `Logs`, `BrowserAccess` (Settings → Browser access (CORS)), `Help`. Shared: `PageShell` (every page: one primary action), `StatusPill` (icon + word, never colour alone), `ConfirmBox`, `ErrorBanner`, `Toasts`/`ToastService`, `FieldIssues`, `StepFlow`, `EmptyState`, `Loading`, `SignInEditor`. `Services/`: `CurrentUser` (the signed-in person), `LiveLogClient`, form models (`RecipeForm`, `SignInForm` + `SignInKinds`, `ServiceForms`) |
 | `src/ApiAggregator.Hosting` | `InboundAuth` (JWT setup, scopes, caller context), `LocalSecrets` (Development-only secrets file) |
 | `tools/ApiAggregator.Cli` | `aggregator validate | run` |
 | `samples/MockServices` | Service A (Basic `svc-a/pass-a`), B (session `svc-b/pass-b`), C (OAuth `client-c/secret-c`), D (API key `X-Api-Key: key-d`, spec at `/d/openapi.json`, not in the sample config: use it to try **Add service**); B also has `POST /b/orders/search` (body); I fixed token (`token-i`), J the caller's token, K API key `key-k` + login `svc-k/pass-k`; E Identity, F CRM, G Billing, H Links: people data for **Combine lists** (`PeopleSamples.cs`, explained in `samples/README.md`). All on :5100 |

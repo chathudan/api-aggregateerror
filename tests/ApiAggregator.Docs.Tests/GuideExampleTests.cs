@@ -85,7 +85,9 @@ public sealed partial class GuideExampleTests(DocsStack stack) : IClassFixture<D
         var scope = example.Option("token") == "none" ? null : example.Option("scope") ?? "customer.read";
         var headers = words.Where(w => w.StartsWith("header:", StringComparison.Ordinal))
             .Select(w => w["header:".Length..].Split('=', 2)).Select(p => (p[0], p[1]));
-        var (status, body) = await stack.CallGatewayAsync(words[0], words[1], scope, headers);
+        var (status, body, cors) = await stack.CallGatewayAsync(words[0], words[1], scope, headers);
+        // cors-headers: the guide shows the browser-access headers instead of the body (e.g. a preflight, which has none).
+        if (words.Contains("cors-headers")) return (status, string.Join("\n", cors), null);
         return (status, body, body.Length == 0 ? null : body);
     }
 

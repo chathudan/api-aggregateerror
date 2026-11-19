@@ -90,7 +90,7 @@ sequenceDiagram
     participant C as Service C
 
     App->>GW: GET /bff/customer/C-1/overview (Bearer JWT)
-    GW->>GW: validate JWT, scope, rate limit
+    GW->>GW: CORS (browser callers), validate JWT, scope, rate limit
     GW->>EX: recipe + inputs + caller
     EX->>EX: validate inputs (declared only)
     EX->>EX: response cache? (if enabled, per caller)

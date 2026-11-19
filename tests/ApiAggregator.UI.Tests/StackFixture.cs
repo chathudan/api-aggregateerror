@@ -16,7 +16,7 @@ public sealed class UiCollection : ICollectionFixture<StackFixture>
 /// <summary>
 /// The whole product, running for real: mocks, gateway and the admin app (the built apps, each its own process,
 /// Development settings) on free ports, over a temporary copy of samples/config. Plus one headless Chromium, signed in
-/// once through the development sign-in (as a publisher), so every page opens signed in.
+/// once through the development sign-in (as a publisher and admin), so every page opens signed in.
 /// Started once for all UI tests. Does nothing when the browsers aren't installed (the tests are skipped then).
 /// </summary>
 public sealed class StackFixture : IAsyncLifetime
@@ -60,13 +60,14 @@ public sealed class StackFixture : IAsyncLifetime
 
     private string? _signedIn; // browser storage (the sign-in cookie) after signing in once
 
-    /// <summary>Signs in through the real development sign-in page, as a publisher, and keeps the cookie.</summary>
+    /// <summary>Signs in through the real development sign-in page, as a publisher who is also an admin, and keeps the cookie.</summary>
     private async Task<string> SignInOnceAsync()
     {
         var page = await NewAnonymousPageAsync();
         await page.GotoAsync("/signin");
         await page.GetByLabel("Your name").FillAsync(TesterName);
         await page.GetByLabel("Publisher").CheckAsync();
+        await page.GetByLabel("Also admin").CheckAsync(); // for the Browser access page
         await page.GetByRole(AriaRole.Button, new() { Name = "Sign in" }).ClickAsync();
         await page.WaitForURLAsync(url => !url.Contains("/signin"));
         var state = await page.Context.StorageStateAsync();

@@ -249,6 +249,70 @@ Show the screen without that part. Don't treat `null` as zero: "no loyalty point
 }
 ```
 
+## Calling from a browser
+
+A web page on another website (another *origin*, such as `https://portal.example.com`) can call the gateway
+only if that origin is on the gateway's **browser access** list. Otherwise the browser makes the call but
+won't let your page read the answer, and the console says *blocked by CORS policy*. Apps on phones and
+servers aren't affected.
+
+- **Ask for your origin to be added.** Someone with the admin role adds it in the admin app
+  (**Settings → Browser access (CORS)**), or operations add it to the gateway's settings. An origin is the
+  scheme, host and port only: `https://portal.example.com`, no path and no slash at the end. In development,
+  `http://localhost:3000` and `http://localhost:5173` are already allowed.
+- **Send your token in `Authorization`.** Cookies and credentials are never accepted cross-origin, so don't
+  set `credentials: "include"`.
+- **CORS isn't a permission.** It only lets the browser show you the answer. Every call still needs a valid
+  token with the endpoint's scope.
+
+Before the real call, the browser asks the gateway what it may send (a *preflight*). The answer lists the
+allowed origin, methods and headers. Headers come from what the published endpoints accept, so an endpoint
+with a `header.X-Tenant` input adds `X-Tenant`:
+
+<!-- check: gateway OPTIONS /bff/customer/C-10042/summary token=none header:Origin=http://localhost:5173 header:Access-Control-Request-Method=GET header:Access-Control-Request-Headers=authorization,x-correlation-id expect=204 cors-headers -->
+```text
+Access-Control-Allow-Headers: Authorization,Content-Type,X-Correlation-Id
+Access-Control-Allow-Methods: GET,OPTIONS
+Access-Control-Allow-Origin: http://localhost:5173
+Access-Control-Max-Age: 600
+Vary: Origin
+```
+
+The real answer then says which headers your page may read: `X-Correlation-Id`, `X-Aggregator-Partial`,
+`X-Aggregator-Cache` and `Retry-After`. Error answers carry the same headers, so your page can read the error
+body and its `correlationId`:
+
+<!-- check: gateway GET /bff/customer/C-10042/summary header:Origin=http://localhost:5173 cors-headers -->
+```text
+Access-Control-Allow-Origin: http://localhost:5173
+Access-Control-Expose-Headers: X-Correlation-Id,X-Aggregator-Partial,X-Aggregator-Cache,Retry-After
+Vary: Origin
+```
+
+A page on an origin that isn't on the list gets no `Access-Control-Allow-Origin`, and the gateway logs the
+origin (never the path) so support can see it on the **Logs** page.
+
+```ts
+// On https://portal.example.com, signed in with your identity provider (accessToken from its SDK).
+const response = await fetch("https://bff.example/bff/customer/C-10042/summary", {
+  headers: { Authorization: `Bearer ${accessToken}`, "X-Correlation-Id": crypto.randomUUID() },
+  // No credentials: "include". The token is the credential.
+});
+const correlationId = response.headers.get("X-Correlation-Id"); // readable: the gateway exposes it
+if (!response.ok) {
+  const problem = await response.json(); // readable too: errors carry the CORS headers
+  console.warn(`Gateway said ${problem.code}. Reference: ${problem.correlationId ?? correlationId}`);
+} else {
+  const summary = await response.json();
+  if (response.headers.get("X-Aggregator-Partial") === "true") { /* some parts are null; see _errors */ }
+}
+```
+
+If the console still says *blocked by CORS policy*: check that the origin on the list matches the page's
+address exactly (`https` vs `http`, `www.`, the port), and use **Test an origin** on the Browser access page.
+
+![The Browser access page in the admin app: allowed origins, Test an origin, and what browsers can send](../images/browser-access.png)
+
 ## C# (.NET MAUI, or any HttpClient)
 
 ```csharp

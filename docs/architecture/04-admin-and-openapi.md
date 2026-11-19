@@ -34,9 +34,20 @@ examples there, which `check-docs.sh` keeps true, are one click away.
 | Developer / admin | Register services, set up auth profiles and secret references | `aggregator.author` (profiles and services) |
 | QA / technician | Build aggregated endpoints in the wizard, run "Try it", save drafts | `aggregator.author` |
 | Approver | Publish, roll back and delete endpoints | `aggregator.publisher` (includes author) |
+| Platform admin | Add and remove the websites allowed to call `/bff/*` from a browser (**Settings → Browser access (CORS)**). Authors and publishers can look and use **Test an origin** | `aggregator.admin` (separate: gives no author or publisher rights) |
 
-In Development, `/signin` asks for a name and a role. In production the role comes from the identity provider
-(app roles named `aggregator.author` and `aggregator.publisher`; the claim is set by `Auth:Oidc:RoleClaim`).
+In Development, `/signin` asks for a name, a role and whether you are also an admin. In production the roles come
+from the identity provider (app roles named `aggregator.author`, `aggregator.publisher` and `aggregator.admin`; the
+claim is set by `Auth:Oidc:RoleClaim`).
+
+## Browser access (CORS) page
+
+**Settings → Browser access (CORS)** (`/settings/browser-access`, [ADR 0015](../adr/0015-cors-for-the-gateway.md)):
+the origins the gateway allows (source *Operations* or *Added here*, note, who and when), entries the gateway
+skips with the reason, **Add origin** and **Remove** (with a confirm box) for admins, **History**, a read-only
+*What browsers can send* panel (methods, headers, exposed headers, max age, never credentials) and **Test an
+origin**. Everything is built by `BrowserAccessPolicy`, the same code the gateway uses, from `cors.json` and the
+`Gateway:Cors:*` settings (which must be the same on both apps).
 
 Technicians **never see credentials**. They pick services that are already set up.
 
@@ -188,4 +199,9 @@ here (401). Roles are checked by the endpoint policy and again by `AdminService`
 | `POST /admin/recipes/{id}/publish` | **publisher** | Make it live |
 | `GET /admin/recipes/{id}/history` | author | Entries newest first: `version`, `action`, `at`, `by`, `restoredFrom`, `isLive` |
 | `GET /admin/recipes/{id}/history/{v}` | author | One version's recipe (read only) |
+| `GET /admin/cors` | any role | Browser access: `origins` (with `source`), `skipped`, `patterns`, `methods`, `headers`, `exposedHeaders`, `preflightMaxAgeSeconds`, `allowsCredentials` (always false), `canChange` |
+| `GET /admin/cors/history` | any role | Browser-access changes newest first: `number`, `action` (`added`/`removed`), `origin`, `note`, `at`, `by`, `byName` |
+| `POST /admin/cors/test` `{ "origin" }` | any role | `{ "allowed", "reason" }` |
+| `POST /admin/cors/origins` `{ "origin", "note" }` | **admin** | Add an origin. 400 with `title` and `field` when it isn't allowed |
+| `DELETE /admin/cors/origins?origin=` | **admin** | Remove an origin added here (400 for one operations set, 404 if not listed) |
 | `POST /admin/recipes/{id}/rollback/{v}` | **publisher** | Publish version v's content as a new version |

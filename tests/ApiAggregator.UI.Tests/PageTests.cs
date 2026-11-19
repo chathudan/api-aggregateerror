@@ -8,7 +8,7 @@ namespace ApiAggregator.UI.Tests;
 [Collection(UiCollection.Name)]
 public class PageTests(StackFixture stack)
 {
-    private static readonly string[] Pages = ["/", "/endpoints", "/endpoints/new", "/endpoints/customer-overview", "/services", "/logs", "/help", "/signin"];
+    private static readonly string[] Pages = ["/", "/endpoints", "/endpoints/new", "/endpoints/customer-overview", "/services", "/logs", "/settings/browser-access", "/help", "/signin"];
 
     private static readonly HashSet<string> Interactive = ["textbox", "searchbox", "combobox", "checkbox", "radio", "button", "link", "spinbutton", "menuitem"];
 
@@ -97,6 +97,12 @@ public class PageTests(StackFixture stack)
         var logs = await stack.OpenAsync("/logs");
         await Expect(logs.Locator(".log-row").First).ToBeVisibleAsync(new() { Timeout = 20_000 });
         await Save(logs, "logs", fullPage: false);
+
+        var access = await stack.OpenAsync("/settings/browser-access");
+        await access.GetByLabel("Origin to test").FillAsync("http://localhost:5173");
+        await access.GetByRole(AriaRole.Button, new() { Name = "Test", Exact = true }).ClickAsync();
+        await Expect(access.GetByRole(AriaRole.Status).Filter(new() { HasText = "Allowed" })).ToBeVisibleAsync();
+        await Save(access, "browser-access", fullPage: false);
 
         await Save(await stack.OpenAsync("/help"), "help", fullPage: false);
 

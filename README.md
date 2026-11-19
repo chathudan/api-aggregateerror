@@ -18,6 +18,7 @@ GET /bff/customer/C-10042/summary
 - **Combine lists** from several services into one list of records, on exact shared ids only.
 - **Secure by default:** declared inputs only, escaped values, secrets by reference, per-user caching, no values in logs.
 - **API docs** at `/bff/docs` and a typed `/bff/openapi.json` for generating app clients.
+- **Browser access (CORS)** for web apps on other websites, managed in the admin app within limits operations set, never with cookies.
 
 ## Quick start
 

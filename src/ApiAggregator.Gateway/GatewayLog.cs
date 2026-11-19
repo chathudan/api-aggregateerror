@@ -12,6 +12,14 @@ internal static partial class GatewayLog
         Message = "{Method} {Endpoint} -> {Status} in {DurationMs} ms; subject {Subject}; correlation {CorrelationId}")]
     public static partial void RequestCompleted(this ILogger logger, string method, string endpoint, int status, long durationMs, string subject, string correlationId);
 
+    [LoggerMessage(EventId = 2001, Level = LogLevel.Warning,
+        Message = "Browser origin {Origin} is not allowed to call /bff; method {Method}; preflight {Preflight}. Add it on the Browser access page if it should be.")]
+    public static partial void BrowserOriginRejected(this ILogger logger, string origin, string method, bool preflight);
+
+    [LoggerMessage(EventId = 2002, Level = LogLevel.Warning,
+        Message = "Browser origin {Origin} from the admin app is not used: {Reason}")]
+    public static partial void BrowserOriginSkipped(this ILogger logger, string origin, string reason);
+
     /// <summary>HttpContext.Items key the /bff handler uses to say which recipe answered.</summary>
     public const string EndpointItemKey = "ApiAggregator.Endpoint";
 }

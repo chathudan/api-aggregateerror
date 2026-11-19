@@ -59,6 +59,8 @@ az containerapp create -g $RG -n aggregator-admin --environment $ENV \
              Auth__Authority=https://login.example.com/tenant/v2.0 Auth__Audience=api-aggregator \
              Auth__Oidc__Authority=https://login.example.com/tenant/v2.0 Auth__Oidc__ClientId=<admin app client id> \
              Auth__Oidc__ClientSecret=secretref:admin-oidc-client-secret
+# Both apps: the same browser-access limits (ADR 0015), for example
+#   Gateway__Cors__AllowedOrigins__0=https://portal.example.com Gateway__Cors__AllowedOriginPatterns__0=https://*.example.com
 ```
 
 Then:
@@ -74,12 +76,18 @@ Then:
   public ingress: it can change what the gateway serves.
 - **Admin sign-in (OpenID Connect).** Register the admin app with your identity provider (for example an Entra ID
   app registration): redirect URI `https://<admin address>/signin-oidc`, two app roles `aggregator.author` and
-  `aggregator.publisher` assigned to people or groups. Set `Auth:Oidc:Authority`, `Auth:Oidc:ClientId` and
+  `aggregator.publisher`, plus `aggregator.admin` for the few people who manage browser access (CORS), assigned to
+  people or groups. Set `Auth:Oidc:Authority`, `Auth:Oidc:ClientId` and
   `Auth:Oidc:ClientSecret` (a Container Apps secret from Key Vault, as above). The app refuses to start outside
   Development without them. Add the gateway's scope to `Auth:Oidc:Scopes` so the Logs page can read the
   gateway's logs with the person's token, or set `Gateway:LogsToken`.
 - **Scripts and CI** call `https://<admin address>/admin/*` with a bearer token for `Auth:Audience` that has the
-  `aggregator.author` or `aggregator.publisher` scope. The page cookie never works there.
+  `aggregator.author` or `aggregator.publisher` scope (`aggregator.admin` for `/admin/cors`). The page cookie never
+  works there.
+- **Browser access (CORS).** Only for web apps on another origin calling `/bff/*`. Set `Gateway:Cors:*` with the
+  **same values on both apps**: the admin app uses them to check what admins add, and the gateway checks every
+  entry again (a mismatch can only narrow access). Set `AllowedOriginPatterns` in production, so admins can only
+  add your own domains. Invalid values stop the app at startup with a message naming the setting.
 
 ## Configuration reference
 
@@ -97,6 +105,9 @@ Settings come from `appsettings.json`, then environment variables (`:` becomes `
 | `Gateway:OpenApi:Enabled` | gateway | true | Serve `/bff/openapi.json` |
 | `Gateway:OpenApi:IncludeInternalDetails` | gateway | false | Show internal service names in the spec. Keep off in production |
 | `Gateway:ApiDocs:Enabled` | gateway | true in Development, else false | The Swagger UI page at `/bff/docs` |
+| `Gateway:Cors:AllowedOrigins` | gateway, admin app (same values) | none; Development: `http://localhost:3000`, `http://localhost:5173` | Websites always allowed to call `/bff/*` from a browser. Exact origins (`https://portal.example.com`, no path, no `*`). Can't be removed in the admin app |
+| `Gateway:Cors:AllowedOriginPatterns` | gateway, admin app (same values) | none (admins may add any valid origin) | Limits for origins added in the admin app, for example `https://*.example.com`. A pattern never allows anything by itself. Set it in production |
+| `Gateway:Cors:PreflightMaxAgeSeconds` | gateway | 600 | How long browsers remember a preflight answer (0 to 86400). Also how long a removed origin may keep working in a browser that already asked |
 | `Auth:Authority` | gateway, admin app | — | Your identity provider, for bearer tokens (apps, and scripts calling `/admin/*`) |
 | `Auth:Audience` | gateway, admin app | `api-aggregator` | The audience tokens must have |
 | `Auth:DevSigningKey`, `Auth:DevIssuer` | gateway, admin app | — | **Development only.** Startup fails if set anywhere else |

@@ -73,7 +73,7 @@ public sealed class DocsStack : IAsyncLifetime
     }
 
     /// <summary>Calls the gateway as an app would: with a dev token for <paramref name="scope"/>, or no token at all.</summary>
-    public async Task<(int Status, string Body)> CallGatewayAsync(string method, string path, string? scope, IEnumerable<(string Name, string Value)> headers)
+    public async Task<(int Status, string Body, IReadOnlyList<string> CorsHeaders)> CallGatewayAsync(string method, string path, string? scope, IEnumerable<(string Name, string Value)> headers)
     {
         using var http = new HttpClient();
         using var request = new HttpRequestMessage(new HttpMethod(method), GatewayUrl + path);
@@ -84,7 +84,13 @@ public sealed class DocsStack : IAsyncLifetime
         }
         foreach (var (name, value) in headers) request.Headers.TryAddWithoutValidation(name, value);
         using var response = await http.SendAsync(request);
-        return ((int)response.StatusCode, await response.Content.ReadAsStringAsync());
+        // The browser-access (CORS) headers, one "Name: value" line each in name order, for guides that show them.
+        var cors = response.Headers
+            .Where(h => h.Key.StartsWith("Access-Control-", StringComparison.OrdinalIgnoreCase) || h.Key.Equals("Vary", StringComparison.OrdinalIgnoreCase))
+            .OrderBy(h => h.Key, StringComparer.OrdinalIgnoreCase)
+            .Select(h => $"{h.Key}: {string.Join(", ", h.Value)}")
+            .ToList();
+        return ((int)response.StatusCode, await response.Content.ReadAsStringAsync(), cors);
     }
 
     public string Logs() => string.Join("\n", _apps.Select(a => $"--- {a.Name}\n{a.Log}"));

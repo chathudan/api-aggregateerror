@@ -1,0 +1,265 @@
+@page "/settings/browser-access"
+@using ApiAggregator.Engine.BrowserAccess
+@inject AdminService Admin
+@inject CurrentUser User
+@inject ToastService Toasts
+
+@* Settings → Browser access (CORS, ADR 0015): which websites may call the gateway's /bff/* from a browser.
+   Everyone with a role can look and test; only the admin role can add or remove. AdminService checks that. *@
+
+<PageTitle>Browser access (CORS) · API Aggregator</PageTitle>
+
+<PageShell Title="Browser access (CORS)" Crumbs="Crumbs" HelpTopic="browser-access"
+           Purpose="Websites whose pages may call the gateway's aggregated endpoints from a browser. Callers still need a valid sign-in token: this only lets the browser read the answer.">
+    <Actions>
+        @if (_view?.CanChange == true && !_adding) { <button class="button primary" @onclick="StartAdding">Add origin</button> }
+    </Actions>
+</PageShell>
+
+<ErrorBanner Message="@_error" HelpTopic="browser-access" OnClose="() => _error = null" />
+
+@if (_view is null)
+{
+    @if (_error is null) { <Loading Text="Loading browser access…" /> }
+}
+else
+{
+    @if (_adding)
+    {
+        <section class="card accent" aria-labelledby="add-origin-heading">
+            <h2 id="add-origin-heading">Add an origin</h2>
+            <p class="hint">
+                An origin is the start of the website's address: <code>https://</code>, the host and, only if it isn't the usual one, the port.
+                No path and no slash at the end, for example <code>https://portal.example.com</code>.
+                @if (_view.Patterns.Count > 0) { <span>Operations only allow origins that match <code>@string.Join(" or ", _view.Patterns)</code>.</span> }
+            </p>
+            <div class="grid">
+                <label>Origin <input @bind="_newOrigin" placeholder="https://portal.example.com" maxlength="280" autofocus aria-describedby="origin-issues" /></label>
+                <label>Note <span class="muted">(optional)</span> <input @bind="_newNote" placeholder="Patient portal, web team" maxlength="200" /></label>
+            </div>
+            <div id="origin-issues"><FieldIssues Problems="_addProblems" /></div>
+            <div class="inline">
+                <button class="button primary" disabled="@_busy" @onclick="Add">@(_busy ? "Adding…" : "Add origin")</button>
+                <button class="link" disabled="@_busy" @onclick="() => { _adding = false; _addProblems = []; }">Cancel</button>
+            </div>
+        </section>
+    }
+
+    <section class="card" aria-labelledby="origins-heading">
+        <h2 id="origins-heading">Allowed origins <span class="muted">(@_view.Origins.Count)</span></h2>
+        @if (_view.Origins.Count == 0)
+        {
+            <p class="muted">No website may call the gateway from a browser yet. Apps on phones and servers aren't affected: CORS only applies to web pages.</p>
+        }
+        else
+        {
+            <table class="list">
+                <thead><tr><th>Origin</th><th>Set by</th><th>Note</th><th>Added</th><th></th></tr></thead>
+                <tbody>
+                    @foreach (var o in _view.Origins)
+                    {
+                        <tr>
+                            <td><code>@o.Origin</code></td>
+                            <td>
+                                @if (o.Source == OriginSource.Operations)
+                                {
+                                    <StatusPill State="StatusPill.Kind.Neutral" Text="Operations" Title="Set in the app settings (Gateway:Cors:AllowedOrigins). Change it there." />
+                                }
+                                else
+                                {
+                                    <StatusPill State="StatusPill.Kind.Info" Text="Added here" />
+                                }
+                            </td>
+                            <td>@(o.Note ?? "")</td>
+                            <td>@(o.Source == OriginSource.Operations ? "" : $"{When(o.AddedAt)} · {Who(o.AddedBy, o.AddedByName)}")</td>
+                            <td>
+                                @if (_view.CanChange && o.Source == OriginSource.Admin)
+                                {
+                                    <button class="link" @onclick="() => _confirmRemove = o.Origin">Remove</button>
+                                }
+                            </td>
+                        </tr>
+                        @if (_confirmRemove == o.Origin)
+                        {
+                            <tr><td colspan="5">
+                                <ConfirmBox Danger="true" ConfirmText="Remove origin" OnConfirm="() => Remove(o.Origin)" OnCancel="() => _confirmRemove = null">
+                                    <p>Pages on <code>@o.Origin</code> will no longer be able to read answers from the gateway, within a few seconds. Browsers that already checked may keep their answer for up to @Minutes(_view.PreflightMaxAgeSeconds). The change is kept in the history.</p>
+                                </ConfirmBox>
+                            </td></tr>
+                        }
+                    }
+                </tbody>
+            </table>
+        }
+        @foreach (var s in _view.Skipped)
+        {
+            <div class="banner warn" role="status">
+                <span class="pill-icon" aria-hidden="true">!</span>
+                <div class="grow">
+                    <p><code>@s.Origin</code> is on the list but not used: @s.Reason</p>
+                    @if (_view.CanChange) { <p><button class="link" @onclick="() => _confirmRemove = s.Origin">Remove it</button></p> }
+                </div>
+            </div>
+            @if (_confirmRemove == s.Origin)
+            {
+                <ConfirmBox Danger="true" ConfirmText="Remove origin" OnConfirm="() => Remove(s.Origin)" OnCancel="() => _confirmRemove = null">
+                    <p>Remove <code>@s.Origin</code> from the list? It isn't used now, so nothing changes for callers. The change is kept in the history.</p>
+                </ConfirmBox>
+            }
+        }
+        @if (!_view.CanChange)
+        {
+            <p class="hint">Only people with the admin role can add or remove origins. You can look and test.</p>
+        }
+        else
+        {
+            <p class="hint">Up to @_view.MaxAdminEntries origins can be added here. Origins set by operations are changed in the app settings.</p>
+        }
+    </section>
+
+    <section class="card" aria-labelledby="test-heading">
+        <h2 id="test-heading">Test an origin</h2>
+        <p class="hint">Would a page on this website be allowed to call the gateway?</p>
+        <div class="inline">
+            <label class="grow">Origin to test <input @bind="_testOrigin" placeholder="https://portal.example.com" maxlength="280" /></label>
+            <button class="button" disabled="@_busy" @onclick="Test">Test</button>
+        </div>
+        @if (_testResult is { } t)
+        {
+            <p role="status" aria-live="polite">
+                <StatusPill State="@(t.Allowed ? StatusPill.Kind.Ok : StatusPill.Kind.Bad)" Text="@(t.Allowed ? "Allowed" : "Not allowed")" />
+                @t.Reason
+            </p>
+        }
+    </section>
+
+    <section class="card" aria-labelledby="send-heading">
+        <h2 id="send-heading">What browsers can send</h2>
+        <p class="hint">Worked out from the published endpoints, so it changes when an endpoint is published. Read only.</p>
+        <dl class="facts">
+            <dt>Methods</dt><dd>@string.Join(", ", _view.Methods)</dd>
+            <dt>Request headers</dt><dd>@string.Join(", ", _view.Headers) @if (_view.Headers.Count > BrowserAccessPolicy.BaseHeaders.Count) { <span class="muted">(after X-Correlation-Id: from endpoint header inputs)</span> }</dd>
+            <dt>Headers pages can read</dt><dd>@string.Join(", ", _view.ExposedHeaders)</dd>
+            <dt>Cookies and credentials</dt><dd>Never. Pages send their sign-in token in the Authorization header.</dd>
+            <dt>Browsers remember the answer for</dt><dd>@Minutes(_view.PreflightMaxAgeSeconds)</dd>
+        </dl>
+    </section>
+
+    <section class="card" aria-labelledby="cors-history-heading">
+        <h2 id="cors-history-heading">History</h2>
+        @if (_history is null)
+        {
+            <Loading Text="Loading the history…" />
+        }
+        else if (_history.Count == 0)
+        {
+            <p class="muted">No changes made here yet. Every origin added or removed is kept here.</p>
+        }
+        else
+        {
+            <table class="list">
+                <thead><tr><th>#</th><th>What happened</th><th>When</th><th>Who</th></tr></thead>
+                <tbody>
+                    @foreach (var h in _history)
+                    {
+                        <tr>
+                            <td>@h.Number</td>
+                            <td>@(h.Action == BrowserAccessAction.Added ? "Added" : "Removed") <code>@h.Origin</code>@(h.Note is null ? "" : $" ({h.Note})")</td>
+                            <td>@When(h.At)</td>
+                            <td>@Who(h.By, h.ByName)</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        }
+    </section>
+}
+
+@code {
+    private static readonly IReadOnlyList<(string Text, string Href)> Crumbs = [("Settings", "/settings/browser-access")];
+
+    private AdminActor _me = AdminActor.Anonymous;
+    private BrowserAccessView? _view;
+    private IReadOnlyList<BrowserAccessHistoryEntry>? _history;
+    private string? _error;
+    private bool _busy;
+
+    private bool _adding;
+    private string? _newOrigin;
+    private string? _newNote;
+    private IReadOnlyList<ValidationIssue> _addProblems = [];
+    private string? _confirmRemove;
+
+    private string? _testOrigin;
+    private OriginTest? _testResult;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _me = await User.ActorAsync();
+        await Reload();
+    }
+
+    private async Task Reload()
+    {
+        var view = await Admin.GetBrowserAccessAsync(_me);
+        if (!view.Ok) { _error = view.Failure!.Message; return; }
+        _view = view.Value;
+        _history = await Admin.GetBrowserAccessHistoryAsync(_me).ValueAsync() ?? [];
+    }
+
+    private void StartAdding()
+    {
+        _adding = true;
+        _newOrigin = _newNote = null;
+        _addProblems = [];
+    }
+
+    private async Task Add()
+    {
+        _busy = true;
+        try
+        {
+            var result = await Admin.AddBrowserOriginAsync(_me, new AddOriginRequest(_newOrigin, _newNote));
+            if (!result.Ok)
+            {
+                _addProblems = [new ValidationIssue("origin", result.Failure!.Message)];
+                return;
+            }
+            _adding = false;
+            _addProblems = [];
+            Toasts.Success($"Added {result.Value!.Origin}. The gateway allows it within a few seconds.");
+            await Reload();
+        }
+        finally { _busy = false; }
+    }
+
+    private async Task Remove(string origin)
+    {
+        var error = await Admin.RemoveBrowserOriginAsync(_me, origin).ErrorAsync();
+        _confirmRemove = null;
+        if (error is not null) { _error = error; return; }
+        Toasts.Success($"Removed {origin}.");
+        await Reload();
+    }
+
+    private async Task Test()
+    {
+        _busy = true;
+        try
+        {
+            var result = await Admin.TestOriginAsync(_me, new OriginTestRequest(_testOrigin));
+            if (result.Ok) _testResult = result.Value;
+            else _error = result.Failure!.Message;
+        }
+        finally { _busy = false; }
+    }
+
+    private static string Who(string? by, string? name) =>
+        by is null ? "Not recorded" : name is { Length: > 0 } ? $"{name} ({by})" : by;
+
+    private static string When(DateTimeOffset? at) =>
+        at?.ToUniversalTime().ToString("d MMM yyyy, HH:mm 'UTC'", System.Globalization.CultureInfo.InvariantCulture) ?? "Not recorded";
+
+    private static string Minutes(int seconds) =>
+        seconds < 120 ? $"{seconds} seconds" : $"{seconds / 60} minutes";
+}
