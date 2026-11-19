@@ -1,0 +1,25 @@
+@* An inline "are you sure?" box for actions that change what's live or remove something. Says what will happen, in plain words, before anything happens. *@
+<div class="confirm @(Danger ? "danger" : "")" role="alertdialog" aria-label="@ConfirmText">
+    <div>@ChildContent</div>
+    <div class="inline">
+        <button class="button @(Danger ? "danger" : "primary")" disabled="@_busy" @onclick="Confirm">@ConfirmText</button>
+        <button class="link" disabled="@_busy" @onclick="OnCancel">Cancel</button>
+    </div>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public RenderFragment ChildContent { get; set; } = default!;
+    [Parameter, EditorRequired] public string ConfirmText { get; set; } = "Confirm";
+    [Parameter, EditorRequired] public EventCallback OnConfirm { get; set; }
+    [Parameter] public EventCallback OnCancel { get; set; }
+    [Parameter] public bool Danger { get; set; }
+
+    private bool _busy; // one click only: these actions must not run twice
+
+    private async Task Confirm()
+    {
+        _busy = true;
+        try { await OnConfirm.InvokeAsync(); }
+        finally { _busy = false; }
+    }
+}

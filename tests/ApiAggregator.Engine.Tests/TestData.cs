@@ -133,8 +133,12 @@ internal sealed class InMemoryConfigStore(ConfigSnapshot snapshot) : IConfigStor
     public Task<IReadOnlyList<Recipe>> GetDraftsAsync(CancellationToken ct = default) => Task.FromResult<IReadOnlyList<Recipe>>([]);
     public Task<Recipe?> GetDraftAsync(string id, CancellationToken ct = default) => Task.FromResult<Recipe?>(null);
     public Task SaveDraftAsync(Recipe draft, CancellationToken ct = default) => Task.CompletedTask;
-    public Task PublishAsync(Recipe recipe, CancellationToken ct = default) => Task.CompletedTask;
-    public Task<IReadOnlyList<Recipe>> GetHistoryAsync(string id, CancellationToken ct = default) => Task.FromResult<IReadOnlyList<Recipe>>([]);
+    public Task<bool> DeleteServiceAsync(string id, CancellationToken ct = default) => Task.FromResult(false);
+    public Task<bool> DeleteDraftAsync(string id, CancellationToken ct = default) => Task.FromResult(false);
+    public Task PublishAsync(Recipe recipe, ChangeInfo change, CancellationToken ct = default) => Task.CompletedTask;
+    public Task<bool> UnpublishAsync(string id, ChangeInfo change, CancellationToken ct = default) => Task.FromResult(false);
+    public Task<IReadOnlyList<string>> GetHistoryIdsAsync(CancellationToken ct = default) => Task.FromResult<IReadOnlyList<string>>([]);
+    public Task<IReadOnlyList<RecipeHistoryEntry>> GetHistoryAsync(string id, CancellationToken ct = default) => Task.FromResult<IReadOnlyList<RecipeHistoryEntry>>([]);
 }
 
 /// <summary>Fake downstream: answers by "host path" and records every request it sees.</summary>

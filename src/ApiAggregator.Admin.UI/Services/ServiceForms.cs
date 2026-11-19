@@ -122,10 +122,10 @@ public static partial class Slug
         return spaced.Length == 0 ? id : char.ToUpperInvariant(spaced[0]) + spaced[1..];
     }
 
-    public static ApiService With(this ApiService s, List<ApiEndpoint>? endpoints = null, string? authProfileId = null, bool clearAuth = false) => new()
+    public static ApiService With(this ApiService s, List<ApiEndpoint>? endpoints = null, string? authProfileId = null, bool clearAuth = false, string? name = null) => new()
     {
         Id = s.Id,
-        Name = s.Name,
+        Name = name ?? s.Name,
         BaseUrl = s.BaseUrl,
         AuthProfileId = clearAuth ? null : authProfileId ?? s.AuthProfileId,
         TimeoutMs = s.TimeoutMs,

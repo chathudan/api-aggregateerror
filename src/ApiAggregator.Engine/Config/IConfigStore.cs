@@ -15,14 +15,37 @@ public interface IConfigStore
     ValueTask<ConfigSnapshot> GetSnapshotAsync(CancellationToken ct = default);
 
     Task SaveServiceAsync(ApiService service, CancellationToken ct = default);
+
+    /// <summary>Removes a service. False if there was none. The caller checks that no published recipe uses it.</summary>
+    Task<bool> DeleteServiceAsync(string id, CancellationToken ct = default);
+
     Task SaveAuthProfileAsync(AuthProfile profile, CancellationToken ct = default);
 
     Task<IReadOnlyList<Recipe>> GetDraftsAsync(CancellationToken ct = default);
     Task<Recipe?> GetDraftAsync(string id, CancellationToken ct = default);
     Task SaveDraftAsync(Recipe draft, CancellationToken ct = default);
 
-    /// <summary>Makes the recipe live and keeps a copy of the version under history/ for audit and rollback.</summary>
-    Task PublishAsync(Recipe recipe, CancellationToken ct = default);
+    /// <summary>Discards a draft. False if there was none. The published version is not touched.</summary>
+    Task<bool> DeleteDraftAsync(string id, CancellationToken ct = default);
 
-    Task<IReadOnlyList<Recipe>> GetHistoryAsync(string id, CancellationToken ct = default);
+    /// <summary>
+    /// Makes the recipe live and adds a history entry for its version (ADR 0012). Throws
+    /// <see cref="HistoryConflictException"/> if that version is already in the history: versions are never reused.
+    /// </summary>
+    Task PublishAsync(Recipe recipe, ChangeInfo change, CancellationToken ct = default);
+
+    /// <summary>
+    /// Stops serving the recipe and adds an "unpublished" history entry. The history is kept, so any
+    /// version can be rolled back to later. False if the recipe wasn't published.
+    /// </summary>
+    Task<bool> UnpublishAsync(string id, ChangeInfo change, CancellationToken ct = default);
+
+    /// <summary>Ids of every recipe that has history, including ones that are no longer published (so they can be restored).</summary>
+    Task<IReadOnlyList<string>> GetHistoryIdsAsync(CancellationToken ct = default);
+
+    /// <summary>Newest first. Includes entries written before ADR 0012 (without who and when).</summary>
+    Task<IReadOnlyList<RecipeHistoryEntry>> GetHistoryAsync(string id, CancellationToken ct = default);
 }
+
+/// <summary>The version being published is already in the history (for example two people published at once).</summary>
+public sealed class HistoryConflictException(string message) : Exception(message);

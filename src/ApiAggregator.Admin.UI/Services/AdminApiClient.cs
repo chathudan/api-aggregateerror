@@ -32,7 +32,16 @@ public sealed class AdminTokenProvider(IConfiguration configuration, IHttpClient
     }
 }
 
-public sealed record RecipeSummary(string Id, string Name, string Method, string Route, int? PublishedVersion, bool HasDraft);
+public sealed record RecipeSummary(string Id, string Name, string Method, string Route, int? PublishedVersion, bool HasDraft, bool Deleted = false);
+
+/// <summary>One row of an endpoint's history. <see cref="By"/> and <see cref="At"/> are empty for versions published before they were recorded.</summary>
+public sealed record HistoryRow(int Version, HistoryAction Action, DateTimeOffset? At, string? By, int? RestoredFrom, string? Name, string? Route, bool IsLive);
+
+public sealed record RecipeRef(string Id, string Name);
+
+public sealed record ServiceUsage(List<RecipeRef> Published, List<RecipeRef> Drafts);
+
+public sealed record Capabilities(bool CanSaveSecrets, bool CanPublish);
 
 public sealed record TestOutcome(bool Passed, int StatusCode, long DurationMs, bool Partial, List<TraceRow>? Trace, JsonNode? Body, List<IssueRow>? Issues, string? CorrelationId = null, List<IssueRow>? Warnings = null);
 
@@ -58,6 +67,21 @@ public sealed class AdminApiClient(HttpClient http, AdminTokenProvider tokens)
 
     public async Task<bool> CanSaveSecretsAsync(CancellationToken ct = default) =>
         (await GetAsync<JsonObject>("admin/capabilities", ct))?["canSaveSecrets"]?.GetValue<bool>() == true;
+
+    /// <summary>What this user may do here. Only hides buttons: the Admin API checks the role on every call.</summary>
+    public async Task<Capabilities> GetCapabilitiesAsync(CancellationToken ct = default) =>
+        await GetAsync<Capabilities>("admin/capabilities", ct) ?? new Capabilities(false, false);
+
+    // ------------------------------------------------------------------ history, roll back, delete
+
+    public Task<List<HistoryRow>?> GetHistoryAsync(string id, CancellationToken ct = default) => GetAsync<List<HistoryRow>>($"admin/recipes/{id}/history", ct);
+    public Task<Recipe?> GetVersionAsync(string id, int version, CancellationToken ct = default) => GetAsync<Recipe>($"admin/recipes/{id}/history/{version}", ct);
+    public Task<string?> RollBackAsync(string id, int version, CancellationToken ct = default) => SendAsync(HttpMethod.Post, $"admin/recipes/{id}/rollback/{version}", null, ct);
+    public Task<string?> DeleteEndpointAsync(string id, CancellationToken ct = default) => SendAsync(HttpMethod.Delete, $"admin/recipes/{id}", null, ct);
+    public Task<string?> DiscardDraftAsync(string id, CancellationToken ct = default) => SendAsync(HttpMethod.Delete, $"admin/recipes/{id}/draft", null, ct);
+
+    public Task<ServiceUsage?> GetServiceUsageAsync(string id, CancellationToken ct = default) => GetAsync<ServiceUsage>($"admin/services/{id}/usage", ct);
+    public Task<string?> DeleteServiceAsync(string id, CancellationToken ct = default) => SendAsync(HttpMethod.Delete, $"admin/services/{id}", null, ct);
 
     public async Task<(bool Ok, string Message)> CheckSignInAsync(string profileId, CancellationToken ct = default)
     {

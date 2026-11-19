@@ -16,6 +16,13 @@
 
 <div class="header-row"><h1>@(IsNew ? "New aggregated endpoint" : _form.Name)</h1><HelpLink Topic="build" Text="How to build an endpoint" /></div>
 <p class="muted">Address: <code>@_form.Method /bff/@_form.Route.Trim('/')</code></p>
+@if (_deleted)
+{
+    <div class="issues warnings">
+        <strong>This endpoint is deleted.</strong> The gateway doesn't serve it. Its last version is shown below.
+        To bring it back, choose <strong>Roll back to this</strong> under <a href="#history">History</a>, or change it, test it and publish. <HelpLink Topic="history" />
+    </div>
+}
 
 @* ------------------------------------------------------------------ 1. Endpoint *@
 <section class="card">
@@ -305,6 +312,114 @@
     }
 </section>
 
+@* ------------------------------------------------------------------ History, discard, delete *@
+@if (!IsNew)
+{
+    <section class="card" id="history">
+        <h2>History <HelpLink Topic="history" /></h2>
+        @if (_history is null)
+        {
+            <p class="muted">Loading…</p>
+        }
+        else if (_history.Count == 0)
+        {
+            <p class="muted">
+                @if (_liveVersion is { } live)
+                {
+                    <span>v@(live) is live, but it was added straight to the config files, so it has no history yet. The next publish starts it.</span>
+                }
+                else
+                {
+                    <span>Not published yet. Every version you publish is kept here, so you can look at it or go back to it later.</span>
+                }
+            </p>
+        }
+        else
+        {
+            <table class="list">
+                <thead><tr><th>Version</th><th>What happened</th><th>When</th><th>Who</th><th></th></tr></thead>
+                <tbody>
+                    @foreach (var row in _history)
+                    {
+                        <tr>
+                            <td>v@(row.Version) @if (row.IsLive) { <span class="tag live">live</span> }</td>
+                            <td>@Describe(row)</td>
+                            <td>@When(row.At)</td>
+                            <td>@(row.By ?? "Not recorded")</td>
+                            <td>
+                                @if (row.Action != HistoryAction.Unpublished)
+                                {
+                                    <button class="link" @onclick="() => ToggleView(row.Version)">@(_viewing == row.Version ? "Hide" : "View")</button>
+                                    @if (_caps.CanPublish && !row.IsLive)
+                                    {
+                                        <text> · </text><button class="link" @onclick="() => { _confirmRollBack = row.Version; _confirm = Confirm.None; }">Roll back to this</button>
+                                    }
+                                }
+                            </td>
+                        </tr>
+                        @if (_viewing == row.Version && _viewed is { } v)
+                        {
+                            <tr><td colspan="5">
+                                <div class="history-view">
+                                    <p><strong>@(string.IsNullOrEmpty(v.Name) ? v.Id : v.Name)</strong> · <code>@v.Method /bff/@v.Route</code> · @(v.RequireAuthentication ? $"sign-in required{(string.IsNullOrEmpty(v.RequiredScope) ? "" : $", scope {v.RequiredScope}")}" : "no sign-in")</p>
+                                    <p class="hint">Steps: @string.Join(", ", v.Steps.Select(st => $"{st.DisplayName ?? st.Alias} ({st.Endpoint})"))@(v.Combine.Count > 0 ? $" · combined lists: {string.Join(", ", v.Combine.Keys)}" : "")</p>
+                                    <pre class="json">@JsonSerializer.Serialize(v, AggregatorJson.Options)</pre>
+                                </div>
+                            </td></tr>
+                        }
+                        @if (_confirmRollBack == row.Version)
+                        {
+                            <tr><td colspan="5">
+                                <ConfirmBox ConfirmText="@($"Roll back to v{row.Version}")" OnConfirm="() => RollBack(row.Version)" OnCancel="() => _confirmRollBack = null">
+                                    <p>Version @row.Version goes live again as a <strong>new</strong> version, v@(NextVersion). Callers get it within a few seconds. Nothing in the history is removed@(_hasDraft ? ", and your unpublished changes are kept" : "").</p>
+                                </ConfirmBox>
+                            </td></tr>
+                        }
+                    }
+                </tbody>
+            </table>
+            @if (!_caps.CanPublish) { <p class="hint">Only publishers can roll back or delete an endpoint. Ask a publisher if you need one of those.</p> }
+        }
+
+        @if (_hasDraft || (_liveVersion is not null && _caps.CanPublish))
+        {
+            <div class="danger-zone">
+                <h3>Discard or delete <HelpLink Topic="delete" /></h3>
+                <div class="inline">
+                    @if (_hasDraft) { <button class="button" @onclick="() => { _confirm = Confirm.Discard; _confirmRollBack = null; }">Discard unpublished changes</button> }
+                    @if (_caps.CanPublish && (_liveVersion is not null || _hasDraft)) { <button class="button" @onclick="() => { _confirm = Confirm.Delete; _confirmRollBack = null; }">Delete endpoint</button> }
+                </div>
+                @if (_confirm == Confirm.Discard)
+                {
+                    <ConfirmBox ConfirmText="Discard changes" OnConfirm="DiscardDraft" OnCancel="() => _confirm = Confirm.None">
+                        @if (_liveVersion is { } live)
+                        {
+                            <p>Your unpublished changes are removed. The live version, v@(live), keeps serving and opens here.</p>
+                        }
+                        else
+                        {
+                            <p>This endpoint was never published@(_history?.Count > 0 ? " since it was deleted" : ""), so the whole draft is removed.</p>
+                        }
+                    </ConfirmBox>
+                }
+                @if (_confirm == Confirm.Delete)
+                {
+                    <ConfirmBox Danger="true" ConfirmText="Delete endpoint" OnConfirm="DeleteEndpoint" OnCancel="() => _confirm = Confirm.None">
+                        <p>
+                            @if (_liveVersion is not null)
+                            {
+                                <span>The gateway stops serving <code>@_form.Method /bff/@_form.Route.Trim('/')</code> within a few seconds. Apps that still call it get <strong>404 not_found</strong>. </span>
+                            }
+                            @if (_hasDraft) { <span>Unpublished changes are removed too. </span> }
+                            The history is kept, so a publisher can restore any version later.
+                        </p>
+                    </ConfirmBox>
+                }
+            </div>
+        }
+    </section>
+}
+
 @code {
     [Parameter] public string? Id { get; set; }
 
@@ -318,14 +433,72 @@
     private string _search = "";
     private readonly Dictionary<int, string> _extraTarget = new();
 
+    private enum Confirm { None, Discard, Delete }
+    private Capabilities _caps = new(false, false);
+    private List<HistoryRow>? _history;
+    private int? _liveVersion;   // the version the gateway serves now, if any
+    private bool _hasDraft;      // there are unpublished changes
+    private bool _deleted;       // not live, no draft, but there is history: shown from its last version
+    private int? _viewing;
+    private Recipe? _viewed;
+    private int? _confirmRollBack;
+    private Confirm _confirm;
+
     protected override async Task OnInitializedAsync()
     {
         var services = await Api.GetServicesAsync() ?? [];
         var profiles = await Api.GetAuthProfilesAsync() ?? [];
         _snapshot = new ConfigSnapshot(services, profiles, [], "admin-ui");
+        _caps = await Api.GetCapabilitiesAsync();
 
-        if (!IsNew && await Api.GetRecipeAsync(Id!) is { } recipe) _form = RecipeForm.FromRecipe(recipe);
+        if (!IsNew) await LoadRecipe();
         for (var i = 1; i <= 20; i++) _extraTarget[i] = "";
+    }
+
+    /// <summary>The draft if there is one, else the live version, else (a deleted endpoint) the last version in the history.</summary>
+    private async Task LoadRecipe()
+    {
+        await LoadHistory();
+        // Live version and draft from the list, not the history: recipes added straight to config/recipes have no history.
+        var summary = (await Api.GetRecipesAsync() ?? []).FirstOrDefault(r => r.Id == Id);
+        _liveVersion = summary?.PublishedVersion;
+        _hasDraft = summary?.HasDraft == true;
+        _deleted = summary?.Deleted == true;
+
+        if (await Api.GetRecipeAsync(Id!) is { } recipe)
+        {
+            _form = RecipeForm.FromRecipe(recipe);
+            return;
+        }
+
+        var last = _history?.FirstOrDefault(h => h.Action != HistoryAction.Unpublished);
+        if (last is not null && await Api.GetVersionAsync(Id!, last.Version) is { } old) _form = RecipeForm.FromRecipe(old);
+    }
+
+    private async Task LoadHistory()
+    {
+        _history = await Api.GetHistoryAsync(Id!) ?? [];
+        _viewing = null; _viewed = null; _confirmRollBack = null; _confirm = Confirm.None;
+    }
+
+    private int NextVersion => Math.Max(_liveVersion ?? 0, _history?.Select(h => h.Version).DefaultIfEmpty(0).Max() ?? 0) + 1;
+
+    private static string Describe(HistoryRow row) => row.Action switch
+    {
+        HistoryAction.RolledBack => $"Rolled back: v{row.RestoredFrom} published again",
+        HistoryAction.Unpublished => $"Deleted: v{row.Version} stopped being served",
+        _ => "Published"
+    };
+
+    private static string When(DateTimeOffset? at) =>
+        at?.ToUniversalTime().ToString("d MMM yyyy, HH:mm 'UTC'", System.Globalization.CultureInfo.InvariantCulture) ?? "Not recorded";
+
+    private async Task ToggleView(int version)
+    {
+        if (_viewing == version) { _viewing = null; _viewed = null; return; }
+        _viewed = await Api.GetVersionAsync(Id!, version);
+        _viewing = _viewed is null ? null : version;
+        if (_viewed is null) _status = $"Couldn't load version {version}.";
     }
 
     // ------------------------------------------------------------------ live checks (same validator as the server)
@@ -475,6 +648,7 @@
         var error = await Api.SaveDraftAsync(_form.ToRecipe());
         _justPublished = false;
         _status = error ?? "Draft saved. The live endpoint is unchanged until you publish.";
+        if (error is null) _hasDraft = true;
         if (error is null && IsNew) Nav.NavigateTo($"/endpoints/{_form.Id}", replace: true);
         return error is null;
     }
@@ -508,5 +682,41 @@
         var error = await Api.PublishAsync(_form.Id);
         _justPublished = error is null;
         _status = error ?? $"Published. Callers can use {_form.Method} /bff/{_form.Route.Trim('/')} now.";
+        if (error is null) await LoadRecipe();
+    }
+
+    private async Task RollBack(int version)
+    {
+        var newVersion = NextVersion;
+        var error = await Api.RollBackAsync(_form.Id, version);
+        _justPublished = error is null;
+        if (error is null) await LoadRecipe(); else _confirmRollBack = null;
+        _status = error ?? $"Version {version} is live again, as v{newVersion}." +
+            (_hasDraft ? " Your unpublished changes are still here: publishing them would replace it." : "");
+    }
+
+    private async Task DiscardDraft()
+    {
+        var error = await Api.DiscardDraftAsync(_form.Id);
+        if (error is not null) { _status = error; _confirm = Confirm.None; return; }
+
+        _test = null; _justPublished = false;
+        await LoadRecipe();
+        if (_liveVersion is null && !_deleted) { Nav.NavigateTo("/"); return; } // nothing left to show
+        _status = _liveVersion is { } live ? $"Changes discarded. Showing the live version, v{live}." : "Changes discarded. Showing the last published version.";
+    }
+
+    private async Task DeleteEndpoint()
+    {
+        var address = $"{_form.Method} /bff/{_form.Route.Trim('/')}";
+        var error = await Api.DeleteEndpointAsync(_form.Id);
+        if (error is not null) { _status = error; _confirm = Confirm.None; return; }
+
+        _test = null; _justPublished = false;
+        await LoadRecipe();
+        _status = _history is { Count: > 0 }
+            ? $"Deleted. The gateway stops serving {address} within a few seconds. To restore it, roll back to a version under History."
+            : "Deleted. It was never published, so nothing else changes.";
+        if (_history is not { Count: > 0 }) Nav.NavigateTo("/");
     }
 }

@@ -37,6 +37,8 @@ service (Basic, session login, OAuth/JWT, API key, pass-through) in any combinat
 - The caller's token is forwarded only by `PassThroughUserTokenStep`.
 - Logs never contain request or response values; log ids, statuses and timings.
 - Responses carry `Cache-Control: no-store`.
+- **History is append-only.** Entries are written once and never changed; version numbers are never
+  reused. Publish, roll back and delete endpoint need `aggregator.publisher` (ADR 0012).
 - `Auth:DevSigningKey` is Development-only (startup fails otherwise).
 
 If a change touches any of these, run the `security-review` skill and add or adjust a unit test.
@@ -52,11 +54,11 @@ If a change touches any of these, run the `security-review` skill and add or adj
 | `…/Validation` | `RecipeValidator`: all plain-English checks |
 | `…/Execution` | `InputBinder`, `RequestBuilder`, `CompositionExecutor`, `Conditions`, `ResponseCache` |
 | `…/Auth` | `IAuthStep` + `Steps/*`, `DownstreamAuthenticator`, `DownstreamCredentialCache` |
-| `…/Config` | `IConfigStore`, `FileConfigStore` (published / drafts / history), `ConfigSnapshot` |
+| `…/Config` | `IConfigStore`, `FileConfigStore` (published / drafts / history), `RecipeHistoryEntry` (ADR 0012), `ConfigSnapshot` |
 | `…/Authoring` | `SourceCatalog` (wizard dropdown options, schema inference), `AutoBinder` (pre-filled values) |
 | `src/ApiAggregator.Gateway` | `Program.cs` (one handler for `/bff/{**path}`), `ApiDocsPage` (Swagger UI at `/bff/docs`); the spec comes from `Engine/Authoring/OpenApiDocumentBuilder` |
 | `src/ApiAggregator.Admin.Api` | `Program.cs` (all admin endpoints), `OpenApiImporter` |
-| `src/ApiAggregator.Admin.UI` | `Pages/EndpointEditor.razor` (wizard), `Pages/Services.razor` (add service, endpoints, sign-in), `Shared/SignInEditor.razor`; form models in `Services/` (`RecipeForm`, `SignInForm` + `SignInKinds`, `ServiceForms`) |
+| `src/ApiAggregator.Admin.UI` | `Pages/EndpointEditor.razor` (wizard), `Pages/Services.razor` (add service, endpoints, sign-in, rename, delete), `Shared/SignInEditor.razor`, `Shared/ConfirmBox.razor` (confirm before anything destructive); form models in `Services/` (`RecipeForm`, `SignInForm` + `SignInKinds`, `ServiceForms`) |
 | `src/ApiAggregator.Hosting` | `InboundAuth` (JWT setup, scopes, caller context), `LocalSecrets` (Development-only secrets file) |
 | `tools/ApiAggregator.Cli` | `aggregator validate | run` |
 | `samples/MockServices` | Service A (Basic `svc-a/pass-a`), B (session `svc-b/pass-b`), C (OAuth `client-c/secret-c`), D (API key `X-Api-Key: key-d`, spec at `/d/openapi.json`, not in the sample config: use it to try **Add service**); E Identity, F CRM, G Billing, H Links: people data for **Combine lists** (`PeopleSamples.cs`, explained in `samples/README.md`). All on :5100 |

@@ -101,6 +101,8 @@ else
                     <button class="button" @onclick="() => Open(s.Id, Panel.Endpoint)">Add endpoint</button>
                     <button class="button" @onclick="() => OpenSignIn(s, profile)">Sign-in</button>
                     <button class="button" @onclick="() => Open(s.Id, Panel.Import)">Import from OpenAPI</button>
+                    <button class="link" @onclick="() => OpenRename(s)">Rename</button>
+                    <button class="link" @onclick="() => OpenDelete(s)">Delete</button>
                 </div>
             </div>
 
@@ -188,6 +190,48 @@ else
                 </div>
             }
 
+            @* --- rename *@
+            @if (_openFor == s.Id && _panel == Panel.Rename)
+            {
+                <div class="panel">
+                    <h3>Rename @s.Name <HelpLink Topic="delete" /></h3>
+                    <div class="inline">
+                        <label class="grow">Display name <input @bind="_newName" maxlength="100" /></label>
+                        <button class="button primary" @onclick="() => Rename(s)">Save name</button>
+                        <button class="link" @onclick="Close">Cancel</button>
+                    </div>
+                    <p class="hint">Only the name people see changes. The id <code>@s.Id</code> stays the same, so endpoints that use this service keep working.</p>
+                    <Problems Items="_problems" />
+                </div>
+            }
+
+            @* --- delete *@
+            @if (_openFor == s.Id && _panel == Panel.Delete && _usage is { } usage)
+            {
+                <div class="panel">
+                    @if (usage.Published.Count > 0)
+                    {
+                        <div class="issues">
+                            <strong>@s.Name can't be deleted yet.</strong> These published endpoints still call it. Change them to use another service, or delete them, first:
+                            <ul>@foreach (var r in usage.Published) { <li><a href="/endpoints/@r.Id">@r.Name</a></li> }</ul>
+                        </div>
+                        <button class="link" @onclick="Close">Close</button>
+                    }
+                    else
+                    {
+                        <ConfirmBox Danger="true" ConfirmText="@($"Delete {s.Name}")" OnConfirm="() => DeleteService(s)" OnCancel="Close">
+                            <p>@s.Name and its @s.Endpoints.Count endpoint(s) are removed from this list. No published endpoint uses it.</p>
+                            @if (usage.Drafts.Count > 0)
+                            {
+                                <p>These <strong>drafts</strong> use it and will show a problem until you change them:</p>
+                                <ul>@foreach (var r in usage.Drafts) { <li><a href="/endpoints/@r.Id">@r.Name</a></li> }</ul>
+                            }
+                            @if (profile is not null) { <p class="hint">Its sign-in settings are kept, because another service may use them.</p> }
+                        </ConfirmBox>
+                    }
+                </div>
+            }
+
             @* --- import *@
             @if (_openFor == s.Id && _panel == Panel.Import)
             {
@@ -222,7 +266,7 @@ else
 @if (_message is not null) { <p class="status">@_message</p> }
 
 @code {
-    private enum Panel { None, Endpoint, SignIn, Import }
+    private enum Panel { None, Endpoint, SignIn, Import, Rename, Delete }
 
     private List<ApiService>? _services;
     private List<AuthProfile> _profiles = [];
@@ -238,6 +282,8 @@ else
     private readonly Dictionary<string, (bool Ok, string Message)> _checks = [];
     private List<string> _problems = [];
     private string? _message;
+    private string _newName = "";
+    private ServiceUsage? _usage;
 
     protected override async Task OnInitializedAsync()
     {
@@ -344,6 +390,39 @@ else
             foreach (var (name, value) in secrets)
                 if (await Api.SaveSecretAsync(name, value) is { } error) return error;
         return await Api.SaveAuthProfileAsync(profile);
+    }
+
+    // ------------------------------------------------------------------ rename, delete
+
+    private void OpenRename(ApiService s)
+    {
+        Open(s.Id, Panel.Rename);
+        _newName = s.Name;
+    }
+
+    private async Task Rename(ApiService s)
+    {
+        var name = _newName.Trim();
+        if (name.Length == 0) { _problems = ["Enter a name."]; return; }
+        if (await Api.SaveServiceAsync(s.With(name: name)) is { } error) { _problems = [error]; return; }
+        _message = $"Renamed to {name}.";
+        Close();
+        await Reload();
+    }
+
+    private async Task OpenDelete(ApiService s)
+    {
+        Open(s.Id, Panel.Delete);
+        _usage = await Api.GetServiceUsageAsync(s.Id);
+        if (_usage is null) { _message = "Couldn't check which endpoints use this service. Try again."; Close(); }
+    }
+
+    private async Task DeleteService(ApiService s)
+    {
+        var error = await Api.DeleteServiceAsync(s.Id);
+        _message = error ?? $"Deleted {s.Name}.";
+        Close();
+        await Reload();
     }
 
     private async Task Check(ApiService s, AuthProfile profile) => _checks[s.Id] = await Api.CheckSignInAsync(profile.Id);

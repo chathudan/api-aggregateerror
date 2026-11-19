@@ -72,6 +72,9 @@ app.UseAuthorization();
 
 var requireTestBeforePublish = builder.Configuration.GetValue("Admin:RequireTestBeforePublish", true);
 var passedTests = new ConcurrentDictionary<string, string>(); // recipe id -> hash of the draft that last passed "Try it"
+// Publish, roll back, delete endpoint and delete service run one at a time, so "no published endpoint uses this service"
+// can't change between the check and the delete. (The file store is single-instance; see ADR 0007.)
+var liveChanges = new SemaphoreSlim(1, 1);
 
 // Live logs for the admin UI's Logs page (this process: Try it runs, sign-in checks, imports).
 app.MapLiveLogs("/admin/logs", "author");
@@ -94,8 +97,40 @@ admin.MapPut("/services/{id}", async (string id, ApiService service, IConfigStor
     if (service.Id != id) return Results.BadRequest(new { title = "The id in the URL and the body must match." });
     if (!Uri.TryCreate(service.BaseUrl, UriKind.Absolute, out var u) || u.Scheme is not ("http" or "https"))
         return Results.BadRequest(new { title = "Base URL must be an http or https address." });
+    if (string.IsNullOrWhiteSpace(service.Name) || service.Name.Length > 100 || service.Name.Any(char.IsControl))
+        return Results.BadRequest(new { title = "Give the service a name of up to 100 characters." });
     await store.SaveServiceAsync(service, ct);
     return Results.Ok(service);
+});
+
+// Which aggregated endpoints call this service. Shown before deleting it.
+admin.MapGet("/services/{id}/usage", async (string id, IConfigStore store, CancellationToken ct) =>
+{
+    var (published, drafts) = await ServiceUsage(store, id, ct);
+    return Results.Ok(new { id, published, drafts });
+});
+
+// Blocked while a published endpoint uses the service. Its sign-in is kept: other services may share it.
+admin.MapDelete("/services/{id}", async (string id, IConfigStore store, HttpContext http, ILogger<Program> log, CancellationToken ct) =>
+{
+    if ((await store.GetSnapshotAsync(ct)).GetService(id) is null) return Results.NotFound(new { title = $"Service '{id}' not found." });
+
+    await liveChanges.WaitAsync(ct);
+    try
+    {
+        var (published, drafts) = await ServiceUsage(store, id, ct);
+        if (published.Count > 0)
+            return Results.Conflict(new
+            {
+                title = $"Published endpoints still use this service: {string.Join(", ", published.Select(r => r.Name))}. Change or delete those endpoints first.",
+                published
+            });
+
+        await store.DeleteServiceAsync(id, ct);
+        log.LogInformation("Service {ServiceId} deleted by {Subject}", id, Subject(http));
+        return Results.Ok(new { id, draftsAffected = drafts });
+    }
+    finally { liveChanges.Release(); }
 });
 
 admin.MapPost("/services/{id}/openapi/preview", async (string id, OpenApiImportRequest request, OpenApiImporter importer, CancellationToken ct) =>
@@ -114,8 +149,10 @@ admin.MapPost("/services/{id}/openapi/import", async (string id, OpenApiImportRe
 admin.MapPost("/schema/infer", (System.Text.Json.Nodes.JsonNode sample) => Results.Ok(SourceCatalog.InferSchema(sample)));
 
 // ---------------------------------------------------------------- what this installation allows
-admin.MapGet("/capabilities", (IEnumerable<IAuthStep> steps, IWebHostEnvironment env) => new
+admin.MapGet("/capabilities", (IEnumerable<IAuthStep> steps, IWebHostEnvironment env, HttpContext http) => new
 {
+    // So the UI can hide publish, roll back and delete for authors. The API still checks the role on every call.
+    canPublish = InboundAuth.HasScope(http.User, "aggregator.publisher"),
     // Development: the UI may store secret values (in config/secrets.local.json, git-ignored).
     // Elsewhere: the UI shows the secret NAME to put in Key Vault and never sends the value.
     canSaveSecrets = env.IsDevelopment(),
@@ -187,13 +224,23 @@ admin.MapGet("/recipes", async (IConfigStore store, CancellationToken ct) =>
 {
     var published = (await store.GetSnapshotAsync(ct)).Recipes;
     var drafts = await store.GetDraftsAsync(ct);
-    return published.Select(r => r.Id).Union(drafts.Select(d => d.Id)).Order().Select(id =>
+    var current = published.Select(r => r.Id).Union(drafts.Select(d => d.Id)).ToHashSet();
+
+    var list = current.Select(id =>
     {
         var p = published.FirstOrDefault(r => r.Id == id);
         var d = drafts.FirstOrDefault(r => r.Id == id);
         var r = d ?? p!;
-        return new { id, name = r.Name, method = r.Method, route = "/bff/" + r.Route, publishedVersion = p?.Version, hasDraft = d is not null };
-    });
+        return new RecipeListItem(id, r.Name, r.Method, "/bff/" + r.Route, p?.Version, d is not null, Deleted: false);
+    }).ToList();
+
+    // Deleted endpoints: not live and no draft, but their history is kept so they can be restored.
+    foreach (var id in (await store.GetHistoryIdsAsync(ct)).Where(id => !current.Contains(id)))
+    {
+        var last = (await store.GetHistoryAsync(id, ct)).FirstOrDefault(e => e.Recipe is not null)?.Recipe;
+        if (last is not null) list.Add(new RecipeListItem(id, last.Name, last.Method, "/bff/" + last.Route, null, false, Deleted: true));
+    }
+    return list.OrderBy(r => r.Id);
 });
 
 admin.MapGet("/recipes/{id}", async (string id, IConfigStore store, CancellationToken ct) =>
@@ -205,10 +252,19 @@ admin.MapGet("/recipes/{id}", async (string id, IConfigStore store, Cancellation
 admin.MapPut("/recipes/{id}", async (string id, Recipe draft, IConfigStore store, CancellationToken ct) =>
 {
     if (draft.Id != id) return Results.BadRequest(new { title = "The id in the URL and the body must match." });
-    var published = (await store.GetSnapshotAsync(ct)).GetRecipe(id);
-    var saved = Clone(draft, status: RecipeStatus.Draft, version: (published?.Version ?? 0) + 1);
+    var saved = Clone(draft, status: RecipeStatus.Draft, version: await NextVersion(store, id, ct));
     await store.SaveDraftAsync(saved, ct);
     return Results.Ok(saved);
+});
+
+// Discard changes: removes the draft only. The live version (if any) keeps serving.
+admin.MapDelete("/recipes/{id}/draft", async (string id, IConfigStore store, HttpContext http, ILogger<Program> log, CancellationToken ct) =>
+{
+    if (!await store.DeleteDraftAsync(id, ct)) return Results.NotFound(new { title = "There are no unpublished changes to discard." });
+    passedTests.TryRemove(id, out _);
+    log.LogInformation("Draft {RecipeId} discarded by {Subject}", id, Subject(http));
+    var live = (await store.GetSnapshotAsync(ct)).GetRecipe(id);
+    return Results.Ok(new { id, liveVersion = live?.Version });
 });
 
 admin.MapPost("/recipes/{id}/validate", async (string id, IConfigStore store, CancellationToken ct) =>
@@ -245,32 +301,84 @@ admin.MapPost("/recipes/{id}/publish", async (string id, IConfigStore store, Htt
     var draft = await store.GetDraftAsync(id, ct);
     if (draft is null) return Results.NotFound(new { title = "There's no draft to publish." });
 
-    var validation = RecipeValidator.Validate(draft, await store.GetSnapshotAsync(ct));
-    if (!validation.IsValid) return Results.BadRequest(new { title = "Fix the problems before publishing.", validation.Issues });
-    if (requireTestBeforePublish && (!passedTests.TryGetValue(id, out var hash) || hash != Hash(draft)))
-        return Results.BadRequest(new { title = "Run a successful test of this exact draft before publishing." });
+    await liveChanges.WaitAsync(ct);
+    try
+    {
+        var validation = RecipeValidator.Validate(draft, await store.GetSnapshotAsync(ct));
+        if (!validation.IsValid) return Results.BadRequest(new { title = "Fix the problems before publishing.", validation.Issues });
+        if (requireTestBeforePublish && (!passedTests.TryGetValue(id, out var hash) || hash != Hash(draft)))
+            return Results.BadRequest(new { title = "Run a successful test of this exact draft before publishing." });
 
-    var live = Clone(draft, status: RecipeStatus.Published, version: draft.Version);
-    await store.PublishAsync(live, ct);
-    log.LogInformation("Recipe {RecipeId} v{Version} published by {Subject}", id, live.Version, http.User.FindFirst("sub")?.Value);
-    // Warnings never block publishing; they are returned so the caller can show them.
-    return Results.Ok(new { id, live.Version, url = "/bff/" + live.Route, validation.Warnings });
+        // The version comes from the history, not the draft: a roll back or a delete may have happened since the draft was saved.
+        var live = Clone(draft, status: RecipeStatus.Published, version: await NextVersion(store, id, ct));
+        try { await store.PublishAsync(live, Change(http), ct); }
+        catch (HistoryConflictException) { return PublishedMeanwhile(); }
+
+        await store.DeleteDraftAsync(id, ct); // it is the live version now, so there are no unpublished changes left
+        passedTests.TryRemove(id, out _);
+        log.LogInformation("Recipe {RecipeId} v{Version} published by {Subject}", id, live.Version, Subject(http));
+        // Warnings never block publishing; they are returned so the caller can show them.
+        return Results.Ok(new { id, live.Version, url = "/bff/" + live.Route, validation.Warnings });
+    }
+    finally { liveChanges.Release(); }
 }).RequireAuthorization("publisher");
 
 admin.MapGet("/recipes/{id}/history", async (string id, IConfigStore store, CancellationToken ct) =>
-    (await store.GetHistoryAsync(id, ct)).Select(r => new { r.Version, r.Name, r.Route }));
+{
+    var liveVersion = (await store.GetSnapshotAsync(ct)).GetRecipe(id)?.Version;
+    return (await store.GetHistoryAsync(id, ct)).Select(e => new
+    {
+        e.Version, action = e.Action, e.At, e.By, e.RestoredFrom, name = e.Recipe?.Name, route = e.Recipe?.Route,
+        isLive = e.Action != HistoryAction.Unpublished && e.Version == liveVersion
+    });
+});
+
+// One version's content, for "View" in the History panel (read only).
+admin.MapGet("/recipes/{id}/history/{version:int}", async (string id, int version, IConfigStore store, CancellationToken ct) =>
+    (await store.GetHistoryAsync(id, ct)).FirstOrDefault(e => e.Version == version && e.Recipe is not null)?.Recipe is { } recipe
+        ? Results.Ok(recipe)
+        : Results.NotFound(new { title = $"Version {version} isn't in the history." }));
 
 admin.MapPost("/recipes/{id}/rollback/{version:int}", async (string id, int version, IConfigStore store, HttpContext http, ILogger<Program> log, CancellationToken ct) =>
 {
-    var history = await store.GetHistoryAsync(id, ct);
-    var target = history.FirstOrDefault(r => r.Version == version);
-    if (target is null) return Results.NotFound(new { title = $"Version {version} not found." });
+    var target = (await store.GetHistoryAsync(id, ct)).FirstOrDefault(e => e.Version == version && e.Recipe is not null)?.Recipe;
+    if (target is null) return Results.NotFound(new { title = $"Version {version} isn't in the history." });
 
-    // Rolling back publishes the old content as a NEW version, so history stays append-only.
-    var live = Clone(target, status: RecipeStatus.Published, version: history.Max(r => r.Version) + 1);
-    await store.PublishAsync(live, ct);
-    log.LogInformation("Recipe {RecipeId} rolled back to v{From} as v{Version} by {Subject}", id, version, live.Version, http.User.FindFirst("sub")?.Value);
-    return Results.Ok(new { id, live.Version, restoredFrom = version });
+    await liveChanges.WaitAsync(ct);
+    try
+    {
+        // Services may have changed since that version was live: never put a broken endpoint live.
+        var validation = RecipeValidator.Validate(target, await store.GetSnapshotAsync(ct));
+        if (!validation.IsValid)
+            return Results.BadRequest(new { title = $"Version {version} can't go live as it is, because the services it uses have changed. Open it, fix the problems, then test and publish.", validation.Issues });
+
+        // Rolling back publishes the old content as a NEW version, so history stays append-only.
+        var live = Clone(target, status: RecipeStatus.Published, version: await NextVersion(store, id, ct));
+        try { await store.PublishAsync(live, Change(http, restoredFrom: version), ct); }
+        catch (HistoryConflictException) { return PublishedMeanwhile(); }
+
+        log.LogInformation("Recipe {RecipeId} rolled back to v{From} as v{Version} by {Subject}", id, version, live.Version, Subject(http));
+        return Results.Ok(new { id, live.Version, restoredFrom = version });
+    }
+    finally { liveChanges.Release(); }
+}).RequireAuthorization("publisher");
+
+// Delete an endpoint: the gateway stops serving it and its draft is discarded. Its history is kept, so it can be restored.
+admin.MapDelete("/recipes/{id}", async (string id, IConfigStore store, HttpContext http, ILogger<Program> log, CancellationToken ct) =>
+{
+    await liveChanges.WaitAsync(ct);
+    try
+    {
+        var liveVersion = (await store.GetSnapshotAsync(ct)).GetRecipe(id)?.Version;
+        var unpublished = await store.UnpublishAsync(id, Change(http), ct);
+        var draftDiscarded = await store.DeleteDraftAsync(id, ct);
+        if (!unpublished && !draftDiscarded) return Results.NotFound(new { title = $"There's no endpoint '{id}' to delete." });
+
+        passedTests.TryRemove(id, out _);
+        log.LogInformation("Recipe {RecipeId} deleted (unpublished v{Version}, draft discarded: {DraftDiscarded}) by {Subject}", id, liveVersion, draftDiscarded, Subject(http));
+        return Results.Ok(new { id, unpublishedVersion = unpublished ? liveVersion : null, draftDiscarded });
+    }
+    finally { liveChanges.Release(); }
 }).RequireAuthorization("publisher");
 
 if (app.Environment.IsDevelopment() && !string.IsNullOrEmpty(builder.Configuration["Auth:DevSigningKey"]))
@@ -299,10 +407,38 @@ static string Hash(Recipe r)
     return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(JsonSerializer.Serialize(content, AggregatorJson.Options))));
 }
 
+static string? Subject(HttpContext http) => http.User.FindFirst("sub")?.Value;
+
+static ChangeInfo Change(HttpContext http, int? restoredFrom = null) => new(Subject(http), DateTimeOffset.UtcNow, restoredFrom);
+
+/// <summary>One more than any version ever used, live or in the history: version numbers are never reused (ADR 0012).</summary>
+static async Task<int> NextVersion(IConfigStore store, string id, CancellationToken ct)
+{
+    var live = (await store.GetSnapshotAsync(ct)).GetRecipe(id)?.Version ?? 0;
+    var history = (await store.GetHistoryAsync(id, ct)).Select(e => e.Version).DefaultIfEmpty(0).Max();
+    return Math.Max(live, history) + 1;
+}
+
+static IResult PublishedMeanwhile() => Results.Conflict(new { title = "Someone else published this endpoint at the same moment. Reload the page, check the history, and try again." });
+
+/// <summary>Published and draft endpoints with a step that calls the service.</summary>
+static async Task<(List<RecipeRef> Published, List<RecipeRef> Drafts)> ServiceUsage(IConfigStore store, string serviceId, CancellationToken ct)
+{
+    bool Uses(Recipe r) => r.Steps.Any(s => s.Endpoint.StartsWith(serviceId + "/", StringComparison.OrdinalIgnoreCase));
+    RecipeRef Ref(Recipe r) => new(r.Id, string.IsNullOrEmpty(r.Name) ? r.Id : r.Name);
+    var published = (await store.GetSnapshotAsync(ct)).Recipes.Where(Uses).Select(Ref).OrderBy(r => r.Id).ToList();
+    var drafts = (await store.GetDraftsAsync(ct)).Where(Uses).Select(Ref).OrderBy(r => r.Id).ToList();
+    return (published, drafts);
+}
+
 static bool IsSecretName(string name) =>
     name.Length is > 0 and <= 80 && name.All(c => char.IsAsciiLetterLower(c) || char.IsAsciiDigit(c) || c == '-');
 
 public sealed record SecretValue(string? Value);
+
+public sealed record RecipeRef(string Id, string Name);
+
+public sealed record RecipeListItem(string Id, string Name, string Method, string Route, int? PublishedVersion, bool HasDraft, bool Deleted);
 
 public sealed record TestRequest(Dictionary<string, string?>? Route, Dictionary<string, string?>? Query, Dictionary<string, string?>? Headers)
 {

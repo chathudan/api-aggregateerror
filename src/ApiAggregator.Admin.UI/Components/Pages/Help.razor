@@ -14,6 +14,8 @@
     <a href="/help#build">Build an aggregated endpoint</a>
     <a href="/help#combine">Combine lists</a>
     <a href="/help#publish">Test and publish</a>
+    <a href="/help#history">History and rolling back</a>
+    <a href="/help#delete">Discard, delete and rename</a>
     <a href="/help#api-docs">API docs for testers</a>
     <a href="/help#troubleshooting">Troubleshooting</a>
     <a href="/help#app-errors">Errors apps receive</a>
@@ -191,7 +193,36 @@
     <li>Enter test values next to the inputs (step 2), then choose <strong>Try it</strong>. You'll see each call, its status and time, and the combined answer.</li>
     <li>When the test passes, choose <strong>Publish</strong>. A passing test of the exact current version is required; any change after testing means testing again.</li>
 </ol>
-<p>Editing a published endpoint creates a draft. The live version keeps working until you publish again. Every published version is kept, so an administrator can roll back.</p>
+<p>Editing a published endpoint creates a draft. The live version keeps working until you publish again. Every published version is kept, so a publisher can roll back. See <a href="/help#history">History and rolling back</a>.</p>
+</section>
+
+<section id="history">
+<h2>History and rolling back</h2>
+<p>At the bottom of each endpoint, <strong>History</strong> lists every version that was published, newest first: the version number, what happened, when, and who did it. The version callers get now is marked <span class="tag live">live</span>. Versions published before who and when were recorded show <em>Not recorded</em>.</p>
+<ul>
+    <li><strong>View</strong> shows what a version did (its address, sign-in and steps) and its full settings. It changes nothing.</li>
+    <li><strong>Roll back to this</strong> makes that version live again. It is published as a <strong>new</strong> version number, so nothing in the history is ever removed or changed. Callers get it within a few seconds. Any unpublished changes you have are kept.</li>
+    <li>Only <strong>publishers</strong> can roll back. Authors can see the history.</li>
+    <li>If the services an old version uses have changed since (for example an endpoint was removed), the roll back is refused with the problems listed. Open the endpoint, fix them, then test and publish as usual.</li>
+</ul>
+</section>
+
+<section id="delete">
+<h2>Discard, delete and rename</h2>
+<h3>Discard unpublished changes</h3>
+<p>Removes your draft. The live version keeps serving and opens in the editor. If the endpoint was never published, the whole draft is removed. Anyone who can build endpoints can do this.</p>
+
+<h3>Delete an endpoint</h3>
+<p>Publishers only. The gateway stops serving it within a few seconds, and apps that still call it get <strong>404 not_found</strong>, so check with the app teams first. Unpublished changes are removed too.</p>
+<p>The history is kept. Deleted endpoints are listed at the bottom of the home page. To bring one back, open it and choose <strong>Roll back to this</strong> on a version. The history also records who deleted it and when.</p>
+
+<h3>Rename or delete a service</h3>
+<ul>
+    <li><strong>Rename</strong> changes only the name people see. The id stays the same, so endpoints that use the service keep working.</li>
+    <li><strong>Delete</strong> is refused while a <strong>published</strong> endpoint uses the service, and the page lists which ones. Change or delete those endpoints first.</li>
+    <li>Drafts that use the service don't block it, but they're listed before you confirm. They'll show a problem until you change them.</li>
+    <li>The service's sign-in settings and secrets are kept, because another service may share them.</li>
+</ul>
 </section>
 
 @* ------------------------------------------------------------------ *@

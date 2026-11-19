@@ -27,6 +27,10 @@ stateDiagram-v2
     Tested --> Published: Publish (publisher role)
     Published --> Draft: Edit (live version keeps serving)
     Published --> Published: Roll back (republished as a new version)
+    Published --> Deleted: Delete endpoint (publisher role)
+    Draft --> Published: Discard changes (when a live version exists)
+    Draft --> [*]: Discard changes (never published)
+    Deleted --> Published: Roll back to any version
 ```
 
 - Drafts live in `config/drafts/` and are **never served**. The live version keeps serving while a
@@ -34,9 +38,37 @@ stateDiagram-v2
 - **Publish requires a passing test of the exact draft.** The admin API hashes the recipe content,
   so any change after the test means running it again. You can turn this off with
   `Admin:RequireTestBeforePublish = false`, but don't do that in production.
-- Publishing writes `config/recipes/<id>.json` and `config/history/<id>.v<n>.json`. The gateway
-  picks it up within `ReloadCheckSeconds` (2 s) with no restart.
+- Publishing writes `config/recipes/<id>.json` and a history entry `config/history/<id>.v<n>.json`
+  (who, when, and the recipe; [ADR 0012](../adr/0012-history-entries-who-when-and-unpublish.md)), then
+  removes the draft. The gateway picks it up within `ReloadCheckSeconds` (2 s) with no restart.
+- **Version numbers are never reused.** The next version is one more than any version in the history
+  or live, and history files are write-once (a clash gives 409).
 - **Rollback** republishes an old version's content as a **new** version, so history only ever grows.
+  It's refused (400, with the problems) if the old version no longer validates against today's services.
+- **Delete endpoint** (publisher) removes the live file, discards the draft and writes
+  `<id>.v<n>.unpublished.json`. The gateway stops serving it at its next config check (404
+  `not_found`). The history stays, and the endpoint is listed as deleted until it's rolled back or
+  published again.
+- **Discard changes** removes the draft only.
+- **Who** is the caller's `sub` claim. The UI outside Development uses one configured token, so treat
+  `by` as advisory until the UI signs users in (roadmap).
+
+## History panel (endpoint editor)
+
+Lists versions newest first: version, what happened (published / rolled back from vN / deleted), when
+(UTC), who, and a **live** tag. **View** shows a summary (address, sign-in, steps, combined lists) and
+the full JSON, read only. **Roll back to this** and **Delete endpoint** are shown to publishers only
+(`canPublish` from `/admin/capabilities`), and each asks for confirmation in plain words. The API
+checks the role whatever the UI shows. Entries from before ADR 0012 show "Not recorded" for who and when.
+
+## Services: rename and delete
+
+- **Rename** changes `name` only (through `PUT /admin/services/{id}`). Recipes refer to the id, so
+  nothing else changes. Names are 1 to 100 characters, with no control characters.
+- **Delete** is refused with 409 while a **published** recipe has a step that calls the service. The
+  response, and the UI, name those endpoints. Drafts that use it don't block the delete, but they're
+  listed (`GET /admin/services/{id}/usage`). The service's auth profile and secrets are kept,
+  because they may be shared.
 
 ## Adding a service (Services page → Add service)
 
@@ -109,17 +141,23 @@ route is `docs` or `openapi.json` would be hidden by these two fixed addresses, 
 | Method and path | Role | Purpose |
 |---|---|---|
 | `GET /admin/services`, `PUT /admin/services/{id}` | author | List and save services |
+| `GET /admin/services/{id}/usage` | author | Published and draft endpoints that call the service |
+| `DELETE /admin/services/{id}` | author | Delete a service. 409 with the endpoint list while a published one uses it |
 | `POST /admin/services/{id}/openapi/preview` · `/import` | author | OpenAPI import |
-| `GET /admin/capabilities` | author | Whether secrets can be saved here; auth kinds |
+| `GET /admin/capabilities` | author | Whether secrets can be saved here, whether the caller can publish (`canPublish`), and the auth kinds |
 | `PUT /admin/secrets/{name}`, `GET /admin/secrets/{name}` | author | Development only: save a secret value; check that one exists (values never come back) |
 | `POST /admin/auth-profiles/{id}/check` | author | Sign in once and report the result |
 | `GET /admin/auth-kinds` | author | Available auth kinds and their required settings |
 | `GET /admin/auth-profiles`, `PUT /admin/auth-profiles/{id}` | author | Profiles (plain-text secrets are rejected) |
 | `POST /admin/schema/infer` | author | Sample response → schema |
 | `GET /admin/logs?after=&wait=` | author | Recent admin API log lines (long poll). The gateway has the same at `/_admin/logs` |
-| `GET /admin/recipes`, `GET/PUT /admin/recipes/{id}` | author | List, read and save drafts |
+| `GET /admin/recipes`, `GET/PUT /admin/recipes/{id}` | author | List (including `deleted` endpoints that still have history), read and save drafts |
+| `DELETE /admin/recipes/{id}/draft` | author | Discard changes. The live version keeps serving |
+| `DELETE /admin/recipes/{id}` | **publisher** | Delete the endpoint: unpublish and discard the draft. History is kept |
 | `POST /admin/recipes/{id}/validate` | author | Plain-English issues |
 | `GET /admin/recipes/{id}/sources?beforeStep=x` | author | Options for the "use value from" dropdown |
 | `POST /admin/recipes/{id}/test` | author | Run the draft (no cache, with trace) |
 | `POST /admin/recipes/{id}/publish` | **publisher** | Make it live |
-| `GET /admin/recipes/{id}/history`, `POST /admin/recipes/{id}/rollback/{v}` | **publisher** for rollback | History and rollback |
+| `GET /admin/recipes/{id}/history` | author | Entries newest first: `version`, `action`, `at`, `by`, `restoredFrom`, `isLive` |
+| `GET /admin/recipes/{id}/history/{v}` | author | One version's recipe (read only) |
+| `POST /admin/recipes/{id}/rollback/{v}` | **publisher** | Publish version v's content as a new version |

@@ -66,9 +66,11 @@ public class PublishRoundTripTests(AdminApp app) : IClassFixture<AdminApp>
 
         // 4. What the gateway will read: the published file and the history copy both keep the combine block.
         var expected = Deserialize(DraftJson).Combine["people"];
-        foreach (var file in new[] { Path.Combine("recipes", $"{Id}.json"), Path.Combine("history", $"{Id}.v1.json") })
+        var live = await File.ReadAllTextAsync(Path.Combine(app.ConfigDir, "recipes", $"{Id}.json"));
+        var history = JsonNode.Parse(await File.ReadAllTextAsync(Path.Combine(app.ConfigDir, "history", $"{Id}.v1.json")))!["recipe"]!.ToJsonString();
+        foreach (var json in new[] { live, history })
         {
-            var published = Deserialize(await File.ReadAllTextAsync(Path.Combine(app.ConfigDir, file)));
+            var published = Deserialize(json);
             Assert.Equal(RecipeStatus.Published, published.Status);
             var combine = Assert.Single(published.Combine);
             Assert.Equal("people", combine.Key);

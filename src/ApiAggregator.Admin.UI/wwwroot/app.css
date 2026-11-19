@@ -98,3 +98,11 @@ table.list input, table.list select { width: 100%; box-sizing: border-box; }
 .step.combine { background: var(--page); }
 .source { border: 1px dashed var(--border); border-radius: var(--radius); padding: 8px 10px; margin-bottom: 8px; background: var(--surface); }
 .grid.via { margin-top: 8px; }
+
+/* ---- history, confirm boxes and deleting */
+.confirm { border: 1px solid #b5d4f4; background: #f3f8fd; border-radius: var(--radius); padding: 10px 14px; margin: 10px 0; font-size: 14px; }
+.confirm.danger { border-color: #e4b4b4; background: #fcf1f1; }
+.button.danger { background: var(--bad); color: #fff; border-color: var(--bad); }
+.danger-zone { border-top: 1px solid var(--border); margin-top: 16px; padding-top: 4px; }
+.tag.live { background: #e3f1e3; color: var(--ok); }
+.history-view { margin: 8px 0 12px; }

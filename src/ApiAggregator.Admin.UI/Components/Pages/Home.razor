@@ -20,7 +20,7 @@
 {
     <p class="muted">Loading…</p>
 }
-else if (_recipes.Count == 0)
+else if (_recipes.All(r => r.Deleted))
 {
     <div class="card empty">
         <h2>Create your first aggregated endpoint</h2>
@@ -33,7 +33,7 @@ else
     <table class="list">
         <thead><tr><th>Name</th><th>Address</th><th>Live version</th><th>Draft</th><th></th></tr></thead>
         <tbody>
-            @foreach (var r in _recipes)
+            @foreach (var r in _recipes.Where(r => !r.Deleted))
             {
                 <tr>
                     <td><a href="/endpoints/@r.Id">@(string.IsNullOrEmpty(r.Name) ? r.Id : r.Name)</a></td>
@@ -46,6 +46,25 @@ else
                             <a href="@DocsLink(r)" target="_blank" rel="noopener">Try in API docs</a>
                         }
                     </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+}
+
+@if (_recipes?.Where(r => r.Deleted).ToList() is { Count: > 0 } deleted)
+{
+    <h2>Deleted endpoints <HelpLink Topic="delete" /></h2>
+    <p class="hint">The gateway doesn't serve these. Their history is kept, so a publisher can bring one back.</p>
+    <table class="list">
+        <thead><tr><th>Name</th><th>Address it had</th><th></th></tr></thead>
+        <tbody>
+            @foreach (var r in deleted)
+            {
+                <tr>
+                    <td>@(string.IsNullOrEmpty(r.Name) ? r.Id : r.Name)</td>
+                    <td><code>@r.Method @r.Route</code></td>
+                    <td><a href="/endpoints/@r.Id#history">History and restore</a></td>
                 </tr>
             }
         </tbody>

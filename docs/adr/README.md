@@ -16,3 +16,4 @@ decision; write a new ADR that supersedes it. Use `.claude/skills/write-adr` or 
 | [0009](0009-error-contract-and-logging.md) | Downstream error contract (problem details, codes) and structured logging | Accepted |
 | [0010](0010-live-logs-in-admin-ui.md) | Live logs in the admin UI (in-memory buffer, long polling) | Accepted |
 | [0011](0011-combining-records-no-fuzzy-matching.md) | Combining records across services by exact key; no fuzzy matching | Accepted |
+| [0012](0012-history-entries-who-when-and-unpublish.md) | History entries record who and when; versions never reused; unpublish | Accepted |

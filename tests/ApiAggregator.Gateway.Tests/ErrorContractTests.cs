@@ -70,7 +70,11 @@ public class ErrorContractTests(GatewayApp app) : IClassFixture<GatewayApp>
         public Task<IReadOnlyList<Recipe>> GetDraftsAsync(CancellationToken ct = default) => throw new InvalidOperationException(Message);
         public Task<Recipe?> GetDraftAsync(string id, CancellationToken ct = default) => throw new InvalidOperationException(Message);
         public Task SaveDraftAsync(Recipe draft, CancellationToken ct = default) => throw new InvalidOperationException(Message);
-        public Task PublishAsync(Recipe recipe, CancellationToken ct = default) => throw new InvalidOperationException(Message);
-        public Task<IReadOnlyList<Recipe>> GetHistoryAsync(string id, CancellationToken ct = default) => throw new InvalidOperationException(Message);
+        public Task<bool> DeleteServiceAsync(string id, CancellationToken ct = default) => throw new InvalidOperationException(Message);
+        public Task<bool> DeleteDraftAsync(string id, CancellationToken ct = default) => throw new InvalidOperationException(Message);
+        public Task PublishAsync(Recipe recipe, ChangeInfo change, CancellationToken ct = default) => throw new InvalidOperationException(Message);
+        public Task<bool> UnpublishAsync(string id, ChangeInfo change, CancellationToken ct = default) => throw new InvalidOperationException(Message);
+        public Task<IReadOnlyList<string>> GetHistoryIdsAsync(CancellationToken ct = default) => throw new InvalidOperationException(Message);
+        public Task<IReadOnlyList<RecipeHistoryEntry>> GetHistoryAsync(string id, CancellationToken ct = default) => throw new InvalidOperationException(Message);
     }
 }

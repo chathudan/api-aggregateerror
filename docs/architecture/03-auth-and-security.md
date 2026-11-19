@@ -98,6 +98,7 @@ Design choices that help:
 - Cache keys are hashed.
 - Logs record which recipe ran and who called it, never the values.
 - Admin traces mask query values.
+- History records **who** changed an endpoint as an id (`sub`), never a name or email, and holds no request data.
 - Use identifiers in headers or bodies rather than query strings where you can.
 
 **Not decided here — review with qualified people:**
@@ -108,7 +109,9 @@ Design choices that help:
   Australian Digital Health Agency's requirements. Decide whether caching is allowed at all for
   health data, and set a maximum TTL.
 - **Data residency:** where gateway instances and caches run.
-- **Retention** of logs and history, and who can read them.
+- **Retention** of logs and history, and who can read them. Since ADR 0012, each history entry records
+  the publisher's user id (`sub`) and a time, and history is never pruned or changed. Decide how long
+  actor ids are kept, and whether a minimum retention applies for audit.
 - **Penetration test and threat model sign-off** before production.
 
 These need sign-off by your privacy officer, security team and legal advisers. This document does not

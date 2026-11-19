@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using ApiAggregator.Engine.Logging;
 using ApiAggregator.Engine.Model;
 using Microsoft.Extensions.Logging;
@@ -21,7 +22,9 @@ public sealed class FileConfigOptions
 ///   config/auth-profiles.json     [ AuthProfile ]   (secrets are "secret:name" references only)
 ///   config/recipes/*.json         PUBLISHED recipes, one per file (what the gateway serves)
 ///   config/drafts/*.json          work in progress from the admin UI (never served)
-///   config/history/               every published version, for audit and rollback
+///   config/history/               append-only history, for audit and rollback (ADR 0012):
+///                                   <id>.v<n>.json              published or rolled back as version n
+///                                   <id>.v<n>.unpublished.json  version n was taken down
 /// </summary>
 public sealed class FileConfigStore : IConfigStore
 {
@@ -81,6 +84,20 @@ public sealed class FileConfigStore : IConfigStore
     public Task SaveServiceAsync(ApiService service, CancellationToken ct = default) =>
         UpsertListAsync(ServicesFile, service, s => s.Id, ct);
 
+    public async Task<bool> DeleteServiceAsync(string id, CancellationToken ct = default)
+    {
+        await _gate.WaitAsync(ct);
+        try
+        {
+            var list = await ReadListAsync<ApiService>(ServicesFile, ct);
+            if (list.RemoveAll(s => string.Equals(s.Id, id, StringComparison.OrdinalIgnoreCase)) == 0) return false;
+            await WriteAtomicAsync(ServicesFile, JsonSerializer.Serialize(list.OrderBy(s => s.Id), AggregatorJson.Options), ct);
+            _lastCheckUtc = DateTime.MinValue;
+            return true;
+        }
+        finally { _gate.Release(); }
+    }
+
     public Task SaveAuthProfileAsync(AuthProfile profile, CancellationToken ct = default) =>
         UpsertListAsync(ProfilesFile, profile, p => p.Id, ct);
 
@@ -102,22 +119,74 @@ public sealed class FileConfigStore : IConfigStore
         await WriteAtomicAsync(SafePath(DraftsDir, draft.Id), JsonSerializer.Serialize(draft, AggregatorJson.Options), ct);
     }
 
-    public async Task PublishAsync(Recipe recipe, CancellationToken ct = default)
+    public Task<bool> DeleteDraftAsync(string id, CancellationToken ct = default)
+    {
+        var file = SafePath(DraftsDir, id);
+        if (!File.Exists(file)) return Task.FromResult(false);
+        File.Delete(file);
+        return Task.FromResult(true);
+    }
+
+    public async Task PublishAsync(Recipe recipe, ChangeInfo change, CancellationToken ct = default)
     {
         System.IO.Directory.CreateDirectory(HistoryDir);
-        var json = JsonSerializer.Serialize(recipe, AggregatorJson.Options);
-        await WriteAtomicAsync(SafePath(HistoryDir, $"{recipe.Id}.v{recipe.Version}"), json, ct);
-        await WriteAtomicAsync(SafePath(RecipesDir, recipe.Id), json, ct);
+        var entry = new RecipeHistoryEntry
+        {
+            Id = recipe.Id, Version = recipe.Version, At = change.At, By = change.By, RestoredFrom = change.RestoredFrom,
+            Action = change.RestoredFrom is null ? HistoryAction.Published : HistoryAction.RolledBack, Recipe = recipe
+        };
+        // History first and write-once: if this version is already there, nothing goes live.
+        await WriteOnceAsync(SafePath(HistoryDir, $"{recipe.Id}.v{recipe.Version}"), JsonSerializer.Serialize(entry, AggregatorJson.Options), ct);
+        await WriteAtomicAsync(SafePath(RecipesDir, recipe.Id), JsonSerializer.Serialize(recipe, AggregatorJson.Options), ct);
         _lastCheckUtc = DateTime.MinValue; // pick the change up on the next call
     }
 
-    public async Task<IReadOnlyList<Recipe>> GetHistoryAsync(string id, CancellationToken ct = default)
+    public async Task<bool> UnpublishAsync(string id, ChangeInfo change, CancellationToken ct = default)
     {
+        var live = SafePath(RecipesDir, id);
+        if (await ReadRecipeAsync(live, ct) is not { } recipe) return false;
+
+        System.IO.Directory.CreateDirectory(HistoryDir);
+        var entry = new RecipeHistoryEntry { Id = id, Version = recipe.Version, Action = HistoryAction.Unpublished, At = change.At, By = change.By };
+        await WriteOnceAsync(SafePath(HistoryDir, $"{id}.v{recipe.Version}.unpublished"), JsonSerializer.Serialize(entry, AggregatorJson.Options), ct);
+        File.Delete(live); // the gateway's next config check sees one recipe fewer and stops serving it
+        _lastCheckUtc = DateTime.MinValue;
+        return true;
+    }
+
+    public async Task<IReadOnlyList<RecipeHistoryEntry>> GetHistoryAsync(string id, CancellationToken ct = default)
+    {
+        SafePath(HistoryDir, id); // the id becomes part of a file pattern: same rules as every other id (no wildcards, no "..")
         if (!System.IO.Directory.Exists(HistoryDir)) return [];
-        var versions = new List<Recipe>();
+        var entries = new List<RecipeHistoryEntry>();
         foreach (var file in System.IO.Directory.EnumerateFiles(HistoryDir, $"{id}.v*.json"))
-            if (await ReadRecipeAsync(file, ct) is { } r && r.Id == id) versions.Add(r);
-        return versions.OrderByDescending(r => r.Version).ToList();
+            if (ReadHistoryEntry(await File.ReadAllTextAsync(file, ct)) is { } entry && entry.Id == id) entries.Add(entry);
+
+        // Newest first. For the same version, "unpublished" happened after it went live.
+        return entries.OrderByDescending(e => e.Version).ThenByDescending(e => e.Action == HistoryAction.Unpublished).ToList();
+    }
+
+    public Task<IReadOnlyList<string>> GetHistoryIdsAsync(CancellationToken ct = default)
+    {
+        if (!System.IO.Directory.Exists(HistoryDir)) return Task.FromResult<IReadOnlyList<string>>([]);
+        // File names are "<id>.v<n>[.unpublished].json" and ids have no dots, so the id is everything before ".v".
+        IReadOnlyList<string> ids = System.IO.Directory.EnumerateFiles(HistoryDir, "*.v*.json")
+            .Select(f => Path.GetFileName(f))
+            .Select(name => name[..name.IndexOf(".v", StringComparison.Ordinal)])
+            .Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal).ToList();
+        return Task.FromResult(ids);
+    }
+
+    /// <summary>An ADR 0012 entry, or a file from before it: the bare recipe, without who and when.</summary>
+    private static RecipeHistoryEntry? ReadHistoryEntry(string json)
+    {
+        if (JsonNode.Parse(json, documentOptions: new JsonDocumentOptions { CommentHandling = JsonCommentHandling.Skip, AllowTrailingCommas = true }) is not JsonObject node)
+            return null;
+        if (node.ContainsKey("action") || node.ContainsKey("recipe"))
+            return node.Deserialize<RecipeHistoryEntry>(AggregatorJson.Options);
+
+        var recipe = node.Deserialize<Recipe>(AggregatorJson.Options);
+        return recipe is null ? null : new RecipeHistoryEntry { Id = recipe.Id, Version = recipe.Version, Recipe = recipe };
     }
 
     // ------------------------------------------------------------------ helpers
@@ -179,6 +248,20 @@ public sealed class FileConfigStore : IConfigStore
             _lastCheckUtc = DateTime.MinValue;
         }
         finally { _gate.Release(); }
+    }
+
+    /// <summary>Like <see cref="WriteAtomicAsync"/>, but never replaces an existing file (history is append-only).</summary>
+    private static async Task WriteOnceAsync(string path, string content, CancellationToken ct)
+    {
+        if (File.Exists(path)) throw new HistoryConflictException($"Version history already has {Path.GetFileName(path)}.");
+        var temp = path + "." + Guid.NewGuid().ToString("n") + ".tmp";
+        await File.WriteAllTextAsync(temp, content, ct);
+        try { File.Move(temp, path, overwrite: false); }
+        catch (IOException) when (File.Exists(path))
+        {
+            File.Delete(temp);
+            throw new HistoryConflictException($"Version history already has {Path.GetFileName(path)}.");
+        }
     }
 
     /// <summary>Write to a temp file then rename, so readers never see a half-written file.</summary>
