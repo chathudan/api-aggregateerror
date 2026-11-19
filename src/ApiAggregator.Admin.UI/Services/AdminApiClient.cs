@@ -41,7 +41,7 @@ public sealed record RecipeRef(string Id, string Name);
 
 public sealed record ServiceUsage(List<RecipeRef> Published, List<RecipeRef> Drafts);
 
-public sealed record Capabilities(bool CanSaveSecrets, bool CanPublish, bool SampleData = false);
+public sealed record Capabilities(bool CanSaveSecrets, bool CanPublish, bool SampleData = false, bool RequireTestBeforePublish = true);
 
 /// <summary>
 /// Last sign-in check of one auth profile. State: signedIn, settingsOk (complete; checked by the service on the first

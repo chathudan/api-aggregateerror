@@ -5,17 +5,38 @@
 @inject AdminApiClient Api
 @inject NavigationManager Nav
 @inject IConfiguration Config
-
-<PageTitle>@(IsNew ? "New endpoint" : _form.Name)</PageTitle>
+@inject ToastService Toasts
+@inject UiContext Ui
 
 @if (_snapshot is null)
 {
-    <p class="muted">Loading…</p>
+    <PageShell Title="Endpoint" Crumbs="Crumbs"><Loading /></PageShell>
     return;
 }
 
-<div class="header-row"><h1>@(IsNew ? "New aggregated endpoint" : _form.Name)</h1><HelpLink Topic="build" Text="How to build an endpoint" /></div>
-<p class="muted">Address: <code>@_form.Method /bff/@_form.Route.Trim('/')</code></p>
+@* Ask before leaving with unsaved changes: for links inside the admin UI, and for closing or reloading the tab. *@
+<NavigationLock OnBeforeInternalNavigation="OnBeforeLeave" ConfirmExternalNavigation="@IsDirty" />
+
+<PageShell Title="@(IsNew ? "New endpoint" : (string.IsNullOrWhiteSpace(_form.Name) ? _form.Id : _form.Name))" Crumbs="Crumbs"
+           Purpose="Build, test and publish one aggregated endpoint." HelpTopic="build" />
+<p class="muted">Address callers use: <code>@_form.Method /bff/@_form.Route.Trim('/')</code></p>
+
+@* ---- stepper: each step links to its section and says what's left to do there *@
+<nav aria-label="Steps">
+    <ol class="stepper">
+        @foreach (var (number, title, anchor, done, state) in Steps())
+        {
+            <li class="@(done ? "done" : state.StartsWith("✕") ? "todo" : "")">
+                <a href="@($"{Nav.ToBaseRelativePath(Nav.Uri).Split('#')[0]}#{anchor}")">
+                    <span class="num" aria-hidden="true">@(done ? "✓" : number.ToString())</span>
+                    <span>@title</span>
+                    <span class="state">@state</span>
+                </a>
+            </li>
+        }
+    </ol>
+</nav>
+
 @if (_deleted)
 {
     <div class="issues warnings">
@@ -25,7 +46,7 @@
 }
 
 @* ------------------------------------------------------------------ 1. Endpoint *@
-<section class="card">
+<section class="card" id="step-1">
     <h2>1. Endpoint</h2>
     <div class="grid">
         <label>Name <input value="@_form.Name" @onchange="e => OnNameChanged(e.Value?.ToString())" placeholder="Customer overview" /></label>
@@ -37,6 +58,7 @@
         </label>
         <label>Route <input value="@_form.Route" @onchange="e => OnRouteChanged(e.Value?.ToString())" placeholder="customer/{id}/overview" /></label>
     </div>
+    <FieldIssues Problems="@ProblemsWhere(IsEndpointField)" Warnings="@WarningsWhere(IsEndpointField)" />
     <div class="grid">
         <label class="check"><input type="checkbox" @bind="_form.RequireAuthentication" /> Callers must sign in</label>
         <label>Required scope <input @bind="_form.RequiredScope" placeholder="customer.read" /></label>
@@ -50,41 +72,52 @@
 </section>
 
 @* ------------------------------------------------------------------ 2. Inputs *@
-<section class="card">
+<section class="card" id="step-2">
     <h2>2. Inputs <HelpLink Topic="build" /></h2>
     <p class="hint">What the caller sends. Anything not listed here is ignored and never passed on.</p>
-    <table class="list">
-        <thead><tr><th>From</th><th>Name</th><th>Type</th><th>Required</th><th>Default</th><th>Test value</th><th></th></tr></thead>
-        <tbody>
-            @foreach (var input in _form.Inputs)
-            {
-                <tr>
-                    <td>
-                        <select @bind="input.Source">
-                            <option value="route">route</option><option value="query">query</option><option value="header">header</option>
-                        </select>
-                    </td>
-                    <td><input @bind="input.Name" /></td>
-                    <td>
-                        <select @bind="input.Type">
-                            @foreach (var t in new[] { "string", "int", "number", "bool", "date" }) { <option>@t</option> }
-                        </select>
-                    </td>
-                    <td><input type="checkbox" @bind="input.Required" /></td>
-                    <td><input @bind="input.Default" /></td>
-                    <td><input @bind="input.TestValue" placeholder="for Try it" /></td>
-                    <td><button class="link" @onclick="() => _form.Inputs.Remove(input)">Remove</button></td>
-                </tr>
-            }
-        </tbody>
-    </table>
+    @if (_form.Inputs.Count > 0)
+    {
+        <table class="list">
+            <thead><tr><th scope="col">From</th><th scope="col">Name</th><th scope="col">Type</th><th scope="col">Required</th><th scope="col">Default</th><th scope="col">Test value</th><th scope="col"><span class="visually-hidden">Remove</span></th></tr></thead>
+            <tbody>
+                @foreach (var input in _form.Inputs)
+                {
+                    <tr>
+                        <td>
+                            <select @bind="input.Source" aria-label="Where the value comes from">
+                                <option value="route">route</option><option value="query">query</option><option value="header">header</option>
+                            </select>
+                        </td>
+                        <td><input @bind="input.Name" aria-label="Input name" /></td>
+                        <td>
+                            <select @bind="input.Type" aria-label="Type">
+                                @foreach (var t in new[] { "string", "int", "number", "bool", "date" }) { <option>@t</option> }
+                            </select>
+                        </td>
+                        <td><input type="checkbox" @bind="input.Required" aria-label="Required" /></td>
+                        <td><input @bind="input.Default" aria-label="Default value" /></td>
+                        <td><input @bind="input.TestValue" placeholder="for Try it" aria-label="Test value for Try it" /></td>
+                        <td><button class="link" @onclick="() => _form.Inputs.Remove(input)">Remove<span class="visually-hidden"> input @input.Name</span></button></td>
+                    </tr>
+                    @if (ProblemsWhere(w => w == $"inputs.{input.Source}.{input.Name}") is { Count: > 0 } inputProblems)
+                    {
+                        <tr><td colspan="7"><FieldIssues Problems="inputProblems" /></td></tr>
+                    }
+                }
+            </tbody>
+        </table>
+    }
+    @if (_form.Inputs.Count == 0) { <p class="muted">No inputs yet. Values in the route, such as <code>{id}</code>, are added here for you as you type the route.</p> }
+    <FieldIssues Problems="@ProblemsWhere(w => w == "inputs")" />
     <button class="button" @onclick="() => _form.Inputs.Add(new InputForm())">Add input</button>
 </section>
 
 @* ------------------------------------------------------------------ 3. Steps *@
-<section class="card">
+<section class="card" id="step-3">
     <h2>3. Steps <HelpLink Topic="build" /></h2>
     <p class="hint">Each step calls one service endpoint. Fill each value from the caller's inputs or from an earlier step. The run order is worked out for you.</p>
+    @if (_form.Steps.Count > 1 && TryRecipe() is { } planned) { <StepFlow Recipe="planned" Snapshot="_snapshot" /> }
+    <FieldIssues Problems="@ProblemsWhere(w => w == "steps")" />
 
     @for (var i = 0; i < _form.Steps.Count; i++)
     {
@@ -92,9 +125,10 @@
         var number = i + 1;
         <div class="step">
             <div class="header-row">
-                <input class="step-name" value="@step.DisplayName" @onchange="e => step.DisplayName = e.Value?.ToString() ?? step.DisplayName" />
-                <button class="link" @onclick="() => _form.Steps.Remove(step)">Remove step</button>
+                <input class="step-name" aria-label="Step name" value="@step.DisplayName" @onchange="e => step.DisplayName = e.Value?.ToString() ?? step.DisplayName" />
+                <button class="link" @onclick="() => _form.Steps.Remove(step)">Remove step<span class="visually-hidden"> @step.DisplayName</span></button>
             </div>
+            <FieldIssues Problems="@StepProblems(step)" Warnings="@WarningsWhere(w => w == $"steps.{step.Alias}")" />
 
             <label>Calls
                 <select value="@step.Endpoint" @onchange="e => OnEndpointChanged(step, e.Value?.ToString())">
@@ -122,7 +156,7 @@
                                 <td><span class="tag">@parts[0]</span></td>
                                 <td>
                                     @if (binding.Suggested) { <span class="tag suggested" title="@binding.Reason">suggested</span> }
-                                    <select value="@SelectValue(binding)" @onchange="e => OnBindingChanged(binding, e.Value?.ToString())">
+                                    <select value="@SelectValue(binding)" aria-label="@($"Value for {parts[1]} ({parts[0]})")" @onchange="e => OnBindingChanged(binding, e.Value?.ToString())">
                                         <option value="none">Leave empty</option>
                                         @foreach (var group in sources.GroupBy(o => o.Group))
                                         {
@@ -130,24 +164,30 @@
                                                 @foreach (var o in group) { <option value="@($"src:{o.Expression}")">@o.Label</option> }
                                             </optgroup>
                                         }
+                                        @* A value the field list doesn't know (the service has no response schema): show it rather than a blank box. *@
+                                        @if (binding.Mode == BindingMode.FromSource && !sources.Any(o => o.Expression == binding.Expression))
+                                        {
+                                            <option value="@($"src:{binding.Expression}")">@binding.Expression (not in the field list)</option>
+                                        }
                                         <option value="fixed">Fixed value…</option>
                                     </select>
                                     @if (binding.Mode == BindingMode.FixedValue)
                                     {
-                                        <input @bind="binding.FixedValue" placeholder="Type the value" />
+                                        <input @bind="binding.FixedValue" placeholder="Type the value" aria-label="@($"Fixed value for {parts[1]}")" />
                                     }
+                                    <FieldIssues Problems="@BindingProblems(step, target)" />
                                 </td>
                             </tr>
                         }
                     </tbody>
                 </table>
                 <div class="inline">
-                    <input @bind="_extraTarget[number]" placeholder="header.X-Something or query.name" />
+                    <input @bind="_extraTarget[number]" placeholder="header.X-Something or query.name" aria-label="Another value to send: where it goes" />
                     <button class="link" @onclick="() => AddExtraValue(step, number)">Add another value</button>
                 </div>
             }
 
-            @if (RunsAfter(step) is { Length: > 0 } after) { <p class="hint">Runs after @after</p> }
+            @if (RunsAfter(step) is { Length: > 0 } after) { <p class="hint">Runs after @after.</p> }
 
             <button class="link" @onclick="() => step.ShowAdvanced = !step.ShowAdvanced">@(step.ShowAdvanced ? "Hide advanced" : "Advanced")</button>
             @if (step.ShowAdvanced)
@@ -168,7 +208,7 @@
     }
     @if (!_picking)
     {
-        <button class="button primary" @onclick="() => { _picking = true; _search = string.Empty; }">Add step</button>
+        <button class="button" @onclick="() => { _picking = true; _search = string.Empty; }">Add step</button>
     }
     else
     {
@@ -197,7 +237,7 @@
 </section>
 
 @* ------------------------------------------------------------------ 4. Response *@
-<section class="card">
+<section class="card" id="step-4">
     <h2>4. Response</h2>
 
     @* ---- combine lists: merge records that appear in several services *@
@@ -209,11 +249,13 @@
         {
             <CombineEditor Form="combine" Lists="lists" Changed="StateHasChanged" Removed="() => _form.Combines.Remove(combine)" AddToResponse="() => AddCombineToResponse(combine)" />
         }
+        <FieldIssues Problems="@ProblemsWhere(w => w.StartsWith("combine"))" Warnings="@WarningsWhere(w => w.StartsWith("combine"))" />
         <button class="button" disabled="@(_form.Steps.Count == 0)" @onclick="AddCombine">Combine lists</button>
         @if (_form.Steps.Count == 0) { <span class="hint">Add steps first.</span> }
     </div>
 
     <h3>Response fields</h3>
+    <FieldIssues Problems="@ProblemsWhere(w => w == "response")" Warnings="@WarningsWhere(w => w == "response")" />
     <p class="hint">Choose what the caller gets back. With no fields, each step's full response (and each combined list) is returned under its name. Once you add a field, only the fields listed here are returned.</p>
     @{ var allSources = SourcesFor(null); }
     <table class="list">
@@ -222,11 +264,15 @@
             @foreach (var field in _form.Response)
             {
                 <tr>
-                    <td><input @bind="field.Name" /></td>
+                    <td><input @bind="field.Name" aria-label="Field name" /></td>
                     <td>
-                        <select @bind="field.Expression">
+                        <select @bind="field.Expression" aria-label="@($"Value of {field.Name}")">
                             <option value="">Pick a value…</option>
                             @foreach (var o in allSources) { <option value="@o.Expression">@o.Label</option> }
+                            @if (!string.IsNullOrEmpty(field.Expression) && !allSources.Any(o => o.Expression == field.Expression))
+                            {
+                                <option value="@field.Expression">@field.Expression (not in the field list)</option>
+                            }
                         </select>
                     </td>
                     <td><button class="link" @onclick="() => _form.Response.Remove(field)">Remove</button></td>
@@ -245,14 +291,15 @@
 </section>
 
 @* ------------------------------------------------------------------ 5. Test and publish *@
-<section class="card">
+<section class="card" id="step-5">
     <h2>5. Test and publish <HelpLink Topic="publish" /></h2>
+    <p class="hint">Enter test values next to the inputs in step 2, then choose <strong>Try it</strong> below. Publishing needs a passing test of exactly these settings.</p>
 
     @if (Issues.Count > 0)
     {
         <div class="issues">
             <strong>Things to fix</strong> <HelpLink Topic="troubleshooting" Text="What do these mean?" />
-            <ul>@foreach (var issue in Issues) { <li><code>@issue.Where</code> @issue.Message</li> }</ul>
+            <ul>@foreach (var issue in Issues) { <li><a href="@SectionLink(SectionOf(issue.Where))">@SectionTitle(issue.Where)</a>: @issue.Message</li> }</ul>
         </div>
     }
 
@@ -260,15 +307,11 @@
     {
         <div class="issues warnings">
             <strong>Check before publishing</strong>
-            <ul>@foreach (var warning in Warnings) { <li><code>@warning.Where</code> @warning.Message</li> }</ul>
+            <ul>@foreach (var warning in Warnings) { <li><a href="@SectionLink(SectionOf(warning.Where))">@SectionTitle(warning.Where)</a>: @warning.Message</li> }</ul>
         </div>
     }
 
-    <div class="inline">
-        <button class="button" @onclick="SaveDraft">Save draft</button>
-        <button class="button" @onclick="RunTest">Try it</button>
-        <button class="button primary" @onclick="Publish">Publish</button>
-    </div>
+    <ErrorBanner Message="@_error" CorrelationId="@_errorCorrelation" HelpTopic="troubleshooting" OnClose="() => _error = null" />
 
     @if (_test is not null)
     {
@@ -277,7 +320,8 @@
         </p>
         @if (!string.IsNullOrEmpty(_test.CorrelationId))
         {
-            <p class="hint"><a href="/logs?correlation=@Uri.EscapeDataString(_test.CorrelationId)">See logs for this test</a></p>
+            <p class="hint"><a href="/logs?correlation=@Uri.EscapeDataString(_test.CorrelationId)">See logs for this test</a>
+                @if (!_test.Passed) { <HelpLink Topic="troubleshooting" Text="What do these errors mean?" /> }</p>
         }
         @if (_test.Trace is { Count: > 0 })
         {
@@ -301,15 +345,6 @@
         @if (_test.Body is not null) { <pre class="json">@_test.Body.ToJsonString(new JsonSerializerOptions { WriteIndented = true })</pre> }
     }
 
-    @if (_status is not null)
-    {
-        <p class="status">@_status
-            @if (_justPublished)
-            {
-                <text> </text><a href="@DocsLink" target="_blank" rel="noopener">Try it in API docs</a>
-            }
-        </p>
-    }
 </section>
 
 @* ------------------------------------------------------------------ History, discard, delete *@
@@ -420,6 +455,41 @@
     </section>
 }
 
+@* ------------------------------------------------------------------ leaving with unsaved changes *@
+@if (_pendingLeave is not null)
+{
+    <div class="leave-box">
+        <ConfirmBox ConfirmText="Save and leave" OnConfirm="SaveAndLeave" OnCancel="() => _pendingLeave = null">
+            <p><strong>You have unsaved changes.</strong> Save them as a draft before you go? The live endpoint doesn't change either way.</p>
+            <button class="button" @onclick="LeaveWithoutSaving">Leave without saving</button>
+        </ConfirmBox>
+    </div>
+}
+
+@* ------------------------------------------------------------------ always-visible actions *@
+<div class="sticky-footer" role="region" aria-label="Save, test and publish">
+    <div class="summary">
+        @if (IsDirty) { <StatusPill State="StatusPill.Kind.Warn" Text="Unsaved changes" /> }
+        else if (IsNew && !_everSaved) { <StatusPill State="StatusPill.Kind.Neutral" Text="Not saved yet" /> }
+        else { <StatusPill State="StatusPill.Kind.Ok" Text="All changes saved" /> }
+        @if (Issues.Count > 0) { <a href="@SectionLink(FirstProblemAnchor)">@Issues.Count problem@(Issues.Count == 1 ? "" : "s") to fix</a> }
+        else if (ShowProblems) { <span class="muted">No problems found</span> }
+        @if (TestedCurrent) { <StatusPill State="StatusPill.Kind.Ok" Text="Test passed" /> }
+        else if (_test is { Passed: false }) { <StatusPill State="StatusPill.Kind.Bad" Text="Test didn't pass" /> }
+    </div>
+    <button class="button" disabled="@_busy" @onclick="SaveDraftClicked">Save draft</button>
+    @* One primary button: Try it until a test passes, then Publish. *@
+    <button class="button @(TestedCurrent && _caps.CanPublish ? "" : "primary")" disabled="@_busy" @onclick="RunTest">@(_busy && _running ? "Trying…" : "Try it")</button>
+    @if (_caps.CanPublish)
+    {
+        <button class="button @(TestedCurrent ? "primary" : "")" disabled="@(_busy || !CanPublishNow)" title="@(CanPublishNow ? "" : "Publish needs a passing Try it of exactly these settings")" @onclick="Publish">Publish</button>
+    }
+    else
+    {
+        <span class="hint">A publisher makes it live.</span>
+    }
+</div>
+
 @code {
     [Parameter] public string? Id { get; set; }
 
@@ -427,14 +497,23 @@
     private RecipeForm _form = new();
     private ConfigSnapshot? _snapshot;
     private TestOutcome? _test;
-    private string? _status;
-    private bool _justPublished; // shows the "Try it in API docs" link after a successful publish
+    private string? _testedJson;          // the settings that last passed Try it
+    private string? _savedJson;           // the settings as last loaded or saved (for "unsaved changes")
+    private string? _error;               // shown in a banner with links to help and the logs
+    private string? _errorCorrelation;
+    private bool _busy, _running;
+    private string? _pendingLeave;        // where the user wanted to go with unsaved changes
+    private bool _leaving;
+    private bool _everSaved, _saveTried;   // for a new endpoint: saved at least once / a save was tried
+    private ValidationResult? _validation; // worked out once per render, not once per field
     private bool _picking;
     private string _search = "";
     private readonly Dictionary<int, string> _extraTarget = new();
 
     private enum Confirm { None, Discard, Delete }
     private Capabilities _caps = new(false, false);
+
+    private static readonly IReadOnlyList<(string Text, string Href)> Crumbs = [("Endpoints", "/endpoints")];
     private List<HistoryRow>? _history;
     private int? _liveVersion;   // the version the gateway serves now, if any
     private bool _hasDraft;      // there are unpublished changes
@@ -449,10 +528,128 @@
         var services = await Api.GetServicesAsync() ?? [];
         var profiles = await Api.GetAuthProfilesAsync() ?? [];
         _snapshot = new ConfigSnapshot(services, profiles, [], "admin-ui");
-        _caps = await Api.GetCapabilitiesAsync();
+        _caps = await Ui.CapabilitiesAsync();
 
         if (!IsNew) await LoadRecipe();
         for (var i = 1; i <= 20; i++) _extraTarget[i] = "";
+        MarkSaved();
+    }
+
+    protected override void OnAfterRender(bool firstRender) => _validation = null; // re-check after the next change
+
+    // ------------------------------------------------------------------ unsaved changes, test state
+
+    private string? CurrentJson()
+    {
+        try { return JsonSerializer.Serialize(_form.ToRecipe(), AggregatorJson.Options); }
+        catch (Exception) { return null; } // a half-filled form: it counts as changed
+    }
+
+    private void MarkSaved() => _savedJson = CurrentJson();
+
+    private bool IsDirty => CurrentJson() != _savedJson;
+
+    /// <summary>The last Try it passed, and nothing has changed since.</summary>
+    private bool TestedCurrent => _test is { Passed: true } && _testedJson is not null && _testedJson == CurrentJson();
+
+    private bool CanPublishNow => Validation.Issues.Count == 0 && (TestedCurrent || !_caps.RequireTestBeforePublish);
+
+    private Task OnBeforeLeave(LocationChangingContext context)
+    {
+        if (_leaving || !IsDirty) return Task.CompletedTask;
+        // Jumping to a section of this page (the stepper) isn't leaving.
+        if (Nav.ToAbsoluteUri(context.TargetLocation).AbsolutePath == Nav.ToAbsoluteUri(Nav.Uri).AbsolutePath) return Task.CompletedTask;
+        context.PreventNavigation();
+        _pendingLeave = context.TargetLocation;
+        return Task.CompletedTask;
+    }
+
+    private async Task SaveAndLeave()
+    {
+        if (!await SaveDraft()) { _pendingLeave = null; return; }
+        LeaveWithoutSaving();
+    }
+
+    private void LeaveWithoutSaving()
+    {
+        var target = _pendingLeave ?? "/";
+        _pendingLeave = null;
+        _leaving = true;
+        Nav.NavigateTo(target);
+    }
+
+    // ------------------------------------------------------------------ the stepper and problems next to fields
+
+    private ValidationResult Validation => _validation ??= SafeValidate();
+
+    private ValidationResult SafeValidate()
+    {
+        try { return RecipeValidator.Validate(_form.ToRecipe(), _snapshot!); }
+        catch (Exception ex) { return new ValidationResult([new ValidationIssue("form", ex.Message)]); }
+    }
+
+    private Recipe? TryRecipe()
+    {
+        try { return _form.ToRecipe(); } catch (Exception) { return null; }
+    }
+
+    private static bool IsEndpointField(string where) => where is "id" or "route" or "method" or "timeoutMs" or "form" || where.StartsWith("cache");
+
+    private IReadOnlyList<ValidationIssue> ProblemsWhere(Func<string, bool> where) => Issues.Where(i => where(i.Where)).ToList();
+    private IReadOnlyList<ValidationIssue> WarningsWhere(Func<string, bool> where) => Warnings.Where(i => where(i.Where)).ToList();
+
+    /// <summary>Problems about one value of a step, recognised by how the validator names it: 'X-Customer-Id' (header).</summary>
+    private IReadOnlyList<ValidationIssue> BindingProblems(StepForm step, string target)
+    {
+        var parts = target.Split('.', 2);
+        return Issues.Where(i => i.Where == $"steps.{step.Alias}" &&
+            (i.Message.Contains($"'{parts[1]}' ({parts[0]})") || i.Message.Contains($"'{target}'") || i.Message.Contains($"Header '{parts[1]}'"))).ToList();
+    }
+
+    /// <summary>A step's problems that aren't about one of its values (those are shown next to the value).</summary>
+    private IReadOnlyList<ValidationIssue> StepProblems(StepForm step)
+    {
+        var byValue = step.Bindings.Keys.SelectMany(t => BindingProblems(step, t)).ToHashSet();
+        return Issues.Where(i => (i.Where == $"steps.{step.Alias}" || i.Where.StartsWith($"steps.{step.Alias}.")) && !byValue.Contains(i)).ToList();
+    }
+
+    private static string SectionOf(string where) => where switch
+    {
+        _ when IsEndpointField(where) => "step-1",
+        _ when where.StartsWith("inputs") => "step-2",
+        _ when where.StartsWith("steps") => "step-3",
+        _ => "step-4"
+    };
+
+    /// <summary>"Step 3, Get orders" rather than "steps.b": the words people see on the page.</summary>
+    private string SectionTitle(string where)
+    {
+        if (where.StartsWith("steps.") && _form.Steps.FirstOrDefault(st => st.Alias == where.Split('.')[1]) is { } step) return $"Step 3, {step.DisplayName}";
+        if (where.StartsWith("inputs.")) return $"Step 2, input {where["inputs.".Length..]}";
+        if (where.StartsWith("combine.")) return $"Step 4, combined list {where.Split('.')[1]}";
+        return SectionOf(where) switch { "step-1" => "Step 1, Endpoint", "step-2" => "Step 2, Inputs", "step-3" => "Step 3, Steps", _ => "Step 4, Response" };
+    }
+
+    private string FirstProblemAnchor => Issues.Count == 0 ? "step-5" : SectionOf(Issues[0].Where);
+
+    private string SectionLink(string anchor) => $"{Nav.ToBaseRelativePath(Nav.Uri).Split('#')[0]}#{anchor}";
+
+    private IEnumerable<(int Number, string Title, string Anchor, bool Done, string State)> Steps()
+    {
+        string Fix(int n) => $"✕ {n} to fix";
+        var p1 = ProblemsWhere(IsEndpointField).Count;
+        var p2 = ProblemsWhere(w => w.StartsWith("inputs")).Count;
+        var p3 = ProblemsWhere(w => w.StartsWith("steps")).Count;
+        var p4 = ProblemsWhere(w => w.StartsWith("combine") || w == "response").Count;
+        var hasBasics = !string.IsNullOrWhiteSpace(_form.Name) && !string.IsNullOrWhiteSpace(_form.Route);
+
+        yield return (1, "Endpoint", "step-1", p1 == 0 && hasBasics, p1 > 0 ? Fix(p1) : hasBasics ? "" : "to do");
+        yield return (2, "Inputs", "step-2", p2 == 0, p2 > 0 ? Fix(p2) : "");
+        yield return (3, "Steps", "step-3", p3 == 0 && _form.Steps.Count > 0, p3 > 0 ? Fix(p3) : _form.Steps.Count == 0 ? "add a step" : "");
+        yield return (4, "Response", "step-4", p4 == 0 && _form.Steps.Count > 0, p4 > 0 ? Fix(p4) : "");
+        var published = _liveVersion is not null && !_hasDraft && !IsDirty;
+        yield return (5, "Test and publish", "step-5", TestedCurrent || published,
+            published ? $"live v{_liveVersion}" : TestedCurrent ? "passed" : _test is { Passed: false } ? "✕ didn't pass" : "not run");
     }
 
     /// <summary>The draft if there is one, else the live version, else (a deleted endpoint) the last version in the history.</summary>
@@ -498,29 +695,21 @@
         if (_viewing == version) { _viewing = null; _viewed = null; return; }
         _viewed = await Api.GetVersionAsync(Id!, version);
         _viewing = _viewed is null ? null : version;
-        if (_viewed is null) _status = $"Couldn't load version {version}.";
+        if (_viewed is null) Toasts.Error($"Couldn't load version {version}. Try again, or check that the admin API is running.");
     }
 
     // ------------------------------------------------------------------ live checks (same validator as the server)
 
-    private IReadOnlyList<ValidationIssue> Issues
-    {
-        get
-        {
-            try { return RecipeValidator.Validate(_form.ToRecipe(), _snapshot!).Issues; }
-            catch (Exception ex) { return [new ValidationIssue("form", ex.Message)]; }
-        }
-    }
+    /// <summary>
+    /// The problems shown on the page. A brand-new, untouched endpoint shows none yet: nobody wants red text before typing.
+    /// They appear once something changes or a save is tried. (Publishing always checks every problem.)
+    /// </summary>
+    private IReadOnlyList<ValidationIssue> Issues => ShowProblems ? Validation.Issues : [];
 
     /// <summary>Things worth a second look that don't block publishing (for example a risky combine key).</summary>
-    private IReadOnlyList<ValidationIssue> Warnings
-    {
-        get
-        {
-            try { return RecipeValidator.Validate(_form.ToRecipe(), _snapshot!).Warnings; }
-            catch (Exception) { return []; } // the problem itself is already shown under "Things to fix"
-        }
-    }
+    private IReadOnlyList<ValidationIssue> Warnings => ShowProblems ? Validation.Warnings : [];
+
+    private bool ShowProblems => !IsNew || _everSaved || _saveTried || IsDirty;
 
     private IReadOnlyList<SourceOption> SourcesFor(StepForm? step)
     {
@@ -643,26 +832,50 @@
 
     // ------------------------------------------------------------------ actions
 
+    private void ShowError(string message, string? correlationId = null) { _error = message; _errorCorrelation = correlationId; }
+
+    private async Task SaveDraftClicked()
+    {
+        if (await SaveDraft()) Toasts.Success("Draft saved. The live endpoint doesn't change until you publish.");
+    }
+
     private async Task<bool> SaveDraft()
     {
-        var error = await Api.SaveDraftAsync(_form.ToRecipe());
-        _justPublished = false;
-        _status = error ?? "Draft saved. The live endpoint is unchanged until you publish.";
-        if (error is null) _hasDraft = true;
-        if (error is null && IsNew) Nav.NavigateTo($"/endpoints/{_form.Id}", replace: true);
-        return error is null;
+        _saveTried = true;
+        _busy = true;
+        try
+        {
+            var error = await Api.SaveDraftAsync(_form.ToRecipe());
+            if (error is not null) { ShowError(error); return false; }
+            _error = null;
+            _hasDraft = _everSaved = true;
+            MarkSaved();
+            if (IsNew) { _leaving = true; Nav.NavigateTo($"/endpoints/{_form.Id}", replace: true); _leaving = false; }
+            return true;
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or FormatException) { ShowError($"These settings can't be saved yet: {ex.Message}"); return false; }
+        finally { _busy = false; }
     }
 
     private async Task RunTest()
     {
         if (!await SaveDraft()) return;
-        string? V(InputForm i) => string.IsNullOrWhiteSpace(i.TestValue) ? null : i.TestValue;
-        _test = await Api.TestAsync(_form.Id,
-            _form.Inputs.Where(i => i.Source == "route").ToDictionary(i => i.Name, V),
-            _form.Inputs.Where(i => i.Source == "query").ToDictionary(i => i.Name, V),
-            _form.Inputs.Where(i => i.Source == "header").ToDictionary(i => i.Name, V));
-        _justPublished = false;
-        _status = _test is null ? "The test couldn't run. Check that the Admin API is reachable." : null;
+        _busy = _running = true;
+        try
+        {
+            string? V(InputForm i) => string.IsNullOrWhiteSpace(i.TestValue) ? null : i.TestValue;
+            var tested = CurrentJson();
+            _test = await Api.TestAsync(_form.Id,
+                _form.Inputs.Where(i => i.Source == "route").ToDictionary(i => i.Name, V),
+                _form.Inputs.Where(i => i.Source == "query").ToDictionary(i => i.Name, V),
+                _form.Inputs.Where(i => i.Source == "header").ToDictionary(i => i.Name, V));
+            if (_test is null) { ShowError("The test couldn't run. Check that the admin API is running.", null); return; }
+
+            _testedJson = _test.Passed ? tested : null;
+            if (_test.Passed) Toasts.Success(_caps.CanPublish ? "Test passed. You can publish now." : "Test passed. Ask a publisher to make it live.");
+            else Toasts.Error("The test didn't pass. The results under step 5 show which call failed and why.", "See logs", $"/logs?correlation={Uri.EscapeDataString(_test.CorrelationId ?? "")}");
+        }
+        finally { _busy = _running = false; }
     }
 
     /// <summary>Swagger UI deep link to this endpoint: #/&lt;tag&gt;/&lt;operationId&gt;, the tag being the first part of the route.</summary>
@@ -679,44 +892,52 @@
 
     private async Task Publish()
     {
-        var error = await Api.PublishAsync(_form.Id);
-        _justPublished = error is null;
-        _status = error ?? $"Published. Callers can use {_form.Method} /bff/{_form.Route.Trim('/')} now.";
-        if (error is null) await LoadRecipe();
+        _busy = true;
+        try
+        {
+            var error = await Api.PublishAsync(_form.Id);
+            if (error is not null) { ShowError(error); return; }
+            _error = null;
+            await LoadRecipe();
+            MarkSaved();
+            Toasts.Success($"Published. Callers can use {_form.Method} /bff/{_form.Route.Trim('/')} now.", "Try it in API docs", DocsLink);
+        }
+        finally { _busy = false; }
     }
 
     private async Task RollBack(int version)
     {
         var newVersion = NextVersion;
         var error = await Api.RollBackAsync(_form.Id, version);
-        _justPublished = error is null;
-        if (error is null) await LoadRecipe(); else _confirmRollBack = null;
-        _status = error ?? $"Version {version} is live again, as v{newVersion}." +
-            (_hasDraft ? " Your unpublished changes are still here: publishing them would replace it." : "");
+        if (error is not null) { _confirmRollBack = null; ShowError(error); return; }
+        await LoadRecipe();
+        MarkSaved();
+        Toasts.Success($"Version {version} is live again, as v{newVersion}." +
+            (_hasDraft ? " Your unpublished changes are still here: publishing them would replace it." : ""));
     }
 
     private async Task DiscardDraft()
     {
         var error = await Api.DiscardDraftAsync(_form.Id);
-        if (error is not null) { _status = error; _confirm = Confirm.None; return; }
+        if (error is not null) { _confirm = Confirm.None; ShowError(error); return; }
 
-        _test = null; _justPublished = false;
+        _test = null; _testedJson = null;
         await LoadRecipe();
-        if (_liveVersion is null && !_deleted) { Nav.NavigateTo("/"); return; } // nothing left to show
-        _status = _liveVersion is { } live ? $"Changes discarded. Showing the live version, v{live}." : "Changes discarded. Showing the last published version.";
+        MarkSaved();
+        if (_liveVersion is null && !_deleted) { _leaving = true; Toasts.Success("Draft discarded."); Nav.NavigateTo("/endpoints"); return; } // nothing left to show
+        Toasts.Success(_liveVersion is { } live ? $"Changes discarded. Showing the live version, v{live}." : "Changes discarded. Showing the last published version.");
     }
 
     private async Task DeleteEndpoint()
     {
         var address = $"{_form.Method} /bff/{_form.Route.Trim('/')}";
         var error = await Api.DeleteEndpointAsync(_form.Id);
-        if (error is not null) { _status = error; _confirm = Confirm.None; return; }
+        if (error is not null) { _confirm = Confirm.None; ShowError(error); return; }
 
-        _test = null; _justPublished = false;
+        _test = null; _testedJson = null;
         await LoadRecipe();
-        _status = _history is { Count: > 0 }
-            ? $"Deleted. The gateway stops serving {address} within a few seconds. To restore it, roll back to a version under History."
-            : "Deleted. It was never published, so nothing else changes.";
-        if (_history is not { Count: > 0 }) Nav.NavigateTo("/");
+        MarkSaved();
+        if (_history is not { Count: > 0 }) { _leaving = true; Toasts.Success("Deleted. It was never published, so nothing else changes."); Nav.NavigateTo("/endpoints"); return; }
+        Toasts.Success($"Deleted. The gateway stops serving {address} within a few seconds. To restore it, roll back to a version under History.");
     }
 }

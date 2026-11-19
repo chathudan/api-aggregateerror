@@ -1,0 +1,13 @@
+@* Problems (✕, block publishing) and warnings (!, worth a look) shown right next to the field they're about. *@
+@if (Problems.Count > 0 || Warnings.Count > 0)
+{
+    <ul class="field-issues">
+        @foreach (var p in Problems) { <li class="problem"><span aria-hidden="true">✕</span><span class="visually-hidden">Problem: </span>@p.Message</li> }
+        @foreach (var w in Warnings) { <li class="warning"><span aria-hidden="true">!</span><span class="visually-hidden">Check: </span>@w.Message</li> }
+    </ul>
+}
+
+@code {
+    [Parameter] public IReadOnlyList<ValidationIssue> Problems { get; set; } = [];
+    [Parameter] public IReadOnlyList<ValidationIssue> Warnings { get; set; } = [];
+}

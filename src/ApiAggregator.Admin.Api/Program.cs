@@ -156,6 +156,7 @@ admin.MapGet("/capabilities", (IEnumerable<IAuthStep> steps, IWebHostEnvironment
     sampleData = File.Exists(Path.Combine(Path.GetFullPath(files.Value.Directory), "SAMPLE-DATA.md")),
     // So the UI can hide publish, roll back and delete for authors. The API still checks the role on every call.
     canPublish = InboundAuth.HasScope(http.User, "aggregator.publisher"),
+    requireTestBeforePublish,
     // Development: the UI may store secret values (secrets.local.json in the config folder, git-ignored).
     // Elsewhere: the UI shows the secret NAME to put in Key Vault and never sends the value.
     canSaveSecrets = env.IsDevelopment(),

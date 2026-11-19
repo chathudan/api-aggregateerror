@@ -1,0 +1,52 @@
+@using ApiAggregator.Engine.Planning
+@* The run order the planner works out from the values each step uses: steps in the same lane run at the same time. *@
+@if (_levels is { Count: > 0 } levels)
+{
+    <figure class="flow" aria-label="Run order">
+        <figcaption class="hint">Run order, worked out from the values you chose. Steps in the same column run at the same time.</figcaption>
+        <ol class="lanes">
+            @for (var i = 0; i < levels.Count; i++)
+            {
+                <li class="lane">
+                    <span class="lane-title">@(i == 0 ? "First" : "Then")</span>
+                    <ul>
+                        @foreach (var step in levels[i])
+                        {
+                            <li class="flow-step">
+                                <strong>@(step.DisplayName ?? step.Alias)</strong>
+                                <span class="muted">@ServiceName(step.Endpoint)</span>
+                                @if (step.ForEach is not null) { <span class="tag">once for each item</span> }
+                                @if (step.When is not null) { <span class="tag">only when…</span> }
+                                @if (!step.Required) { <span class="tag">optional</span> }
+                            </li>
+                        }
+                    </ul>
+                </li>
+            }
+        </ol>
+    </figure>
+}
+else if (_problem is not null)
+{
+    <p class="field-issues problem">@_problem</p>
+}
+
+@code {
+    [Parameter, EditorRequired] public Recipe Recipe { get; set; } = default!;
+    [Parameter, EditorRequired] public ConfigSnapshot Snapshot { get; set; } = default!;
+
+    private IReadOnlyList<IReadOnlyList<StepDef>>? _levels;
+    private string? _problem;
+
+    protected override void OnParametersSet()
+    {
+        try { _levels = ExecutionPlanner.Plan(Recipe).Levels; _problem = null; }
+        catch (InvalidOperationException ex) { _levels = null; _problem = ex.Message; } // e.g. two steps that wait for each other
+    }
+
+    private string ServiceName(string endpoint)
+    {
+        var id = endpoint.Split('/')[0];
+        return Snapshot.GetService(id)?.Name is { Length: > 0 } name ? name : id;
+    }
+}
