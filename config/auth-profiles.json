@@ -67,5 +67,44 @@
         }
       }
     ]
+  },
+  {
+    "id": "service-e-apikey",
+    "name": "Service E - API key",
+    "steps": [
+      {
+        "kind": "ApiKey",
+        "settings": {
+          "name": "X-Api-Key",
+          "value": "secret:service-e-api-key"
+        }
+      }
+    ]
+  },
+  {
+    "id": "service-f-basic",
+    "name": "Service F - Basic auth",
+    "steps": [
+      {
+        "kind": "Basic",
+        "settings": {
+          "username": "svc-f",
+          "password": "secret:service-f-password"
+        }
+      }
+    ]
+  },
+  {
+    "id": "service-g-apikey",
+    "name": "Service G - API key",
+    "steps": [
+      {
+        "kind": "ApiKey",
+        "settings": {
+          "name": "X-Api-Key",
+          "value": "secret:service-g-api-key"
+        }
+      }
+    ]
   }
 ]

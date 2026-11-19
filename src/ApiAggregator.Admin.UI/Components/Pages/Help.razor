@@ -178,6 +178,9 @@
 <h3>Duplicates inside one list</h3>
 <p>To remove repeats inside a single list, add <code>| distinct</code> to a value, for example <code>{{a.body.ids | distinct}}</code>, or <code>| distinct('id')</code> to keep the first record for each id. A step that runs once for each item already calls each unique item once. Under <strong>Advanced</strong>, untick <strong>Call once per unique item</strong> only if the same call really must be repeated.</p>
 <p class="hint">Merging only looks at the top-level fields of a record. A nested block (such as an address) is taken whole from one list, never mixed from two.</p>
+
+<h3>Try it with the sample data</h3>
+<p>The mock services include made-up people in an Identity service, a CRM and Billing, which don't share an id. Open <strong>people-directory</strong> and choose <strong>Try it</strong>. The combined list line should read <em>identity 6, crm 8, billing 6 → 10 records (10 matched, 1 unmapped, 1 ambiguous, 1 without a key)</em>. Then open <strong>people-newest</strong> to see the newest rule change one name but not the email (Identity owns it), and <strong>contacts-unique</strong> to see 8 CRM rows become 7 and 6 orders cause only 3 notes calls. Untick ignoring upper/lower case and Try it again: one person splits into two. <code>samples/README.md</code> explains where every record ends up and why.</p>
 </section>
 
 @* ------------------------------------------------------------------ *@

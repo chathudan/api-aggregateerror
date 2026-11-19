@@ -3,6 +3,11 @@
 //   /b  Service B - orders          - session cookie login  (svc-b / pass-b)
 //   /c  Service C - recommendations - OAuth client credentials -> JWT (client-c / secret-c)
 //   /d  Service D - billing         - API key (X-Api-Key: key-d), has an OpenAPI spec at /d/openapi.json
+// For "Combine lists" (data in PeopleSamples.cs, explained in samples/README.md), each with /<x>/openapi.json:
+//   /e  Identity  - users                     - API key (X-Api-Key: key-e)
+//   /f  CRM       - contacts, notes, orders   - Basic auth (svc-f / pass-f)
+//   /g  Billing   - accounts                  - API key (X-Api-Key: key-g)
+//   /h  Links     - billing account -> user   - no auth (internal)
 // GET /_stats shows how many times each endpoint was called (handy for checking the cache).
 // Test data only. No real customer or patient data belongs here.
 
@@ -10,6 +15,7 @@ using System.Collections.Concurrent;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using MockServices;
 
 var builder = WebApplication.CreateBuilder(args);
 var app = builder.Build();
@@ -112,6 +118,35 @@ d.MapGet("/invoices/{invoiceId}", (string invoiceId) =>
 });
 app.MapGet("/d/openapi.json", () => Results.Text(OpenApiSpecs.ServiceD, "application/json"));
 
+// ------------------------------------------------------------------ E, F, G, H: people data for "Combine lists"
+IResult Json(string name, string json) { Count(name); return Results.Text(json, "application/json"); }
+
+var e = app.MapGroup("/e").AddEndpointFilter(async (ctx, next) =>
+    ctx.HttpContext.Request.Headers["X-Api-Key"] == "key-e" ? await next(ctx) : Results.Unauthorized());
+e.MapGet("/users", () => Json("e.listUsers", PeopleSamples.Users));
+
+var f = app.MapGroup("/f").AddEndpointFilter(async (ctx, next) =>
+{
+    var header = ctx.HttpContext.Request.Headers.Authorization.ToString();
+    var expected = "Basic " + Convert.ToBase64String(Encoding.UTF8.GetBytes("svc-f:pass-f"));
+    return header == expected ? await next(ctx) : Results.Unauthorized();
+});
+f.MapGet("/contacts", () => Json("f.listContacts", PeopleSamples.Contacts));
+f.MapGet("/contacts/{contactId}/notes", (string contactId) => Json("f.getContactNotes", PeopleSamples.Notes(contactId)));
+f.MapGet("/orders", () => Json("f.listOrders", PeopleSamples.Orders));
+
+var g = app.MapGroup("/g").AddEndpointFilter(async (ctx, next) =>
+    ctx.HttpContext.Request.Headers["X-Api-Key"] == "key-g" ? await next(ctx) : Results.Unauthorized());
+g.MapGet("/accounts", () => Json("g.listAccounts", PeopleSamples.Accounts));
+
+app.MapGet("/h/links", () => Json("h.listLinks", PeopleSamples.Links));
+
+// Specs are public, like /a and /d, so "Add service" can import them before a sign-in is set up.
+app.MapGet("/e/openapi.json", () => Results.Text(OpenApiSpecs.ServiceE, "application/json"));
+app.MapGet("/f/openapi.json", () => Results.Text(OpenApiSpecs.ServiceF, "application/json"));
+app.MapGet("/g/openapi.json", () => Results.Text(OpenApiSpecs.ServiceG, "application/json"));
+app.MapGet("/h/openapi.json", () => Results.Text(OpenApiSpecs.ServiceH, "application/json"));
+
 app.Run();
 
 record LoginRequest(string? Username, string? Password);
@@ -194,6 +229,114 @@ static class OpenApiSpecs
             "operationId": "getAddresses", "tags": ["customers"],
             "parameters": [ { "name": "customerId", "in": "path", "required": true, "schema": { "type": "string" } } ],
             "responses": { "200": { "description": "OK" } }
+          }
+        }
+      }
+    }
+    """;
+
+    public const string ServiceE = """
+    {
+      "openapi": "3.0.3",
+      "info": { "title": "Service E - Identity", "version": "1.0.0" },
+      "servers": [ { "url": "http://localhost:5100/e" } ],
+      "components": { "securitySchemes": { "key": { "type": "apiKey", "name": "X-Api-Key", "in": "header" } } },
+      "security": [ { "key": [] } ],
+      "paths": {
+        "/users": {
+          "get": {
+            "operationId": "listUsers", "summary": "List users",
+            "responses": { "200": { "description": "OK", "content": { "application/json": { "schema": {
+              "type": "object",
+              "properties": { "users": { "type": "array", "items": { "type": "object", "properties": {
+                "id": {"type":"string"}, "name": {"type":"string"}, "email": {"type":"string"}, "updatedAt": {"type":"string", "format":"date-time"} } } } }
+            } } } } }
+          }
+        }
+      }
+    }
+    """;
+
+    public const string ServiceF = """
+    {
+      "openapi": "3.0.3",
+      "info": { "title": "Service F - CRM", "version": "1.0.0" },
+      "servers": [ { "url": "http://localhost:5100/f" } ],
+      "components": { "securitySchemes": { "basic": { "type": "http", "scheme": "basic" } } },
+      "security": [ { "basic": [] } ],
+      "paths": {
+        "/contacts": {
+          "get": {
+            "operationId": "listContacts", "summary": "List contacts",
+            "responses": { "200": { "description": "OK", "content": { "application/json": { "schema": {
+              "type": "object",
+              "properties": { "contacts": { "type": "array", "items": { "type": "object", "properties": {
+                "id": {"type":"string"}, "identityUserId": {"type":"string", "nullable": true}, "name": {"type":"string"},
+                "email": {"type":"string"}, "phone": {"type":"string", "nullable": true}, "updatedAt": {"type":"string", "format":"date-time"} } } } }
+            } } } } }
+          }
+        },
+        "/contacts/{contactId}/notes": {
+          "get": {
+            "operationId": "getContactNotes", "summary": "Notes for one contact",
+            "parameters": [ { "name": "contactId", "in": "path", "required": true, "schema": { "type": "string" } } ],
+            "responses": { "200": { "description": "OK", "content": { "application/json": { "schema": {
+              "type": "object",
+              "properties": { "contactId": {"type":"string"}, "notes": { "type": "array", "items": { "type": "object", "properties": {
+                "date": {"type":"string", "format":"date"}, "text": {"type":"string"} } } } }
+            } } } } }
+          }
+        },
+        "/orders": {
+          "get": {
+            "operationId": "listOrders", "summary": "List orders",
+            "responses": { "200": { "description": "OK", "content": { "application/json": { "schema": {
+              "type": "object",
+              "properties": { "orders": { "type": "array", "items": { "type": "object", "properties": {
+                "id": {"type":"string"}, "contactId": {"type":"string"}, "total": {"type":"number"} } } } }
+            } } } } }
+          }
+        }
+      }
+    }
+    """;
+
+    public const string ServiceG = """
+    {
+      "openapi": "3.0.3",
+      "info": { "title": "Service G - Billing", "version": "1.0.0" },
+      "servers": [ { "url": "http://localhost:5100/g" } ],
+      "components": { "securitySchemes": { "key": { "type": "apiKey", "name": "X-Api-Key", "in": "header" } } },
+      "security": [ { "key": [] } ],
+      "paths": {
+        "/accounts": {
+          "get": {
+            "operationId": "listAccounts", "summary": "List billing accounts",
+            "responses": { "200": { "description": "OK", "content": { "application/json": { "schema": {
+              "type": "object",
+              "properties": { "accounts": { "type": "array", "items": { "type": "object", "properties": {
+                "accountNo": {"type":"string"}, "plan": {"type":"string"}, "status": {"type":"string"} } } } }
+            } } } } }
+          }
+        }
+      }
+    }
+    """;
+
+    public const string ServiceH = """
+    {
+      "openapi": "3.0.3",
+      "info": { "title": "Service H - Links (internal)", "version": "1.0.0" },
+      "servers": [ { "url": "http://localhost:5100/h" } ],
+      "paths": {
+        "/links": {
+          "get": {
+            "operationId": "listLinks", "summary": "Billing account to Identity user links",
+            "responses": { "200": { "description": "OK", "content": { "application/json": { "schema": {
+              "type": "object",
+              "properties": { "links": { "type": "array", "items": { "type": "object", "properties": {
+                "billingAccountNo": {"type":"string"}, "userId": {"type":"string"} } } } }
+            } } } } }
           }
         }
       }

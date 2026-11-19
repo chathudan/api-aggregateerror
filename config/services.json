@@ -277,5 +277,240 @@
         "source": "openapi"
       }
     ]
+  },
+  {
+    "id": "service-e-identity",
+    "name": "Service E (identity)",
+    "baseUrl": "http://localhost:5100/e",
+    "authProfileId": "service-e-apikey",
+    "timeoutMs": 3000,
+    "openApiSource": "http://localhost:5100/e/openapi.json",
+    "endpoints": [
+      {
+        "id": "listUsers",
+        "summary": "List users",
+        "method": "GET",
+        "path": "/users",
+        "parameters": [],
+        "responseSchema": {
+          "type": "object",
+          "properties": {
+            "users": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  },
+                  "name": {
+                    "type": "string"
+                  },
+                  "email": {
+                    "type": "string"
+                  },
+                  "updatedAt": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "source": "openapi"
+      }
+    ]
+  },
+  {
+    "id": "service-f-crm",
+    "name": "Service F (CRM)",
+    "baseUrl": "http://localhost:5100/f",
+    "authProfileId": "service-f-basic",
+    "timeoutMs": 3000,
+    "openApiSource": "http://localhost:5100/f/openapi.json",
+    "endpoints": [
+      {
+        "id": "listContacts",
+        "summary": "List contacts",
+        "method": "GET",
+        "path": "/contacts",
+        "parameters": [],
+        "responseSchema": {
+          "type": "object",
+          "properties": {
+            "contacts": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  },
+                  "identityUserId": {
+                    "type": "string"
+                  },
+                  "name": {
+                    "type": "string"
+                  },
+                  "email": {
+                    "type": "string"
+                  },
+                  "phone": {
+                    "type": "string"
+                  },
+                  "updatedAt": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "source": "openapi"
+      },
+      {
+        "id": "getContactNotes",
+        "summary": "Notes for one contact",
+        "method": "GET",
+        "path": "/contacts/{contactId}/notes",
+        "parameters": [
+          {
+            "name": "contactId",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          }
+        ],
+        "responseSchema": {
+          "type": "object",
+          "properties": {
+            "contactId": {
+              "type": "string"
+            },
+            "notes": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "date": {
+                    "type": "string"
+                  },
+                  "text": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "source": "openapi"
+      },
+      {
+        "id": "listOrders",
+        "summary": "List orders",
+        "method": "GET",
+        "path": "/orders",
+        "parameters": [],
+        "responseSchema": {
+          "type": "object",
+          "properties": {
+            "orders": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  },
+                  "contactId": {
+                    "type": "string"
+                  },
+                  "total": {
+                    "type": "number"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "source": "openapi"
+      }
+    ]
+  },
+  {
+    "id": "service-g-billing",
+    "name": "Service G (billing accounts)",
+    "baseUrl": "http://localhost:5100/g",
+    "authProfileId": "service-g-apikey",
+    "timeoutMs": 3000,
+    "openApiSource": "http://localhost:5100/g/openapi.json",
+    "endpoints": [
+      {
+        "id": "listAccounts",
+        "summary": "List billing accounts",
+        "method": "GET",
+        "path": "/accounts",
+        "parameters": [],
+        "responseSchema": {
+          "type": "object",
+          "properties": {
+            "accounts": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "accountNo": {
+                    "type": "string"
+                  },
+                  "plan": {
+                    "type": "string"
+                  },
+                  "status": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "source": "openapi"
+      }
+    ]
+  },
+  {
+    "id": "service-h-links",
+    "name": "Service H (links, internal)",
+    "baseUrl": "http://localhost:5100/h",
+    "timeoutMs": 2000,
+    "openApiSource": "http://localhost:5100/h/openapi.json",
+    "endpoints": [
+      {
+        "id": "listLinks",
+        "summary": "Billing account to Identity user links",
+        "method": "GET",
+        "path": "/links",
+        "parameters": [],
+        "responseSchema": {
+          "type": "object",
+          "properties": {
+            "links": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "billingAccountNo": {
+                    "type": "string"
+                  },
+                  "userId": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "source": "openapi"
+      }
+    ]
   }
 ]

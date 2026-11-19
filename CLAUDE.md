@@ -59,7 +59,7 @@ If a change touches any of these, run the `security-review` skill and add or adj
 | `src/ApiAggregator.Admin.UI` | `Pages/EndpointEditor.razor` (wizard), `Pages/Services.razor` (add service, endpoints, sign-in), `Shared/SignInEditor.razor`; form models in `Services/` (`RecipeForm`, `SignInForm` + `SignInKinds`, `ServiceForms`) |
 | `src/ApiAggregator.Hosting` | `InboundAuth` (JWT setup, scopes, caller context), `LocalSecrets` (Development-only secrets file) |
 | `tools/ApiAggregator.Cli` | `aggregator validate | run` |
-| `samples/MockServices` | Service A (Basic `svc-a/pass-a`), B (session `svc-b/pass-b`), C (OAuth `client-c/secret-c`), D (API key `X-Api-Key: key-d`, spec at `/d/openapi.json`, not in the sample config: use it to try **Add service**) on :5100 |
+| `samples/MockServices` | Service A (Basic `svc-a/pass-a`), B (session `svc-b/pass-b`), C (OAuth `client-c/secret-c`), D (API key `X-Api-Key: key-d`, spec at `/d/openapi.json`, not in the sample config: use it to try **Add service**); E Identity, F CRM, G Billing, H Links: people data for **Combine lists** (`PeopleSamples.cs`, explained in `samples/README.md`). All on :5100 |
 | `config/` | Sample services, profiles, published recipes |
 
 ## Commands

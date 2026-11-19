@@ -1,0 +1,78 @@
+{
+  "id": "people-newest",
+  "name": "People directory (newest wins)",
+  "version": 1,
+  "status": "published",
+  "method": "GET",
+  "route": "people/newest",
+  "requireAuthentication": true,
+  "requiredScope": "people.read",
+  "inputs": {},
+  "steps": [
+    {
+      "alias": "identity",
+      "displayName": "Users from Identity",
+      "endpoint": "service-e-identity/listUsers"
+    },
+    {
+      "alias": "crm",
+      "displayName": "Contacts from CRM",
+      "endpoint": "service-f-crm/listContacts"
+    },
+    {
+      "alias": "billing",
+      "displayName": "Accounts from Billing",
+      "endpoint": "service-g-billing/listAccounts"
+    },
+    {
+      "alias": "links",
+      "displayName": "Account-to-user links",
+      "endpoint": "service-h-links/listLinks"
+    }
+  ],
+  "combine": {
+    "people": {
+      "sources": [
+        {
+          "from": "identity.body.users",
+          "key": "id",
+          "name": "identity"
+        },
+        {
+          "from": "crm.body.contacts",
+          "key": "identityUserId",
+          "name": "crm"
+        },
+        {
+          "from": "billing.body.accounts",
+          "key": "accountNo",
+          "name": "billing",
+          "via": {
+            "from": "links.body.links",
+            "match": "billingAccountNo",
+            "use": "userId"
+          }
+        }
+      ],
+      "normalize": [
+        "trim",
+        "lower"
+      ],
+      "onConflict": "newest:updatedAt",
+      "owners": {
+        "email": "identity",
+        "plan": "billing",
+        "id": "identity"
+      },
+      "trackSources": true
+    }
+  },
+  "response": {
+    "people": "{{combine.people}}",
+    "count": "{{combine.people | count}}"
+  },
+  "cache": {
+    "enabled": false
+  },
+  "timeoutMs": 8000
+}

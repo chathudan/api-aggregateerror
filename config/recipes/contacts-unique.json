@@ -1,0 +1,48 @@
+{
+  "id": "contacts-unique",
+  "name": "Unique contacts and their notes",
+  "version": 1,
+  "status": "published",
+  "method": "GET",
+  "route": "contacts/unique",
+  "requireAuthentication": true,
+  "requiredScope": "people.read",
+  "inputs": {},
+  "steps": [
+    {
+      "alias": "crm",
+      "displayName": "Contacts from CRM",
+      "endpoint": "service-f-crm/listContacts"
+    },
+    {
+      "alias": "orders",
+      "displayName": "Orders from CRM",
+      "endpoint": "service-f-crm/listOrders"
+    },
+    {
+      "alias": "notes",
+      "displayName": "Notes for each contact with an order",
+      "endpoint": "service-f-crm/getContactNotes",
+      "forEach": "{{orders.body.orders[*].contactId}}",
+      "maxConcurrency": 3,
+      "bind": [
+        {
+          "from": "item",
+          "to": "path.contactId"
+        }
+      ]
+    }
+  ],
+  "response": {
+    "contactRows": "{{crm.body.contacts | count}}",
+    "uniqueContacts": "{{crm.body.contacts | distinct('id') | count}}",
+    "contacts": "{{crm.body.contacts | distinct('id')}}",
+    "orderCount": "{{orders.body.orders | count}}",
+    "notesCalls": "{{notes | count}}",
+    "notes": "{{notes[*].body}}"
+  },
+  "cache": {
+    "enabled": false
+  },
+  "timeoutMs": 8000
+}

@@ -11,6 +11,8 @@
   <ItemGroup>
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
     <ProjectReference Include="../../src/ApiAggregator.Engine/ApiAggregator.Engine.csproj" />
+    <!-- The mock services' people data, so SampleDataTests use exactly what QA sees on :5100. -->
+    <Compile Include="../../samples/MockServices/PeopleSamples.cs" Link="Samples/PeopleSamples.cs" />
   </ItemGroup>
   <ItemGroup>
     <Using Include="Xunit" />

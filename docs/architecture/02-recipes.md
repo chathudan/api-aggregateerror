@@ -163,6 +163,8 @@ the app should get each one **once**. See [ADR 0011](../adr/0011-combining-recor
 - Merging is **top-level**: nested objects are taken whole from the winning source.
 - A source whose step failed (an optional step) is skipped; the failure is already in `_errors`.
 - Combines run after all steps, and steps can't use them. Combines can't use other combines.
+- Sample data to try all of this: `people-directory`, `people-newest` and `contacts-unique` against mock
+  services E–H. Expected results are in [samples/README.md](../../samples/README.md).
 - Admin "Try it" shows counts, for example *"crm 12, billing 9 → 15 records (6 matched, 0 without
   a key)"*. Logs record counts only (event 1500 `CombineCompleted`).
 
