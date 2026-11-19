@@ -66,7 +66,7 @@ If a change touches any of these, run the `security-review` skill and add or adj
 
 ```bash
 dotnet build                                                   # whole solution
-dotnet test                                                    # engine tests (must stay green)
+dotnet test                                                    # engine + gateway + admin API host tests (must stay green)
 dotnet run --project tools/ApiAggregator.Cli -- validate      # check every recipe and auth profile
 dotnet run --project tools/ApiAggregator.Cli -- run customer-overview --route id=C-10042   # needs mocks + Secrets__* env
 ./scripts/dev-run.sh                                           # mocks :5100, gateway :5200, admin API :5210, UI :5300
@@ -75,7 +75,7 @@ dotnet run --project tools/ApiAggregator.Cli -- run customer-overview --route id
 
 Target framework: set once in `Directory.Build.props` (`AggregatorTargetFramework`, default `net10.0`).
 Package versions: `Directory.Packages.props` (central management). Only Gateway, Admin.Api,
-Hosting and the tests use packages.
+Hosting and the tests use packages. Keep runtime packages on the 10.x line while targeting `net10.0`.
 
 ## How to make common changes
 

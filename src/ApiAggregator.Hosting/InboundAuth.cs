@@ -20,6 +20,19 @@ namespace ApiAggregator.Hosting;
 /// </summary>
 public static class InboundAuth
 {
+    /// <summary>
+    /// Stops the host from starting when Auth:DevSigningKey is set outside Development (or is too short).
+    /// Call while building the host: <see cref="Configure"/> only runs on the first request, which is
+    /// too late to stop a misconfigured deployment.
+    /// </summary>
+    public static void ValidateSettings(IConfigurationSection auth, IHostEnvironment env)
+    {
+        var devKey = auth["DevSigningKey"];
+        if (string.IsNullOrEmpty(devKey)) return;
+        if (!env.IsDevelopment()) throw new InvalidOperationException("Auth:DevSigningKey must not be set outside Development.");
+        if (devKey.Length < 32) throw new InvalidOperationException("Auth:DevSigningKey must be at least 32 characters.");
+    }
+
     public static void Configure(JwtBearerOptions o, IConfigurationSection auth, IWebHostEnvironment env)
     {
         o.MapInboundClaims = false; // keep "sub", "scope" as they are
@@ -27,10 +40,9 @@ public static class InboundAuth
         o.Audience = auth["Audience"];
         o.RequireHttpsMetadata = !env.IsDevelopment();
 
+        ValidateSettings(auth, env); // again here, in case a host forgot to call it at startup
         var devKey = auth["DevSigningKey"];
         if (string.IsNullOrEmpty(devKey)) return;
-        if (!env.IsDevelopment()) throw new InvalidOperationException("Auth:DevSigningKey must not be set outside Development.");
-        if (devKey.Length < 32) throw new InvalidOperationException("Auth:DevSigningKey must be at least 32 characters.");
 
         o.TokenValidationParameters = new TokenValidationParameters
         {

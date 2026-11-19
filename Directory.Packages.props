@@ -1,18 +1,22 @@
 <Project>
   <!--
-    Central package management. Versions were chosen for .NET 10 and have NOT been
-    restored in the environment that generated this repo (NuGet was unreachable).
-    On first build run: "dotnet restore" then "dotnet list package (outdated)"
+    Central package management. Restored and tested against nuget.org on .NET 10.
+    Keep runtime packages on the 10.x line while AggregatorTargetFramework is net10.0
+    (the 11.x packages target .NET 11). To check for updates, run "dotnet list package"
+    with the outdated and highest-minor options, and again with vulnerable and include-transitive.
   -->
   <PropertyGroup>
     <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
   </PropertyGroup>
   <ItemGroup>
-    <PackageVersion Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="10.0.0" />
-    <PackageVersion Include="Microsoft.Extensions.Http.Resilience" Version="10.0.0" />
-    <PackageVersion Include="Microsoft.OpenApi.Readers" Version="1.6.24" />
-    <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
+    <PackageVersion Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="10.0.15" />
+    <PackageVersion Include="Microsoft.Extensions.Http.Resilience" Version="10.11.0" />
+    <!-- 1.6.31: fixes GHSA-7pxr-59rr-hqj2 (high) reported against 1.6.24. -->
+    <PackageVersion Include="Microsoft.OpenApi.Readers" Version="1.6.31" />
+    <!-- Tests only -->
+    <PackageVersion Include="Microsoft.AspNetCore.Mvc.Testing" Version="10.0.15" />
+    <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="18.12.0" />
     <PackageVersion Include="xunit" Version="2.9.3" />
-    <PackageVersion Include="xunit.runner.visualstudio" Version="3.1.4" />
+    <PackageVersion Include="xunit.runner.visualstudio" Version="3.1.5" />
   </ItemGroup>
 </Project>

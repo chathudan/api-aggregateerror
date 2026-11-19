@@ -48,6 +48,7 @@ builder.Services.AddHttpClient(EngineHttpClients.Downstream)
     });
 
 // ---------------------------------------------------------------- inbound auth (JWT)
+InboundAuth.ValidateSettings(builder.Configuration.GetSection("Auth"), builder.Environment); // fail at startup, not on the first request
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(o => InboundAuth.Configure(o, builder.Configuration.GetSection("Auth"), builder.Environment));
 // Who may read the live logs: the same people who author or publish recipes.

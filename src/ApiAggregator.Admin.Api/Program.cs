@@ -46,6 +46,7 @@ builder.Services.AddHttpClient(OpenApiImporter.HttpClientName)
     .ConfigureHttpClient(c => c.Timeout = TimeSpan.FromSeconds(10))
     .RemoveAllLoggers(); // no default HttpClient logging: it would write full URLs (see ServiceCollectionExtensions)
 
+InboundAuth.ValidateSettings(builder.Configuration.GetSection("Auth"), builder.Environment); // fail at startup, not on the first request
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(o => InboundAuth.Configure(o, builder.Configuration.GetSection("Auth"), builder.Environment));
 builder.Services.AddAuthorizationBuilder()

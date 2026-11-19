@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Host tests for ApiAggregator.Gateway: the real Program.cs in memory (WebApplicationFactory), downstream calls stubbed. -->
+  <PropertyGroup>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="xunit" />
+    <PackageReference Include="xunit.runner.visualstudio" />
+    <PackageReference Include="Microsoft.OpenApi.Readers" /> <!-- to check /bff/openapi.json is valid OpenAPI 3 -->
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../src/ApiAggregator.Gateway/ApiAggregator.Gateway.csproj" />
+    <Compile Include="../Shared/*.cs" Link="Shared/%(Filename)%(Extension)" />
+  </ItemGroup>
+  <ItemGroup>
+    <Using Include="Xunit" />
+  </ItemGroup>
+</Project>
