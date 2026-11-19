@@ -1,5 +1,18 @@
 [
   {
+    "id": "invoice-service-signin",
+    "name": "Invoice Service sign-in",
+    "steps": [
+      {
+        "kind": "ApiKey",
+        "settings": {
+          "name": "X-Api-Key",
+          "value": "secret:invoice-service-value"
+        }
+      }
+    ]
+  },
+  {
     "id": "service-a-basic",
     "name": "Service A - Basic auth",
     "steps": [

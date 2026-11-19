@@ -26,7 +26,7 @@ public static class Transforms
 {
     public static readonly IReadOnlySet<string> Names = new HashSet<string>
     {
-        "default", "join", "first", "last", "count", "upper", "lower", "trim", "string"
+        "default", "join", "first", "last", "count", "upper", "lower", "trim", "string", "distinct"
     };
 
     public static JsonNode? Apply(TransformCall call, JsonNode? value) => call.Name switch
@@ -40,8 +40,33 @@ public static class Transforms
         "lower"   => Map(value, s => s.ToLowerInvariant()),
         "trim"    => Map(value, s => s.Trim()),
         "string"  => value is null ? null : JsonValue.Create(JsonText.Of(value)),
+        "distinct" => Distinct(value, call.Argument),
         _ => throw new FormatException($"Unknown transform '{call.Name}'. Allowed: {string.Join(", ", Names)}.")
     };
+
+    /// <summary>
+    /// Removes repeated items from an array, keeping the first of each and the original order.
+    /// Without an argument, whole items are compared by their JSON text. With a property path
+    /// ("id", "customer.id") objects are compared by that property's JSON text.
+    /// Items with no value for the property are always kept: silently dropping a record would hide data.
+    /// A value that isn't an array is returned unchanged.
+    /// </summary>
+    private static JsonNode? Distinct(JsonNode? value, string? keyPath)
+    {
+        if (value is not JsonArray items) return value;
+
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        var result = new JsonArray();
+        foreach (var item in items)
+        {
+            var identity = string.IsNullOrEmpty(keyPath)
+                ? item?.ToJsonString() ?? "null"
+                : JsonFields.Get(item, keyPath)?.ToJsonString(); // null = no key value
+
+            if (identity is null || seen.Add(identity)) result.Add(item?.DeepClone());
+        }
+        return result;
+    }
 
     private static bool IsEmpty(JsonNode? v) => v is null || (v is JsonValue jv && jv.TryGetValue<string>(out var s) && s.Length == 0);
 

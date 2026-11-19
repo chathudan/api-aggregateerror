@@ -22,6 +22,9 @@ public sealed class RecipeForm
     public List<StepForm> Steps { get; } = [];
     public List<ResponseField> Response { get; } = [];
 
+    /// <summary>Lists merged by key (see CombineForm). Used in the response as combine.&lt;name&gt;.</summary>
+    public List<CombineForm> Combines { get; } = [];
+
     public static RecipeForm FromRecipe(Recipe r)
     {
         var form = new RecipeForm
@@ -29,6 +32,7 @@ public sealed class RecipeForm
             Id = r.Id, Name = r.Name, Method = r.Method, Route = r.Route, RequireAuthentication = r.RequireAuthentication,
             RequiredScope = r.RequiredScope, CacheEnabled = r.Cache.Enabled, CacheTtlSeconds = r.Cache.TtlSeconds, TimeoutMs = r.TimeoutMs
         };
+        foreach (var (name, def) in r.Combine) form.Combines.Add(CombineForm.From(name, def));
         foreach (var (key, def) in r.Inputs)
         {
             var parts = key.Split('.', 2);
@@ -39,7 +43,7 @@ public sealed class RecipeForm
             var step = new StepForm
             {
                 Alias = s.Alias, DisplayName = s.DisplayName ?? s.Alias, Endpoint = s.Endpoint, Required = s.Required,
-                When = s.When, ForEach = s.ForEach, CacheEnabled = s.Cache.Enabled, CacheTtlSeconds = s.Cache.TtlSeconds
+                When = s.When, ForEach = s.ForEach, Distinct = s.Distinct, CacheEnabled = s.Cache.Enabled, CacheTtlSeconds = s.Cache.TtlSeconds
             };
             foreach (var b in s.Bind)
                 step.Bindings[b.To] = b.From is not null
@@ -62,6 +66,7 @@ public sealed class RecipeForm
         RequireAuthentication = RequireAuthentication,
         RequiredScope = string.IsNullOrWhiteSpace(RequiredScope) ? null : RequiredScope.Trim(),
         TimeoutMs = TimeoutMs,
+        Combine = ToCombineDictionary(),
         Cache = new CacheSettings { Enabled = CacheEnabled, TtlSeconds = CacheTtlSeconds },
         Inputs = Inputs.Where(i => !string.IsNullOrWhiteSpace(i.Name)).ToDictionary(
             i => $"{i.Source}.{i.Name.Trim()}",
@@ -75,6 +80,7 @@ public sealed class RecipeForm
             Required = s.Required,
             When = Blank(s.When),
             ForEach = Blank(s.ForEach),
+            Distinct = s.Distinct,
             Cache = new CacheSettings { Enabled = s.CacheEnabled, TtlSeconds = s.CacheTtlSeconds },
             Bind = s.Bindings
                 .Where(kv => kv.Value.Mode != BindingMode.None)
@@ -87,6 +93,27 @@ public sealed class RecipeForm
             .Where(f => !string.IsNullOrWhiteSpace(f.Name) && !string.IsNullOrWhiteSpace(f.Expression))
             .Select(f => KeyValuePair.Create(f.Name.Trim(), (JsonNode?)JsonValue.Create($"{{{{{f.Expression}}}}}"))))
     };
+
+    private Dictionary<string, CombineDef> ToCombineDictionary()
+    {
+        var result = new Dictionary<string, CombineDef>(StringComparer.OrdinalIgnoreCase);
+        foreach (var combine in Combines)
+        {
+            var name = combine.Name.Trim();
+            // The screen shows this as a problem under "Things to fix" instead of silently dropping one of them.
+            if (!result.TryAdd(name, combine.ToDef()))
+                throw new InvalidOperationException($"Two combined lists are both called '{name}'. Give each its own name.");
+        }
+        return result;
+    }
+
+    /// <summary>A name for a new combined list that no other one uses: records, records2, ...</summary>
+    public string NewCombineName(string wanted = "records")
+    {
+        var candidate = wanted;
+        for (var n = 2; Combines.Any(c => c.Name.Trim().Equals(candidate, StringComparison.OrdinalIgnoreCase)); n++) candidate = $"{wanted}{n}";
+        return candidate;
+    }
 
     /// <summary>Turns "Get customer" into a short unique alias such as "getCustomer".</summary>
     public string NewAlias(string displayName)
@@ -126,6 +153,9 @@ public sealed class StepForm
     public bool Required { get; set; } = true;
     public string? When { get; set; }
     public string? ForEach { get; set; }
+
+    /// <summary>Only meaningful with ForEach: call each unique item once.</summary>
+    public bool Distinct { get; set; } = true;
     public bool CacheEnabled { get; set; }
     public int CacheTtlSeconds { get; set; } = 30;
     public bool ShowAdvanced { get; set; }

@@ -12,7 +12,9 @@
     <a href="/help#secrets">Passwords and keys</a>
     <a href="/help#add-endpoint">Add an endpoint by hand</a>
     <a href="/help#build">Build an aggregated endpoint</a>
+    <a href="/help#combine">Combine lists</a>
     <a href="/help#publish">Test and publish</a>
+    <a href="/help#api-docs">API docs for testers</a>
     <a href="/help#troubleshooting">Troubleshooting</a>
     <a href="/help#app-errors">Errors apps receive</a>
     <a href="/help#logs">Live logs</a>
@@ -138,6 +140,47 @@
 </section>
 
 @* ------------------------------------------------------------------ *@
+<section id="combine">
+<h2>Combine lists (remove duplicates)</h2>
+<p>Use <strong>Combine lists</strong> when two services return lists of the same kind of thing, for example customers in a CRM and customers in billing, and the app should get <strong>one list with each record once</strong>. You'll find it in step 4, <strong>Response</strong>, of the endpoint builder.</p>
+<ol>
+    <li>Choose <strong>Combine lists</strong>. Give the list a name, for example <code>customers</code>.</li>
+    <li>For each list, pick it under <strong>List</strong> (the lists come from the steps you added) and pick <strong>Match on</strong>: the field that identifies a record, such as an id. Records with the same value are treated as the same record. Use <strong>Add list</strong> for more lists.</li>
+    <li>Choose <strong>Add to response</strong>, then <strong>Try it</strong>.</li>
+</ol>
+
+<h3>When the services use different ids</h3>
+<p>Often the CRM and billing don't share an id. Don't guess. Tick <strong>Different ids? Link through another list</strong> and pick a <strong>link list</strong>: a list, from one of your steps, with rows that say which id in one service is which shared id (for example <code>crmId</code> and <code>billingId</code>). Choose the link field that matches this list's id, and the link field to use.</p>
+<ul>
+    <li>Ask the owners of the services which one can provide the links, or whether there is a mapping or "cross-reference" endpoint.</li>
+    <li><strong>Never match on names or emails.</strong> Different people and customers can share them, and the wrong records would be merged. The page shows a warning under <strong>Check before publishing</strong> if you try.</li>
+</ul>
+
+<h3>Which list wins</h3>
+<p>When the same record has different values in different lists, you choose who wins:</p>
+<ul>
+    <li><strong>First list wins</strong>: the list at the top keeps its values. Later lists only fill in what's missing. Use <strong>Move up / Move down</strong> to change the order.</li>
+    <li><strong>Newest wins</strong>: the record with the later date in the field you pick is used.</li>
+    <li><strong>Choose per field</strong>: for example "plan always comes from billing", whatever the rule above says.</li>
+</ul>
+<p>Under <strong>More options</strong> you can ignore spaces and upper/lower case when matching, leave out records that have no match value, show which services each record came from, sort the list, and set the most records allowed.</p>
+
+<h3>What the counts in Try it mean</h3>
+<p>Under Try it, the line for the combined list shows counts, never the records themselves. Counts that are zero are left out.</p>
+<dl>
+    <dt>matched</dt><dd>Records that were the same as one already seen, and were merged into it.</dd>
+    <dt>unmapped</dt><dd>Records whose id isn't in the link list. They are kept on their own (or left out, if you chose that). A high number usually means the link list is incomplete or its step failed.</dd>
+    <dt>ambiguous</dt><dd>Records whose id links to two different shared ids. They are never merged, because the gateway won't guess.</dd>
+    <dt>without a key</dt><dd>Records that have no value in the match field.</dd>
+    <dt>ignored</dt><dd>Items in a list that aren't records (for example plain text).</dd>
+</dl>
+
+<h3>Duplicates inside one list</h3>
+<p>To remove repeats inside a single list, add <code>| distinct</code> to a value, for example <code>{{a.body.ids | distinct}}</code>, or <code>| distinct('id')</code> to keep the first record for each id. A step that runs once for each item already calls each unique item once. Under <strong>Advanced</strong>, untick <strong>Call once per unique item</strong> only if the same call really must be repeated.</p>
+<p class="hint">Merging only looks at the top-level fields of a record. A nested block (such as an address) is taken whole from one list, never mixed from two.</p>
+</section>
+
+@* ------------------------------------------------------------------ *@
 <section id="publish">
 <h2>Test and publish</h2>
 <ol>
@@ -146,6 +189,19 @@
     <li>When the test passes, choose <strong>Publish</strong>. A passing test of the exact current version is required; any change after testing means testing again.</li>
 </ol>
 <p>Editing a published endpoint creates a draft. The live version keeps working until you publish again. Every published version is kept, so an administrator can roll back.</p>
+</section>
+
+@* ------------------------------------------------------------------ *@
+<section id="api-docs">
+<h2>API docs for testers</h2>
+<p>Every published endpoint also appears in the <strong>API docs</strong>, a page where anyone can read how an endpoint works and call it.</p>
+<ol>
+    <li>On the <strong>Aggregated endpoints</strong> page choose <strong>API docs</strong> (or <strong>Try in API docs</strong> next to one endpoint). It opens in a new tab.</li>
+    <li>Choose an endpoint, then <strong>Try it out</strong>, fill in the values and choose <strong>Execute</strong>. You'll see the real answer, the status and how long it took.</li>
+    <li>On a development machine you're already signed in. Anywhere else choose <strong>Authorize</strong> and paste a token.</li>
+</ol>
+<p>A newly published endpoint shows up by itself within a couple of seconds; refresh the page if you don't see it. Drafts are <em>not</em> listed. To test a draft, use <strong>Try it</strong> in the wizard.</p>
+<p>Using Postman or Insomnia, or generating code for an app? Use <strong>OpenAPI spec</strong> on the same page to get <code>openapi.json</code> and import it.</p>
 </section>
 
 @* ------------------------------------------------------------------ *@

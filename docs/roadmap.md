@@ -13,6 +13,7 @@
   schema inference, drafts, validate, test, publish gate, history, rollback
 - Admin UI (Blazor): Add service (from OpenAPI or by hand) with sign-in cards and Check sign-in; add endpoints by hand with a sample response; five-step wizard with an endpoint picker, pre-filled ("suggested") values, one-click response fields and live validation
 - Live logs page in the admin UI (gateway and admin API, filter by correlation id)
+- Duplicate handling: `distinct`, de-duplicated forEach calls, `combine` by exact key (ADR 0011)
 - CLI (`aggregator validate | run`), mock Services A/B/C/D, 60 unit tests, Dockerfile, docker-compose
 
 ## Next: needed before production
@@ -39,4 +40,5 @@
 | Per-recipe rate limits and quotas | Protect expensive endpoints |
 | Request-scoped response cache invalidation (`DELETE /admin/cache/{recipe}`) | Data fixes |
 | Recipe templates and cloning in the UI | Faster authoring |
+| "Combine lists" card in the wizard with Try it counts | Phase 4 of duplicate handling; the engine already supports `combine` |
 | FHIR-aware helpers (e.g. Bundle flattening) as transforms | Only if several health recipes need them; see ADR 0002 |

@@ -1,5 +1,7 @@
+using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
 using ApiAggregator.Engine.Config;
+using ApiAggregator.Engine.Execution;
 using ApiAggregator.Engine.Expressions;
 using ApiAggregator.Engine.Model;
 using ApiAggregator.Engine.Planning;
@@ -8,8 +10,14 @@ namespace ApiAggregator.Engine.Validation;
 
 public sealed record ValidationIssue(string Where, string Message);
 
+/// <summary>
+/// Issues block testing and publishing. Warnings never do: they are things a person should look at
+/// first (for example a risky combine key), shown next to the issues.
+/// </summary>
 public sealed record ValidationResult(IReadOnlyList<ValidationIssue> Issues)
 {
+    public IReadOnlyList<ValidationIssue> Warnings { get; init; } = [];
+
     public bool IsValid => Issues.Count == 0;
 }
 
@@ -33,7 +41,9 @@ public static partial class RecipeValidator
     public static ValidationResult Validate(Recipe recipe, ConfigSnapshot config)
     {
         var issues = new List<ValidationIssue>();
+        var warnings = new List<ValidationIssue>();
         void Add(string where, string message) => issues.Add(new ValidationIssue(where, message));
+        void Warn(string where, string message) => warnings.Add(new ValidationIssue(where, message));
 
         // ---- endpoint
         if (!SlugRegex().IsMatch(recipe.Id)) Add("id", "Use lowercase letters, digits and dashes only, e.g. customer-overview.");
@@ -83,6 +93,9 @@ public static partial class RecipeValidator
             if (step.ForEach is not null && !step.ForEach.Trim().StartsWith("{{")) Add(at, "For-each must be an expression such as {{b.body.items[*].id}}.");
         }
 
+        // ---- combined lists
+        CheckCombines(recipe, aliases, Add, Warn);
+
         // ---- expressions (steps + response)
         var expressions = recipe.Steps.SelectMany(s => ExecutionPlanner.Expressions(s).Select(e => (Where: $"steps.{s.Alias}", Expr: e, Step: (StepDef?)s)))
             .Concat(Template.FindExpressions(recipe.Response).Select(e => (Where: "response", Expr: e, Step: (StepDef?)null)));
@@ -96,7 +109,7 @@ public static partial class RecipeValidator
             catch (InvalidOperationException ex) { Add("steps", ex.Message); }
         }
 
-        return new ValidationResult(issues);
+        return new ValidationResult(issues) { Warnings = warnings };
     }
 
     private static void CheckBinding(BindingDef b, string at, Action<string, string> add)
@@ -144,12 +157,178 @@ public static partial class RecipeValidator
                 break;
             case "ctx":
                 break;
+            case "combine":
+                // Combined lists are built after every step has finished, so a step can never read one.
+                if (step is not null) add(where, "Steps can't use combined lists; they're built after all steps finish.");
+                else if (path.FirstProperty is null || !recipe.Combine.ContainsKey(path.FirstProperty))
+                    add(where, $"'{expr}' refers to a combined list that isn't defined. Use combine.<name> with a name from the Combine section.");
+                break;
             default:
                 if (!aliases.Contains(path.Root)) add(where, $"'{expr}' refers to a step named '{path.Root}' that doesn't exist.");
                 else if (step is not null && path.Root == step.Alias) add(where, "A step can't use its own result.");
                 break;
         }
     }
+
+    // ------------------------------------------------------------------ combined lists
+
+    private static readonly HashSet<string> AllowedNormalize = new(StringComparer.OrdinalIgnoreCase) { "trim", "lower" };
+
+    /// <summary>
+    /// Key fields that identify a PERSON loosely (an email, a name, a phone number...). Two different people
+    /// can share one, so combining on them can merge the wrong records. Compared after lowercasing and
+    /// keeping only letters and digits.
+    /// </summary>
+    private static readonly HashSet<string> PersonLikeKeys = new(StringComparer.Ordinal)
+    {
+        "email", "emailaddress", "name", "fullname", "firstname", "lastname", "surname", "givenname", "familyname",
+        "dob", "dateofbirth", "birthdate", "phone", "mobile", "phonenumber", "address"
+    };
+
+    private static void CheckCombines(Recipe recipe, HashSet<string> aliases, Action<string, string> add, Action<string, string> warn)
+    {
+        var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var (name, def) in recipe.Combine)
+        {
+            var at = $"combine.{name}";
+            if (!AliasRegex().IsMatch(name)) add(at, "Combined list names must start with a letter and use only letters, digits or underscore (32 characters at most).");
+            if (!names.Add(name)) add(at, "Two combined lists have the same name.");
+            if (def.Sources.Count == 0) add(at, "Add at least one source, the list of records to combine.");
+
+            // ---- sources
+            var sourceNames = new List<string>();
+            var warned = new HashSet<string>(StringComparer.Ordinal);
+            for (var i = 0; i < def.Sources.Count; i++)
+            {
+                var source = def.Sources[i];
+                var label = $"Source {i + 1}";
+                string? root = null;
+
+                if (string.IsNullOrWhiteSpace(source.From)) add(at, $"{label} needs a 'from' path, such as crm.body.contacts.");
+                else if (source.From.Contains("{{")) add(at, $"{label}: write the path without braces, e.g. crm.body.contacts.");
+                else
+                {
+                    try
+                    {
+                        var path = ValuePath.Parse(source.From);
+                        root = path.Root;
+                        foreach (var t in path.TransformCalls.Where(t => !Transforms.Names.Contains(t.Name)))
+                            add(at, $"{label}: unknown transform '{t.Name}'. Allowed: {string.Join(", ", Transforms.Names)}.");
+
+                        if (ExecutionPlanner.ReservedRoots.Contains(root))
+                            add(at, $"{label}: '{source.From}' must start with the name of a step. Combined lists can only use step results.");
+                        else if (!aliases.Contains(root))
+                            add(at, $"{label}: '{source.From}' refers to a step named '{root}' that doesn't exist.");
+                    }
+                    catch (FormatException ex) { add(at, $"{label}: {ex.Message}"); }
+                }
+
+                if (!string.IsNullOrWhiteSpace(source.Name) && !AliasRegex().IsMatch(source.Name.Trim()))
+                    add(at, $"{label}: the name must start with a letter and use only letters, digits or underscore.");
+                var sourceName = !string.IsNullOrWhiteSpace(source.Name) ? source.Name.Trim() : root;
+                if (sourceName is not null)
+                {
+                    if (sourceNames.Contains(sourceName)) add(at, $"Two sources are called '{sourceName}'. Give each source its own name.");
+                    sourceNames.Add(sourceName);
+                }
+
+                // ---- key
+                var keyParts = Parts(source.Key);
+                if (string.IsNullOrWhiteSpace(source.Key)) add(at, $"{label} needs a key: the field that identifies a record, such as userId.");
+                else CheckFieldList(source.Key, $"{label}: key", at, add);
+
+                // ---- mapping ("via"): for services that don't share an id
+                var comparedOn = source.Key; // the fields whose values are compared across lists
+                if (source.Via is { } via)
+                {
+                    CheckVia(via, label, keyParts.Length, aliases, at, add);
+                    comparedOn = via.Use;
+                }
+
+                // Loose person-like identifiers are risky to match on; the compared field is the mapping's, when there is one.
+                foreach (var part in Parts(comparedOn).Where(p => p.Length > 0 && p.Split('.').All(IsFieldName)))
+                {
+                    var last = new string(part.Split('.')[^1].Where(char.IsLetterOrDigit).ToArray()).ToLowerInvariant();
+                    if (PersonLikeKeys.Contains(last) && warned.Add(part))
+                        warn(at, $"Matching on '{part}' can merge different people's or customers' records. Use an id that both services share, or link them with a mapping step.");
+                }
+            }
+
+            // ---- rules
+            foreach (var (field, owner) in def.Owners)
+                if (!sourceNames.Contains(owner))
+                    add(at, $"The owner of '{field}' is '{owner}', which isn't one of the sources ({string.Join(", ", sourceNames)}).");
+
+            foreach (var n in def.Normalize.Where(n => !AllowedNormalize.Contains(n)))
+                add(at, $"Normalize can only be 'trim' or 'lower', not '{n}'.");
+
+            if (def.OnConflict.Trim() != "priority")
+            {
+                var newest = RecordCombiner.NewestField(def.OnConflict);
+                if (newest is null || !newest.Split('.').All(IsFieldName))
+                    add(at, "On conflict must be 'priority' or 'newest:<field>', for example newest:updatedAt.");
+            }
+
+            if (!def.Nulls.Equals("neverOverwrite", StringComparison.OrdinalIgnoreCase) && !def.Nulls.Equals("overwrite", StringComparison.OrdinalIgnoreCase))
+                add(at, "Nulls must be 'neverOverwrite' or 'overwrite'.");
+            if (!def.WithoutKey.Equals("keep", StringComparison.OrdinalIgnoreCase) && !def.WithoutKey.Equals("drop", StringComparison.OrdinalIgnoreCase))
+                add(at, "Without a key must be 'keep' or 'drop'.");
+            if (def.MaxRecords is < 1 or > 50_000) add(at, "Max records must be between 1 and 50,000.");
+            if (!string.IsNullOrWhiteSpace(def.SortBy) && !def.SortBy.Trim().TrimStart('-').Trim().Split('.').All(IsFieldName))
+                add(at, "Sort by must be a field name, optionally starting with '-' for descending, e.g. -updatedAt.");
+
+            // Without a response template every combined list is returned under its own name.
+            if (recipe.Response is null && aliases.Contains(name))
+                add(at, $"'{name}' is also the name of a step, so the default answer would mix them up. Rename the combined list.");
+            else if (recipe.Response is not null && !UsesCombine(recipe.Response, name))
+                warn(at, $"The combined list '{name}' isn't used in the response.");
+        }
+    }
+
+    /// <summary>True when the response template contains {{combine.&lt;name&gt;...}}.</summary>
+    private static bool UsesCombine(JsonNode response, string name) =>
+        Template.FindExpressions(response).Any(e =>
+        {
+            try { var path = ValuePath.Parse(e); return path.Root == "combine" && path.FirstProperty == name; }
+            catch (FormatException) { return false; } // reported elsewhere
+        });
+
+    private static string[] Parts(string? commaSeparated) => (commaSeparated ?? "").Split(',', StringSplitOptions.TrimEntries);
+
+    /// <summary>Each comma-separated part must be a field name, or a dotted path like customer.id.</summary>
+    private static void CheckFieldList(string list, string what, string at, Action<string, string> add)
+    {
+        foreach (var part in Parts(list))
+            if (part.Length == 0 || !part.Split('.').All(IsFieldName))
+                add(at, $"{what} '{part}' isn't a valid field. Use a field name such as userId, or customer.id. Separate several fields with commas.");
+    }
+
+    private static void CheckVia(CombineVia via, string label, int keyParts, HashSet<string> aliases, string at, Action<string, string> add)
+    {
+        label += " (mapping)";
+        if (string.IsNullOrWhiteSpace(via.From) || via.From.Contains("{{")) add(at, $"{label} needs a 'from' path without braces, such as links.body.items.");
+        else
+        {
+            try
+            {
+                var root = ValuePath.Parse(via.From).Root;
+                if (ExecutionPlanner.ReservedRoots.Contains(root)) add(at, $"{label}: '{via.From}' must start with the name of a step.");
+                else if (!aliases.Contains(root)) add(at, $"{label}: '{via.From}' refers to a step named '{root}' that doesn't exist.");
+            }
+            catch (FormatException ex) { add(at, $"{label}: {ex.Message}"); }
+        }
+
+        foreach (var (what, list) in new[] { ("the field that matches", via.Match), ("the field to use", via.Use) })
+        {
+            if (string.IsNullOrWhiteSpace(list)) { add(at, $"{label} needs {what}."); continue; }
+            CheckFieldList(list, $"{label}: {what}", at, add);
+            if (Parts(list).Length != keyParts)
+                add(at, $"{label}: {what} must have the same number of fields as the key ({keyParts}).");
+        }
+    }
+
+    private static bool IsFieldName(string s) =>
+        s.Length is > 0 and <= 128 && s.All(ch => char.IsLetterOrDigit(ch) || ch is '_' or '-' or '$');
 
     private static void CheckCache(CacheSettings cache, string at, Action<string, string> add)
     {

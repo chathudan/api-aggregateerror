@@ -100,7 +100,7 @@ hop-by-hop or length headers, because auth profiles and the HTTP stack handle th
 | Slice, then project | `a.body.items[0:5].id` → array of ids |
 | Wildcard | `lines[*].body` |
 | Quoted property | `a.headers['X-Trace-Id']` |
-| Transforms | `a.body.ids \| join(',')`, `\| count`, `\| first`, `\| last`, `\| default('n/a')`, `\| upper`, `\| lower`, `\| trim`, `\| string` |
+| Transforms | `a.body.ids \| join(',')`, `\| count`, `\| first`, `\| last`, `\| default('n/a')`, `\| upper`, `\| lower`, `\| trim`, `\| string`, `\| distinct`, `\| distinct('id')` |
 
 ## Run order, conditions, fan-out
 
@@ -110,13 +110,68 @@ hop-by-hop or length headers, because auth profiles and the HTTP stack handle th
   is false, the step is *skipped*. That's not an error, and steps that depend on it are skipped too.
 - **`forEach`**: `"{{b.body.items[0:3].id}}"` runs the step once per item, with at most
   `maxConcurrency` calls in flight (default 4) and at most 100 items (`MaxForEachItems`). The step's
-  output is an array of `{ status, headers, body }`.
+  output is an array of `{ status, headers, body }`. Repeated items are called **once** (`"distinct": true`
+  by default), so five orders for the same customer make one customer call.
+
+## Combining records from several services
+
+Use `combine` when several steps return the same kind of record (users, orders, appointments) and
+the app should get each one **once**. See [ADR 0011](../adr/0011-combining-records-no-fuzzy-matching.md).
+
+```json
+"combine": {
+  "users": {
+    "sources": [
+      { "from": "identity.body.users",   "key": "id" },
+      { "from": "crm.body.contacts",     "key": "userId",      "name": "crm" },
+      { "from": "billing.body.accounts", "key": "customerRef", "name": "billing" }
+    ],
+    "normalize": ["trim", "lower"],
+    "onConflict": "priority",
+    "owners": { "plan": "billing" },
+    "trackSources": true,
+    "sortBy": "name"
+  }
+},
+"response": { "users": "{{combine.users}}", "userCount": "{{combine.users | count}}" }
+```
+
+| Setting | Default | Meaning |
+|---|---|---|
+| `sources[].from` | — | An array, or a single object, from a step's response |
+| `sources[].key` | — | Field(s) holding the **same identifier** in every source. Comma-separated for a composite key (`"tenantId,id"`) |
+| `sources[].name` | step alias | Label used in `owners` and `_sources` |
+| `normalize` | `["trim"]` | How key values are compared: `trim`, `lower` |
+| `onConflict` | `priority` | `priority`: the first listed source wins; `newest:<field>`: the most recent record wins |
+| `owners` | — | Per-field source that always wins, e.g. email from Identity, plan from Billing |
+| `nulls` | `neverOverwrite` | A null never replaces a real value (`overwrite` to allow it) |
+| `withoutKey` | `keep` | Records with no key: `keep` them separately, or `drop` them |
+| `trackSources` | `false` | Add `_sources: ["identity","billing"]` to each record |
+| `sortBy` | first seen | Field to sort by; prefix `-` for descending |
+| `maxRecords` | 5000 | Cap on input records. Above it, the combine fails with `combine_failed` |
+| `required` | `true` | `false`: a failed combine gives `null` plus `_errors` instead of a 502 |
+
+**Rules worth knowing**
+- Matching is **exact on the key only**. The gateway never guesses that two records are the same
+  person, customer or account from names, emails or dates of birth. The validator warns if a key
+  looks like identity data.
+- **Different ids in different systems** (the usual case): give that source a `via` mapping, i.e.
+  link rows returned by a step, so its key is translated before matching:
+  `"via": { "from": "links.body.items", "match": "billingAccountNo", "use": "crmId" }`.
+  Keys that aren't in the mapping, or that map to two different ids, are kept separate and counted.
+- The **conflict rule is chosen per aggregated endpoint** in the wizard. `priority` is only the default.
+- Merging is **top-level**: nested objects are taken whole from the winning source.
+- A source whose step failed (an optional step) is skipped; the failure is already in `_errors`.
+- Combines run after all steps, and steps can't use them. Combines can't use other combines.
+- Admin "Try it" shows counts, for example *"crm 12, billing 9 → 15 records (6 matched, 0 without
+  a key)"*. Logs record counts only (event 1500 `CombineCompleted`).
 
 ## Failure semantics
 
 - Each failed step gets an **error code**: `auth_failed`, `unauthorized`, `forbidden`, `not_found`,
   `bad_request`, `rate_limited`, `server_error`, `timeout`, `unreachable`, `invalid_response`,
-  `missing_value`. The full table is in [ADR 0009](../adr/0009-error-contract-and-logging.md).
+  `missing_value`, plus `combine_failed` for a combine that couldn't be built. The full table is in
+  [ADR 0009](../adr/0009-error-contract-and-logging.md).
 - Steps that depend on a failed step get `dependency_failed` and aren't run. Only **root causes**
   are reported to the caller.
 - If a `required` step fails (the default), the call returns **502**, or **504** when every root cause

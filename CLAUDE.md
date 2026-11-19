@@ -32,6 +32,8 @@ service (Basic, session login, OAuth/JWT, API key, pass-through) in any combinat
 - **Caching is off by default and per caller by default.** Keys are hashed and include the recipe
   and config version. Never cache partial or non-2xx responses.
 - **No scripting in recipes.** The path language and the transform list are fixed (ADR 0002).
+- **No fuzzy matching.** `combine` merges records by exact key only; never by similar names, emails or
+  dates of birth (ADR 0011). Identity resolution belongs in the system that owns it.
 - The caller's token is forwarded only by `PassThroughUserTokenStep`.
 - Logs never contain request or response values; log ids, statuses and timings.
 - Responses carry `Cache-Control: no-store`.
@@ -52,7 +54,7 @@ If a change touches any of these, run the `security-review` skill and add or adj
 | `…/Auth` | `IAuthStep` + `Steps/*`, `DownstreamAuthenticator`, `DownstreamCredentialCache` |
 | `…/Config` | `IConfigStore`, `FileConfigStore` (published / drafts / history), `ConfigSnapshot` |
 | `…/Authoring` | `SourceCatalog` (wizard dropdown options, schema inference), `AutoBinder` (pre-filled values) |
-| `src/ApiAggregator.Gateway` | `Program.cs` (one handler for `/bff/{**path}`), `GatewayOpenApi` |
+| `src/ApiAggregator.Gateway` | `Program.cs` (one handler for `/bff/{**path}`), `ApiDocsPage` (Swagger UI at `/bff/docs`); the spec comes from `Engine/Authoring/OpenApiDocumentBuilder` |
 | `src/ApiAggregator.Admin.Api` | `Program.cs` (all admin endpoints), `OpenApiImporter` |
 | `src/ApiAggregator.Admin.UI` | `Pages/EndpointEditor.razor` (wizard), `Pages/Services.razor` (add service, endpoints, sign-in), `Shared/SignInEditor.razor`; form models in `Services/` (`RecipeForm`, `SignInForm` + `SignInKinds`, `ServiceForms`) |
 | `src/ApiAggregator.Hosting` | `InboundAuth` (JWT setup, scopes, caller context), `LocalSecrets` (Development-only secrets file) |

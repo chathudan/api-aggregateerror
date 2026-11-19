@@ -1,0 +1,21 @@
+@* Picks a field name from a list. When the fields aren't known (no schema) or the value is a composite key, it is a plain text box instead. *@
+@if (Fields.Count > 0 && !(Value ?? "").Contains(','))
+{
+    <select value="@Value" @onchange="e => ValueChanged.InvokeAsync(e.Value?.ToString() ?? string.Empty)">
+        <option value="">@Placeholder</option>
+        @foreach (var field in Fields) { <option value="@field">@field</option> }
+        @* A value typed earlier or loaded from a saved recipe stays visible even when it isn't in the list. *@
+        @if (!string.IsNullOrEmpty(Value) && !Fields.Contains(Value)) { <option value="@Value">@Value</option> }
+    </select>
+}
+else
+{
+    <input value="@Value" placeholder="Field name" @onchange="e => ValueChanged.InvokeAsync(e.Value?.ToString() ?? string.Empty)" />
+}
+
+@code {
+    [Parameter] public string? Value { get; set; }
+    [Parameter] public EventCallback<string> ValueChanged { get; set; }
+    [Parameter] public IReadOnlyList<string> Fields { get; set; } = [];
+    [Parameter] public string Placeholder { get; set; } = "Pick a field…";
+}

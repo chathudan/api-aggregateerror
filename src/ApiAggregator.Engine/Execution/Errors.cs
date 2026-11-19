@@ -25,6 +25,8 @@ public static class DownstreamErrorCode
     public const string MissingValue = "missing_value";
     /// <summary>Not run because an upstream step failed.</summary>
     public const string DependencyFailed = "dependency_failed";
+    /// <summary>Records from several steps couldn't be merged into one list (e.g. too many records). Not retryable.</summary>
+    public const string CombineFailed = "combine_failed";
 
     /// <summary>Maps a non-success HTTP status from a downstream service to a code.</summary>
     public static string ForStatus(int status) => status switch

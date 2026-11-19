@@ -59,6 +59,9 @@ flowchart LR
 | `Aggregator:Engine:MaxForEachItems` | 100 | Fan-out cap |
 | `Aggregator:Engine:CacheSizeMb` | 256 | Memory for the response and step caches |
 | `Gateway:RequestsPerMinutePerCaller` | 600 | Rate limit |
+| `Gateway:OpenApi:Enabled` | true | Serves `/bff/openapi.json` (and `/bff/docs`); false gives 404 |
+| `Gateway:OpenApi:IncludeInternalDetails` | false | List internal service names in the spec (Development only in practice) |
+| `Gateway:ApiDocs:Enabled` | true in Development, else false | Swagger UI page at `/bff/docs` |
 | `Auth:Authority`, `Auth:Audience` | — | Inbound JWT validation |
 | `Auth:DevSigningKey` | — | **Development only** |
 | `Secrets:<name>` | — | Development secrets. Use Key Vault in production |

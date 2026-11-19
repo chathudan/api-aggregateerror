@@ -1,0 +1,198 @@
+@* Edits one combined list: which lists to merge, how records are matched, and which list wins. Plain English; the rarely needed options are under "More options". *@
+
+<div class="step combine">
+    <div class="header-row">
+        <label class="grow">Name
+            <input @bind="Form.Name" @bind:after="Notify" placeholder="customers" />
+        </label>
+        <div class="inline">
+            <button class="link" @onclick="() => { Form.Open = !Form.Open; }">@(Form.Open ? "Hide" : "Edit")</button>
+            <button class="link" @onclick="Removed">Remove</button>
+        </div>
+    </div>
+
+    @if (!Form.Open)
+    {
+        <p class="hint">@Form.Sources.Count list@(Form.Sources.Count == 1 ? "" : "s"): @string.Join(", ", Form.Sources.Select(s => s.Label)). Used in the response as <code>combine.@Form.Name</code>.</p>
+    }
+    else
+    {
+
+    <p class="hint">Merges records that are the same thing (for example the same customer) from several lists into one list, each record once.</p>
+
+    @* ---- the lists *@
+    @for (var i = 0; i < Form.Sources.Count; i++)
+    {
+        var index = i;
+        var source = Form.Sources[i];
+        var fields = FieldsOf(source.From);
+        <div class="source">
+            <div class="grid">
+                <label>List @(index + 1)
+                    <select value="@source.From" @onchange="e => OnListPicked(source, e.Value?.ToString())">
+                        <option value="">Pick a list…</option>
+                        @foreach (var list in Lists) { <option value="@list.Expression">@list.Label</option> }
+                        @if (!string.IsNullOrEmpty(source.From) && Lists.All(l => l.Expression != source.From)) { <option value="@source.From">@source.From</option> }
+                    </select>
+                </label>
+                <label>Match on
+                    <FieldPicker @bind-Value="source.Key" @bind-Value:after="Notify" Fields="fields" Placeholder="Pick the id field…" />
+                </label>
+                <label>Called
+                    <input value="@source.Label" @onchange="e => Relabel(source, e.Value?.ToString())" />
+                </label>
+            </div>
+            <div class="inline">
+                <label class="check"><input type="checkbox" @bind="source.UseVia" @bind:after="Notify" /> Different ids? Link through another list</label>
+                <button class="link" disabled="@(index == 0)" @onclick="() => Move(index, -1)">Move up</button>
+                <button class="link" disabled="@(index == Form.Sources.Count - 1)" @onclick="() => Move(index, 1)">Move down</button>
+                <button class="link" @onclick="() => RemoveSource(source)">Remove list</button>
+            </div>
+            @if (source.UseVia)
+            {
+                var linkFields = FieldsOf(source.Via.From);
+                <div class="grid via">
+                    <label>Link list
+                        <select value="@source.Via.From" @onchange="e => { source.Via.From = e.Value?.ToString() ?? string.Empty; return Notify(); }">
+                            <option value="">Pick the list that links the ids…</option>
+                            @foreach (var list in Lists) { <option value="@list.Expression">@list.Label</option> }
+                            @if (!string.IsNullOrEmpty(source.Via.From) && Lists.All(l => l.Expression != source.Via.From)) { <option value="@source.Via.From">@source.Via.From</option> }
+                        </select>
+                    </label>
+                    <label>Link field that matches
+                        <FieldPicker @bind-Value="source.Via.Match" @bind-Value:after="Notify" Fields="linkFields" />
+                    </label>
+                    <label>Link field to use
+                        <FieldPicker @bind-Value="source.Via.Use" @bind-Value:after="Notify" Fields="linkFields" />
+                    </label>
+                </div>
+                <p class="hint">The link list says which id here is which shared id. Ask the owner of a service for it. Never link by names or emails.</p>
+            }
+        </div>
+    }
+    <button class="button" @onclick="AddSource">Add list</button>
+
+    @* ---- which list wins *@
+    <h3>When the same record comes from several lists</h3>
+    <label class="check">
+        <input type="radio" name="conflict-@_id" checked="@(Form.NewestField is null)" @onchange="() => { Form.FirstListWins(); return Notify(); }" />
+        First list wins (order above)
+    </label>
+    <label class="check">
+        <input type="radio" name="conflict-@_id" checked="@(Form.NewestField is not null)" @onchange="() => { Form.NewestWins(Form.NewestField ?? string.Empty); return Notify(); }" />
+        Newest wins, using field
+        @if (Form.NewestField is not null)
+        {
+            <FieldPicker Value="@Form.NewestField" ValueChanged="f => { Form.NewestWins(f); return Notify(); }" Fields="AllFields" Placeholder="Pick the date field…" />
+        }
+    </label>
+
+    <h3>Choose per field <span class="hint">(optional)</span></h3>
+    <p class="hint">A field listed here always comes from the list you choose, whatever the rule above says.</p>
+    @foreach (var owner in Form.Owners.ToList())
+    {
+        <div class="inline">
+            <FieldPicker @bind-Value="owner.Field" @bind-Value:after="Notify" Fields="AllFields" />
+            <span>comes from</span>
+            <select @bind="owner.Source" @bind:after="Notify">
+                <option value="">Pick a list…</option>
+                @foreach (var source in Form.Sources) { <option value="@source.Label">@source.Label</option> }
+            </select>
+            <button class="link" @onclick="() => { Form.Owners.Remove(owner); return Notify(); }">Remove</button>
+        </div>
+    }
+    <button class="link" @onclick="() => { Form.Owners.Add(new OwnerRow()); return Notify(); }">Add a field</button>
+
+    @* ---- rarely needed *@
+    <div><button class="link" @onclick="() => { Form.ShowMore = !Form.ShowMore; }">@(Form.ShowMore ? "Fewer options" : "More options")</button></div>
+    @if (Form.ShowMore)
+    {
+        <div class="grid">
+            <label class="check"><input type="checkbox" @bind="Form.Trim" @bind:after="Notify" /> Ignore spaces around the match value</label>
+            <label class="check"><input type="checkbox" @bind="Form.Lower" @bind:after="Notify" /> Ignore upper/lower case</label>
+            <label>Records without a match value
+                <select value="@Form.WithoutKey" @onchange="e => SetWithoutKey(e.Value?.ToString())">
+                    <option value="keep">Keep them</option>
+                    <option value="drop">Leave them out</option>
+                </select>
+            </label>
+            <label class="check"><input type="checkbox" @bind="Form.TrackSources" @bind:after="Notify" /> Show which services each record came from</label>
+            <label>Sort by
+                <FieldPicker Value="@Form.SortField" ValueChanged="f => { Form.SortField = f; return Notify(); }" Fields="AllFields" Placeholder="Keep the original order" />
+            </label>
+            <label class="check"><input type="checkbox" @bind="Form.SortDescending" @bind:after="Notify" /> Sort from high to low</label>
+            <label class="check"><input type="checkbox" @bind="Form.Required" @bind:after="Notify" /> Fail the endpoint if this can't be combined</label>
+            <label>Most records allowed <input type="number" min="1" max="50000" @bind="Form.MaxRecords" @bind:after="Notify" /></label>
+        </div>
+    }
+
+    <div class="inline">
+        <button class="button" @onclick="AddToResponse">Add to response</button>
+        <span class="hint">Adds <code>@Form.Name</code> to the response fields below.</span>
+    </div>
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public CombineForm Form { get; set; } = null!;
+
+    /// <summary>The arrays the steps return, from their response schemas.</summary>
+    [Parameter] public IReadOnlyList<ListOption> Lists { get; set; } = [];
+
+    /// <summary>Raised after every change, so the page can refresh its other lists and checks.</summary>
+    [Parameter] public EventCallback Changed { get; set; }
+    [Parameter] public EventCallback Removed { get; set; }
+    [Parameter] public EventCallback AddToResponse { get; set; }
+
+    private readonly string _id = Guid.NewGuid().ToString("N")[..8]; // radio buttons need a group name of their own
+
+    private Task Notify() => Changed.InvokeAsync();
+
+    private IReadOnlyList<string> FieldsOf(string from) => Lists.FirstOrDefault(l => l.Expression == from)?.Fields ?? [];
+
+    /// <summary>Fields found in any of the chosen lists (for "newest", "choose per field" and "sort by").</summary>
+    private IReadOnlyList<string> AllFields => Form.Sources.SelectMany(s => FieldsOf(s.From)).Distinct().ToList();
+
+    private Task OnListPicked(CombineSourceForm source, string? expression)
+    {
+        source.From = expression ?? "";
+        // Give the list a short unique label (the step's name) unless the person already chose one.
+        if (string.IsNullOrWhiteSpace(source.Name) && source.From.Length > 0)
+        {
+            var wanted = CombineSourceForm.StepOf(source.From);
+            var label = Form.UniqueLabel(wanted, source);
+            if (label != wanted) Form.Relabel(source, label);
+        }
+        return Notify();
+    }
+
+    private Task Relabel(CombineSourceForm source, string? label)
+    {
+        Form.Relabel(source, string.IsNullOrWhiteSpace(label) ? null : label.Trim());
+        return Notify();
+    }
+
+    private Task SetWithoutKey(string? choice)
+    {
+        Form.LeaveOutUnmatched = choice == "drop";
+        return Notify();
+    }
+
+    private Task Move(int index, int by)
+    {
+        (Form.Sources[index], Form.Sources[index + by]) = (Form.Sources[index + by], Form.Sources[index]);
+        return Notify();
+    }
+
+    private Task RemoveSource(CombineSourceForm source)
+    {
+        Form.Sources.Remove(source);
+        return Notify();
+    }
+
+    private Task AddSource()
+    {
+        Form.Sources.Add(new CombineSourceForm());
+        return Notify();
+    }
+}

@@ -4,6 +4,7 @@
 @using ApiAggregator.Engine.Planning
 @inject AdminApiClient Api
 @inject NavigationManager Nav
+@inject IConfiguration Config
 
 <PageTitle>@(IsNew ? "New endpoint" : _form.Name)</PageTitle>
 
@@ -148,6 +149,10 @@
                     <label class="check"><input type="checkbox" @bind="step.Required" /> If this call fails, fail the whole endpoint</label>
                     <label>Only run when <input @bind="step.When" placeholder="{{getCustomer.body.isPremium}} == true" /></label>
                     <label>Run once for each item in <input @bind="step.ForEach" placeholder="{{getOrders.body.items[0:3].id}}" /></label>
+                    @if (!string.IsNullOrWhiteSpace(step.ForEach))
+                    {
+                        <label class="check"><input type="checkbox" @bind="step.Distinct" /> Call once per unique item</label>
+                    }
                     <label class="check"><input type="checkbox" @bind="step.CacheEnabled" /> Cache this call</label>
                     @if (step.CacheEnabled) { <label>Keep for (seconds) <input type="number" min="1" @bind="step.CacheTtlSeconds" /></label> }
                 </div>
@@ -187,7 +192,22 @@
 @* ------------------------------------------------------------------ 4. Response *@
 <section class="card">
     <h2>4. Response</h2>
-    <p class="hint">Choose what the caller gets back. With no fields, each step's full response is returned under its name.</p>
+
+    @* ---- combine lists: merge records that appear in several services *@
+    <div class="combine-card">
+        <div class="header-row"><h3>Combine lists <HelpLink Topic="combine" /></h3></div>
+        <p class="hint">Do the same records (for example customers) come back from more than one service? Combine them into one list with each record once. Then add the result to the response below.</p>
+        @{ var lists = ListOptions.For(_form, _snapshot); }
+        @foreach (var combine in _form.Combines.ToList())
+        {
+            <CombineEditor Form="combine" Lists="lists" Changed="StateHasChanged" Removed="() => _form.Combines.Remove(combine)" AddToResponse="() => AddCombineToResponse(combine)" />
+        }
+        <button class="button" disabled="@(_form.Steps.Count == 0)" @onclick="AddCombine">Combine lists</button>
+        @if (_form.Steps.Count == 0) { <span class="hint">Add steps first.</span> }
+    </div>
+
+    <h3>Response fields</h3>
+    <p class="hint">Choose what the caller gets back. With no fields, each step's full response (and each combined list) is returned under its name. Once you add a field, only the fields listed here are returned.</p>
     @{ var allSources = SourcesFor(null); }
     <table class="list">
         <thead><tr><th>Field name</th><th>Value</th><th></th></tr></thead>
@@ -229,6 +249,14 @@
         </div>
     }
 
+    @if (Warnings.Count > 0)
+    {
+        <div class="issues warnings">
+            <strong>Check before publishing</strong>
+            <ul>@foreach (var warning in Warnings) { <li><code>@warning.Where</code> @warning.Message</li> }</ul>
+        </div>
+    }
+
     <div class="inline">
         <button class="button" @onclick="SaveDraft">Save draft</button>
         <button class="button" @onclick="RunTest">Try it</button>
@@ -266,7 +294,15 @@
         @if (_test.Body is not null) { <pre class="json">@_test.Body.ToJsonString(new JsonSerializerOptions { WriteIndented = true })</pre> }
     }
 
-    @if (_status is not null) { <p class="status">@_status</p> }
+    @if (_status is not null)
+    {
+        <p class="status">@_status
+            @if (_justPublished)
+            {
+                <text> </text><a href="@DocsLink" target="_blank" rel="noopener">Try it in API docs</a>
+            }
+        </p>
+    }
 </section>
 
 @code {
@@ -277,6 +313,7 @@
     private ConfigSnapshot? _snapshot;
     private TestOutcome? _test;
     private string? _status;
+    private bool _justPublished; // shows the "Try it in API docs" link after a successful publish
     private bool _picking;
     private string _search = "";
     private readonly Dictionary<int, string> _extraTarget = new();
@@ -299,6 +336,16 @@
         {
             try { return RecipeValidator.Validate(_form.ToRecipe(), _snapshot!).Issues; }
             catch (Exception ex) { return [new ValidationIssue("form", ex.Message)]; }
+        }
+    }
+
+    /// <summary>Things worth a second look that don't block publishing (for example a risky combine key).</summary>
+    private IReadOnlyList<ValidationIssue> Warnings
+    {
+        get
+        {
+            try { return RecipeValidator.Validate(_form.ToRecipe(), _snapshot!).Warnings; }
+            catch (Exception) { return []; } // the problem itself is already shown under "Things to fix"
         }
     }
 
@@ -349,6 +396,22 @@
     }
 
     /// <summary>Adds one response field per top-level field of the step's response (or the whole body if unknown).</summary>
+    private void AddCombine()
+    {
+        var combine = new CombineForm { Name = _form.NewCombineName() };
+        combine.Sources.Add(new CombineSourceForm());
+        combine.Sources.Add(new CombineSourceForm());
+        _form.Combines.Add(combine);
+    }
+
+    /// <summary>Adds the combined list to the response as a field with the same name (once).</summary>
+    private void AddCombineToResponse(CombineForm combine)
+    {
+        var expression = $"combine.{combine.Name.Trim()}";
+        if (!_form.Response.Any(f => f.Expression == expression))
+            _form.Response.Add(new ResponseField { Name = combine.Name.Trim(), Expression = expression });
+    }
+
     private void AddFieldsFrom(StepForm step)
     {
         var endpoint = _snapshot!.FindEndpoint(step.Endpoint, out _);
@@ -410,6 +473,7 @@
     private async Task<bool> SaveDraft()
     {
         var error = await Api.SaveDraftAsync(_form.ToRecipe());
+        _justPublished = false;
         _status = error ?? "Draft saved. The live endpoint is unchanged until you publish.";
         if (error is null && IsNew) Nav.NavigateTo($"/endpoints/{_form.Id}", replace: true);
         return error is null;
@@ -423,12 +487,26 @@
             _form.Inputs.Where(i => i.Source == "route").ToDictionary(i => i.Name, V),
             _form.Inputs.Where(i => i.Source == "query").ToDictionary(i => i.Name, V),
             _form.Inputs.Where(i => i.Source == "header").ToDictionary(i => i.Name, V));
+        _justPublished = false;
         _status = _test is null ? "The test couldn't run. Check that the Admin API is reachable." : null;
+    }
+
+    /// <summary>Swagger UI deep link to this endpoint: #/&lt;tag&gt;/&lt;operationId&gt;, the tag being the first part of the route.</summary>
+    private string DocsLink
+    {
+        get
+        {
+            var gateway = (Config["Gateway:BaseUrl"] ?? "http://localhost:5200/").TrimEnd('/');
+            var tag = _form.Route.Trim('/').Split('/')[0];
+            if (tag.StartsWith('{')) tag = "other";
+            return $"{gateway}/bff/docs#/{Uri.EscapeDataString(tag)}/{Uri.EscapeDataString(_form.Id)}";
+        }
     }
 
     private async Task Publish()
     {
         var error = await Api.PublishAsync(_form.Id);
+        _justPublished = error is null;
         _status = error ?? $"Published. Callers can use {_form.Method} /bff/{_form.Route.Trim('/')} now.";
     }
 }

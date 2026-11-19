@@ -28,6 +28,7 @@ table.list td { border-bottom: 1px solid var(--border); padding: 6px 8px; vertic
 .link { background: none; border: none; color: var(--accent); cursor: pointer; padding: 4px 0; font: inherit; }
 .tag { font-size: 12px; padding: 2px 8px; border-radius: var(--radius); background: #f1efe8; color: var(--muted); }
 .muted, .hint { color: var(--muted); font-size: 13px; }
+.issues.warnings { border-left: 4px solid #ba7517; }
 .issues { background: #faeeda; border-radius: var(--radius); padding: 10px 14px; margin-bottom: 12px; font-size: 14px; }
 .ok { color: var(--ok); font-weight: 500; } .bad { color: var(--bad); font-weight: 500; }
 .status { color: var(--muted); }
@@ -90,3 +91,10 @@ table.list input, table.list select { width: 100%; box-sizing: border-box; }
 .log-details td { background: var(--page); }
 .log-details dl { display: grid; grid-template-columns: 160px 1fr; gap: 2px 12px; margin: 4px 0; font-size: 13px; }
 .log-details dt { color: var(--muted); } .log-details dd { margin: 0; overflow-wrap: anywhere; }
+.actions { display: flex; gap: 8px; align-items: center; }
+
+/* ---- combine lists */
+.combine-card { border-bottom: 1px solid var(--border); margin-bottom: 8px; padding-bottom: 8px; }
+.step.combine { background: var(--page); }
+.source { border: 1px dashed var(--border); border-radius: var(--radius); padding: 8px 10px; margin-bottom: 8px; background: var(--surface); }
+.grid.via { margin-top: 8px; }

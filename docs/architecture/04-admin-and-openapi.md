@@ -88,6 +88,22 @@ show up before anyone builds an endpoint.
 and mobile teams can generate typed clients (NSwag or Kiota for .NET MAUI, `openapi-typescript`
 for web).
 
+How the document is built (`OpenApiDocumentBuilder` in the engine):
+
+- One operation per published recipe, grouped by the first route segment. Inputs become parameters.
+- The 200 schema comes from the recipe's response template: each `{{expression}}` is followed through
+  the called service's `responseSchema` (properties, `[n]`, slices, `[*]`, `count`, `join`...). Anything
+  that can't be worked out for certain is shown as "any value". It never guesses.
+- Errors are described once (`Problem`, `ErrorEntry`) and referenced per operation, with the
+  correlation id and `Retry-After` headers.
+- Internal service names appear only when `Gateway:OpenApi:IncludeInternalDetails` is true (on in
+  Development, off otherwise).
+
+**API docs page:** `GET /bff/docs` is Swagger UI (loaded from unpkg.com) over that document, with
+Try it out on. In Development it signs itself in with a `/dev/token` test token. Elsewhere testers use
+**Authorize** and paste a token. Drafts aren't listed; use **Try it** in the wizard. A recipe whose
+route is `docs` or `openapi.json` would be hidden by these two fixed addresses, so avoid those routes.
+
 ## Admin API reference
 
 | Method and path | Role | Purpose |

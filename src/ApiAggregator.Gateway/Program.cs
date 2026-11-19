@@ -3,6 +3,7 @@
 
 using System.Threading.RateLimiting;
 using ApiAggregator.Engine;
+using ApiAggregator.Engine.Authoring;
 using ApiAggregator.Engine.Config;
 using ApiAggregator.Engine.Execution;
 using ApiAggregator.Engine.Logging.Live;
@@ -121,9 +122,47 @@ app.MapGet("/health/ready", async (IConfigStore store, CancellationToken ct) =>
 // Live logs for the admin UI. Outside /bff on purpose, and skipped by the request log (see RequestLogMiddleware).
 app.MapLiveLogs("/_admin/logs", "log-reader");
 
-// OpenAPI document for all published aggregated endpoints (web/mobile teams generate clients from it).
-app.MapGet("/bff/openapi.json", async (IConfigStore store, CancellationToken ct) =>
-    Results.Json(GatewayOpenApi.Build(await store.GetSnapshotAsync(ct)), statusCode: 200));
+// OpenAPI document for all published aggregated endpoints (web/mobile teams generate clients from it),
+// and the Swagger UI page that shows it. Both are anonymous: callers need the spec before they have a token.
+// Literal routes win over the "/bff/{**path}" catch-all below, and they skip the per-caller rate limit
+// (which is attached to the catch-all only).
+var devTokenEnabled = app.Environment.IsDevelopment() && !string.IsNullOrEmpty(builder.Configuration["Auth:DevSigningKey"]);
+
+if (builder.Configuration.GetValue("Gateway:OpenApi:Enabled", true))
+{
+    var includeInternalDetails = builder.Configuration.GetValue("Gateway:OpenApi:IncludeInternalDetails", false);
+    CachedSpec? cachedSpec = null; // rebuilt only when the config or the address changes
+
+    app.MapGet("/bff/openapi.json", async (HttpContext http, IConfigStore store, CancellationToken ct) =>
+    {
+        var snapshot = await store.GetSnapshotAsync(ct);
+        var server = $"{http.Request.Scheme}://{http.Request.Host}";
+        var hit = cachedSpec; // a class, so reading and replacing it is safe across requests
+        if (hit is null || hit.Version != snapshot.Version || hit.Server != server)
+        {
+            var spec = OpenApiDocumentBuilder.Build(snapshot, new OpenApiBuildOptions { ServerUrl = server, IncludeInternalDetails = includeInternalDetails });
+            cachedSpec = hit = new CachedSpec(snapshot.Version, server, spec.ToJsonString());
+        }
+        return Results.Content(hit.Json, "application/json");
+    });
+
+    if (builder.Configuration.GetValue("Gateway:ApiDocs:Enabled", app.Environment.IsDevelopment()))
+    {
+        app.MapGet("/bff/docs", async (HttpContext http, IConfigStore store, CancellationToken ct) =>
+        {
+            // Development: sign the page in with a test token that has every scope the endpoints ask for.
+            string? scopes = null;
+            if (devTokenEnabled)
+            {
+                var snapshot = await store.GetSnapshotAsync(ct);
+                scopes = string.Join(' ', snapshot.Recipes.Select(r => r.RequiredScope).Append("customer.read")
+                    .Where(s => !string.IsNullOrEmpty(s)).Distinct());
+            }
+            http.Response.Headers.ContentSecurityPolicy = ApiDocsPage.ContentSecurityPolicy;
+            return Results.Content(ApiDocsPage.Html(scopes), "text/html; charset=utf-8");
+        });
+    }
+}
 
 // Every aggregated endpoint goes through this one handler.
 app.Map("/bff/{**path}", async (HttpContext http, string? path, RecipeRouter router, CompositionExecutor executor, CancellationToken ct) =>
@@ -169,12 +208,15 @@ app.Map("/bff/{**path}", async (HttpContext http, string? path, RecipeRouter rou
 }).RequireRateLimiting("per-caller");
 
 // Development-only token issuer so QA can call the gateway without an identity provider.
-if (app.Environment.IsDevelopment() && !string.IsNullOrEmpty(builder.Configuration["Auth:DevSigningKey"]))
+if (devTokenEnabled)
 {
     app.MapGet("/dev/token", (string? sub, string? scope) =>
         Results.Ok(new { access_token = InboundAuth.CreateDevToken(builder.Configuration.GetSection("Auth"), sub ?? "dev-user", scope ?? "customer.read") }));
 }
 
 app.Run();
+
+/// <summary>The last OpenAPI document built, for one config version and address.</summary>
+sealed record CachedSpec(string Version, string Server, string Json);
 
 public partial class Program;

@@ -20,6 +20,7 @@ namespace ApiAggregator.Engine.Execution;
 ///   1. validate caller inputs            (400 if invalid)
 ///   2. serve from response cache          (if enabled)
 ///   3. run steps level by level           (steps in a level run in parallel)
+///   3b. build the "combine" lists          (merged records, after all steps)
 ///   4. build the response from the template
 ///   5. required step failed -> 502; optional step failed -> 200 with "_errors"
 /// </summary>
@@ -118,13 +119,29 @@ public sealed class CompositionExecutor(
         }
         else
         {
+            // Combined lists are built once every step has finished; the response template can use them as {{combine.<name>}}.
+            var combines = RunCombines(recipe, roots, mode);
+            trace.AddRange(combines.Select(c => c.Trace));
+            if (combines.Count > 0)
+                roots["combine"] = new JsonObject(combines.Select(c => KeyValuePair.Create(c.Name, (JsonNode?)c.Records)));
+            var combineFailures = combines.Where(c => c.Failed).ToList();
+
+            if (combineFailures.Any(c => c.Required))
+            {
+                result = CombineFailedResult(combineFailures, caller, trace, clock.ElapsedMilliseconds);
+                logger.CompositionFailed(recipe.Id, recipe.Version, result.StatusCode, result.ErrorCode,
+                    string.Join(",", combineFailures.Select(c => $"{c.Trace.Alias}:{c.Trace.ErrorCode}")), result.DurationMs);
+                return result;
+            }
+
             var body = recipe.Response is not null
                 ? Template.ResolveNode(recipe.Response, new Scope(roots))
-                : DefaultResponse(recipe, runs);
+                : DefaultResponse(recipe, runs, combines);
 
-            var partial = failures.Count > 0;
+            var partial = failures.Count > 0 || combineFailures.Count > 0;
             if (partial && body is JsonObject obj)
-                obj["_errors"] = new JsonArray(rootCauses.Select(f => (JsonNode?)ErrorEntry(f)).ToArray());
+                obj["_errors"] = new JsonArray(rootCauses.Select(f => (JsonNode?)ErrorEntry(f))
+                    .Concat(combineFailures.Select(c => (JsonNode?)ErrorEntry(c))).ToArray());
 
             result = new CompositionResult { StatusCode = 200, Body = body, Partial = partial, Trace = trace, DurationMs = clock.ElapsedMilliseconds };
 
@@ -178,6 +195,76 @@ public sealed class CompositionExecutor(
         ["retryable"] = run.Trace.Retryable
     };
 
+    // ------------------------------------------------------------------ combine
+
+    /// <summary>Builds every combined list, in the order they are declared in the recipe.</summary>
+    private List<CombineRun> RunCombines(Recipe recipe, IReadOnlyDictionary<string, JsonNode?> roots, ExecutionMode mode)
+    {
+        var runs = new List<CombineRun>();
+        var scope = new Scope(roots);
+
+        foreach (var (name, def) in recipe.Combine)
+        {
+            var clock = Stopwatch.StartNew();
+            var alias = $"combine.{name}";
+            var title = $"Combine {name}";
+
+            CombineOutcome outcome;
+            try { outcome = RecordCombiner.Combine(name, def, scope); }
+            catch (FormatException) // the validator stops this earlier; this keeps a bad saved recipe from crashing a call
+            {
+                outcome = new CombineOutcome(null, null, $"The combined list '{name}' has a source that isn't a valid path.");
+            }
+
+            if (outcome.Records is { } records && outcome.Stats is { } stats)
+            {
+                logger.CombineCompleted(name, stats.InputsText, stats.Matched, stats.Unmapped, stats.Ambiguous, stats.WithoutKey, stats.Ignored, stats.Output, clock.ElapsedMilliseconds);
+                // The stats text only goes into the trace for admin test runs (counts and source names, never values).
+                var trace = new StepTrace(alias, title, StepOutcome.Succeeded, null, clock.ElapsedMilliseconds, 0, false, null,
+                    Detail: mode.IncludeRequestDetails ? stats.Describe() : null);
+                runs.Add(new CombineRun(name, def.Required, records, trace));
+            }
+            else
+            {
+                logger.CombineFailed(name, outcome.Error!);
+                var trace = new StepTrace(alias, title, StepOutcome.Failed, null, clock.ElapsedMilliseconds, 0, false, outcome.Error,
+                    ErrorCode: DownstreamErrorCode.CombineFailed);
+                runs.Add(new CombineRun(name, def.Required, null, trace));
+            }
+        }
+        return runs;
+    }
+
+    /// <summary>The 502 for a required combine that couldn't be produced.</summary>
+    private static CompositionResult CombineFailedResult(List<CombineRun> failures, CallerContext caller, List<StepTrace> trace, long durationMs)
+    {
+        var body = ErrorBody.Problem(DownstreamErrorCode.CombineFailed, "Records from several services couldn't be combined.", 502, caller.CorrelationId,
+            detail: failures[0].Trace.Message, retryable: false,
+            errors: new JsonArray(failures.Select(f => (JsonNode?)ErrorEntry(f)).ToArray()));
+
+        return new CompositionResult
+        {
+            StatusCode = 502,
+            Body = body,
+            ErrorCode = DownstreamErrorCode.CombineFailed,
+            Retryable = false,
+            Trace = trace,
+            DurationMs = durationMs
+        };
+    }
+
+    /// <summary>Same shape as a step's entry, so callers handle both the same way. A combine has no service and no HTTP status.</summary>
+    private static JsonObject ErrorEntry(CombineRun run) => new()
+    {
+        ["step"] = run.Trace.Alias,
+        ["name"] = run.Trace.DisplayName,
+        ["service"] = null,
+        ["code"] = DownstreamErrorCode.CombineFailed,
+        ["status"] = null,
+        ["message"] = run.Trace.Message,
+        ["retryable"] = false
+    };
+
     // ------------------------------------------------------------------ steps
 
     private async Task<StepRun> RunStepAsync(StepDef step, ExecutionPlan plan, IReadOnlyDictionary<string, StepRun> previous,
@@ -226,8 +313,10 @@ public sealed class CompositionExecutor(
             }
             else
             {
-                // forEach: one call per item, bounded concurrency, output is an array in item order.
+                // forEach: one call per (unique) item, bounded concurrency, output is an array in first-seen item order.
                 var items = Template.Resolve(step.ForEach, scope) as JsonArray ?? [];
+                // Call each unique value once (the limit below then counts unique items).
+                if (step.Distinct) items = (JsonArray)Transforms.Apply(new TransformCall("distinct", null), items)!;
                 if (items.Count > _options.MaxForEachItems)
                     throw new BindingException($"For-each has {items.Count} items; the limit is {_options.MaxForEachItems}.");
 
@@ -381,11 +470,14 @@ public sealed class CompositionExecutor(
     private static bool HasCachedCredentials(AuthProfile? profile) =>
         profile?.Steps.Any(s => s.Kind is "SessionLogin" or "OAuthClientCredentials") == true;
 
-    private static JsonNode DefaultResponse(Recipe recipe, IReadOnlyDictionary<string, StepRun> runs)
+    /// <summary>No response template: one property per step, then one per combined list (so combines are never invisible).</summary>
+    private static JsonNode DefaultResponse(Recipe recipe, IReadOnlyDictionary<string, StepRun> runs, List<CombineRun> combines)
     {
         var body = new JsonObject();
         foreach (var step in recipe.Steps)
             body[step.Alias] = runs[step.Alias].Output is JsonObject o ? o["body"]?.DeepClone() : runs[step.Alias].Output?.DeepClone();
+        foreach (var combine in combines)
+            body[combine.Name] = combine.Records?.DeepClone();
         return body;
     }
 
@@ -394,6 +486,12 @@ public sealed class CompositionExecutor(
     // ------------------------------------------------------------------ small types
 
     private sealed record CallTarget(StepDef Step, ApiService Service, ApiEndpoint Endpoint, AuthProfile? Profile);
+
+    /// <summary>The outcome of one combined list. Records is null when it failed.</summary>
+    private sealed record CombineRun(string Name, bool Required, JsonArray? Records, StepTrace Trace)
+    {
+        public bool Failed => Records is null;
+    }
 
     private sealed record CallResult(JsonObject Output, int Status, bool FromCache, string? Request);
 

@@ -1,5 +1,73 @@
 [
   {
+    "id": "invoice-service",
+    "name": "Invoice Service",
+    "baseUrl": "http://localhost:5200/",
+    "authProfileId": "invoice-service-signin",
+    "timeoutMs": 5000,
+    "openApiSource": "http://localhost:5100/d/openapi.json",
+    "endpoints": [
+      {
+        "id": "listInvoices",
+        "summary": "List invoices for a customer",
+        "method": "GET",
+        "path": "/invoices",
+        "parameters": [
+          {
+            "name": "customerId",
+            "in": "query",
+            "required": true,
+            "type": "string"
+          }
+        ],
+        "responseSchema": {
+          "type": "object",
+          "properties": {
+            "customerId": {
+              "type": "string"
+            },
+            "total": {
+              "type": "integer"
+            },
+            "invoices": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  },
+                  "amount": {
+                    "type": "number"
+                  },
+                  "status": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "source": "openapi"
+      },
+      {
+        "id": "getInvoice",
+        "summary": "Get one invoice",
+        "method": "GET",
+        "path": "/invoices/{invoiceId}",
+        "parameters": [
+          {
+            "name": "invoiceId",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          }
+        ],
+        "source": "openapi"
+      }
+    ]
+  },
+  {
     "id": "service-a",
     "name": "Service A (customers)",
     "baseUrl": "http://localhost:5100/a",

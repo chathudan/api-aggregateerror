@@ -17,16 +17,16 @@ public sealed record ExecutionPlan(
 /// </summary>
 public static class ExecutionPlanner
 {
-    /// <summary>Roots that are not step aliases.</summary>
+    /// <summary>Roots that are not step aliases. "combine" holds the merged lists, which only exist after every step has finished.</summary>
     public static readonly IReadOnlySet<string> ReservedRoots =
-        new HashSet<string>(StringComparer.Ordinal) { "request", "item", "index", "ctx" };
+        new HashSet<string>(StringComparer.Ordinal) { "request", "item", "index", "ctx", "combine" };
 
     public static ExecutionPlan Plan(Recipe recipe)
     {
         var aliases = recipe.Steps.Select(s => s.Alias).ToHashSet(StringComparer.Ordinal);
         var deps = recipe.Steps.ToDictionary(
             s => s.Alias,
-            s => (IReadOnlySet<string>)ReferencedRoots(s).Where(r => aliases.Contains(r) && r != s.Alias).ToHashSet(StringComparer.Ordinal),
+            s => (IReadOnlySet<string>)ReferencedRoots(s).Where(r => aliases.Contains(r) && r != s.Alias && r != "combine").ToHashSet(StringComparer.Ordinal),
             StringComparer.Ordinal);
 
         // Kahn's algorithm, level by level. Original step order is kept inside a level.

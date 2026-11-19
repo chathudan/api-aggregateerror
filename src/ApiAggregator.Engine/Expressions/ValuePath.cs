@@ -34,6 +34,9 @@ public sealed class ValuePath
     public string? FirstProperty => _segments.Length > 0 ? _segments[0].Name : null;
     public string? SecondProperty => _segments.Length > 1 ? _segments[1].Name : null;
     public IReadOnlyList<TransformCall> TransformCalls => _transforms;
+
+    /// <summary>The path after the root, in order (read-only; used to describe a path's shape, e.g. in the OpenAPI document).</summary>
+    public IReadOnlyList<Segment> Segments => _segments;
     private readonly Segment[] _segments;
     private readonly TransformCall[] _transforms;
 
@@ -109,7 +112,7 @@ public sealed class ValuePath
     }
 
     /// <summary>Exact match first, then case-insensitive (HTTP headers, loose JSON).</summary>
-    private static JsonNode? GetProperty(JsonObject obj, string name)
+    internal static JsonNode? GetProperty(JsonObject obj, string name)
     {
         if (obj.TryGetPropertyValue(name, out var value)) return value;
         foreach (var (key, v) in obj)
@@ -202,7 +205,7 @@ public sealed class ValuePath
         return parts;
     }
 
-    private enum SegmentKind { Property, Index, Slice, Wildcard }
+    public enum SegmentKind { Property, Index, Slice, Wildcard }
 
-    private sealed record Segment(SegmentKind Kind, string? Name, int? Start, int? End);
+    public sealed record Segment(SegmentKind Kind, string? Name, int? Start, int? End);
 }

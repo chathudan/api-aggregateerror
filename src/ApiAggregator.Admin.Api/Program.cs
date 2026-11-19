@@ -229,14 +229,14 @@ admin.MapPost("/recipes/{id}/test", async (string id, TestRequest test, IConfigS
     if (draft is null) return Results.NotFound(new { title = "Save the draft first." });
 
     var validation = RecipeValidator.Validate(draft, await store.GetSnapshotAsync(ct));
-    if (!validation.IsValid) return Results.Ok(new { passed = false, validation.Issues });
+    if (!validation.IsValid) return Results.Ok(new { passed = false, validation.Issues, validation.Warnings });
 
     var caller = InboundAuth.CallerFrom(http);
     var result = await executor.ExecuteAsync(draft, test.ToInbound(), caller, ExecutionMode.AdminTest, ct);
     var passed = result.StatusCode == 200 && !result.Partial;
     if (passed) passedTests[id] = Hash(draft);
 
-    return Results.Ok(new { passed, result.StatusCode, result.DurationMs, result.Partial, result.Trace, body = result.Body, correlationId = caller.CorrelationId });
+    return Results.Ok(new { passed, result.StatusCode, result.DurationMs, result.Partial, result.Trace, body = result.Body, correlationId = caller.CorrelationId, validation.Warnings });
 });
 
 admin.MapPost("/recipes/{id}/publish", async (string id, IConfigStore store, HttpContext http, ILogger<Program> log, CancellationToken ct) =>
@@ -252,7 +252,8 @@ admin.MapPost("/recipes/{id}/publish", async (string id, IConfigStore store, Htt
     var live = Clone(draft, status: RecipeStatus.Published, version: draft.Version);
     await store.PublishAsync(live, ct);
     log.LogInformation("Recipe {RecipeId} v{Version} published by {Subject}", id, live.Version, http.User.FindFirst("sub")?.Value);
-    return Results.Ok(new { id, live.Version, url = "/bff/" + live.Route });
+    // Warnings never block publishing; they are returned so the caller can show them.
+    return Results.Ok(new { id, live.Version, url = "/bff/" + live.Route, validation.Warnings });
 }).RequireAuthorization("publisher");
 
 admin.MapGet("/recipes/{id}/history", async (string id, IConfigStore store, CancellationToken ct) =>
@@ -287,7 +288,7 @@ static Recipe Clone(Recipe r, RecipeStatus status, int version) =>
         {
             Id = copy.Id, Name = copy.Name, Version = version, Status = status, Method = copy.Method, Route = copy.Route,
             RequireAuthentication = copy.RequireAuthentication, RequiredScope = copy.RequiredScope, Inputs = copy.Inputs,
-            Steps = copy.Steps, Response = copy.Response, Cache = copy.Cache, TimeoutMs = copy.TimeoutMs
+            Steps = copy.Steps, Combine = copy.Combine, Response = copy.Response, Cache = copy.Cache, TimeoutMs = copy.TimeoutMs
         }
         : throw new InvalidOperationException("Could not copy the recipe.");
 

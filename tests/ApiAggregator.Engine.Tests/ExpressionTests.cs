@@ -56,4 +56,25 @@ public class ExpressionTests
     [InlineData("{{a.body.missing}}", false)]
     public void Conditions(string condition, bool expected) =>
         Assert.Equal(expected, ApiAggregator.Engine.Execution.Conditions.IsTrue(condition, Scope));
+
+    // ---- distinct
+
+    private static string Distinct(string arrayJson, string transform = "distinct")
+    {
+        var scope = new Scope(new Dictionary<string, JsonNode?> { ["x"] = JsonNode.Parse(arrayJson) });
+        return ValuePath.Parse($"x | {transform}").Evaluate(scope)!.ToJsonString();
+    }
+
+    [Fact] public void Distinct_removes_repeated_scalars_and_keeps_first_seen_order() => Assert.Equal("""["b","a","c"]""", Distinct("""["b","a","b","c","a"]"""));
+    [Fact] public void Distinct_treats_the_number_1_and_the_text_1_as_different() => Assert.Equal("""[1,"1"]""", Distinct("""[1,"1",1]"""));
+    [Fact] public void Distinct_compares_objects_by_their_full_JSON() =>
+        Assert.Equal("""[{"id":1,"n":"a"},{"id":1,"n":"b"}]""", Distinct("""[{"id":1,"n":"a"},{"id":1,"n":"b"},{"id":1,"n":"a"}]"""));
+    [Fact] public void Distinct_by_key_keeps_the_first_object_for_each_value() =>
+        Assert.Equal("""[{"id":1,"n":"a"},{"id":2,"n":"c"}]""", Distinct("""[{"id":1,"n":"a"},{"id":1,"n":"b"},{"id":2,"n":"c"}]""", "distinct('id')"));
+    [Fact] public void Distinct_by_dotted_key_reads_nested_values() =>
+        Assert.Equal("""[{"customer":{"id":"C1"}}]""", Distinct("""[{"customer":{"id":"C1"}},{"customer":{"id":"C1"}}]""", "distinct('customer.id')"));
+    [Fact] public void Distinct_by_key_keeps_items_where_the_key_is_missing_or_null() =>
+        Assert.Equal("""[{"n":"a"},{"id":null},{"n":"a"},{"id":1}]""", Distinct("""[{"n":"a"},{"id":null},{"n":"a"},{"id":1},{"id":1}]""", "distinct('id')"));
+    [Fact] public void Distinct_by_key_compares_the_exact_value() => Assert.Equal("""[{"id":"A"},{"id":"a"}]""", Distinct("""[{"id":"A"},{"id":"a"},{"id":"A"}]""", "distinct('id')"));
+    [Fact] public void Distinct_on_something_that_is_not_an_array_changes_nothing() => Assert.Equal("""{"a":1}""", Distinct("""{"a":1}"""));
 }

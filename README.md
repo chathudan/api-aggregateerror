@@ -18,6 +18,7 @@ GET /bff/customer/C-10042/overview
 - **Any downstream auth combination:** Basic, session login (cookie and/or JWT), OAuth client
   credentials, API key, or the caller's own token.
 - **OpenAPI import** for services that have a spec.
+- **API docs**: typed OpenAPI spec at `/bff/openapi.json` and a Swagger UI page at `/bff/docs` (Development) for testers.
 - **Caching on/off** per endpoint and per step. Entries are kept per caller, so nobody sees another
   person's data.
 - **Secure by default:** declared inputs only, escaped values, no shared cookie jar, no redirects,

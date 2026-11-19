@@ -68,7 +68,8 @@ public static class Template
         _ => []
     };
 
-    private static bool IsSingleExpression(string s) =>
+    /// <summary>True when the whole text is exactly one "{{ ... }}" (so the JSON type is kept).</summary>
+    public static bool IsSingleExpression(string s) =>
         s.StartsWith("{{", StringComparison.Ordinal) && s.EndsWith("}}", StringComparison.Ordinal)
         && s.IndexOf("{{", 2, StringComparison.Ordinal) < 0;
 }

@@ -52,6 +52,11 @@ public sealed class SourceCatalog
             options.Add(new SourceOption($"{step.Alias}.status", $"{label} → status code", label));
         }
 
+        // The response (beforeStep == null) may also use the combined lists; steps may not.
+        if (beforeStep is null)
+            foreach (var name in recipe.Combine.Keys.Order(StringComparer.Ordinal))
+                options.Add(new SourceOption($"combine.{name}", $"Combined → {name}", "Combined lists"));
+
         if (recipe.Steps.Any(s => s.Alias == beforeStep && s.ForEach is not null))
             options.Add(new SourceOption("item", "Current item (for each)", "For each"));
 

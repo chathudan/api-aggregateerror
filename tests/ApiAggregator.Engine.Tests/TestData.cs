@@ -27,6 +27,16 @@ internal static class TestData
     public static StepDef Step(string alias, string endpoint, bool required = true, params (string From, string To)[] bind) =>
         new() { Alias = alias, Endpoint = endpoint, Required = required, Bind = bind.Select(b => new BindingDef { From = b.From, To = b.To }).ToList() };
 
+    /// <summary>A step that runs once per item of <paramref name="forEach"/> (with the item as the customer id of service A).</summary>
+    public static StepDef ForEachStep(string alias, string endpoint, string forEach, bool distinct = true) => new()
+    {
+        Alias = alias, Endpoint = endpoint, ForEach = forEach, Distinct = distinct,
+        Bind = [new BindingDef { From = "item", To = "path.customerId" }]
+    };
+
+    /// <summary>One list feeding a combine.</summary>
+    public static CombineSource Source(string from, string key, string? name = null) => new() { From = from, Key = key, Name = name };
+
     public static Recipe Recipe(params StepDef[] steps) => new()
     {
         Id = "test",

@@ -7,7 +7,7 @@ namespace ApiAggregator.Engine.Logging;
 /// (each {Placeholder} becomes a searchable field).
 /// Rule: log ids, codes, statuses and timings only. Never request or response values, header or
 /// query values, tokens or secret values.
-/// Event ids: 1000s composition, 1100s steps, 1200s downstream sign-in, 1300s cache, 1400s config.
+/// Event ids: 1000s composition, 1100s steps, 1200s downstream sign-in, 1300s cache, 1400s config, 1500s combine.
 /// </summary>
 internal static partial class EngineLog
 {
@@ -72,4 +72,14 @@ internal static partial class EngineLog
     [LoggerMessage(EventId = 1401, Level = LogLevel.Error,
         Message = "Configuration reload failed; still serving the previous version")]
     public static partial void ConfigReloadFailed(this ILogger logger, Exception exception);
+
+    // ---- combine (merging records from several steps). Counts only: record values can be personal data.
+
+    [LoggerMessage(EventId = 1500, Level = LogLevel.Information,
+        Message = "Combine {Name} completed: inputs {Inputs}; matched {Matched}; unmapped {Unmapped}; ambiguous {Ambiguous}; without key {WithoutKey}; ignored {Ignored}; output {Output}; {DurationMs} ms")]
+    public static partial void CombineCompleted(this ILogger logger, string name, string inputs, int matched, int unmapped, int ambiguous, int withoutKey, int ignored, int output, long durationMs);
+
+    [LoggerMessage(EventId = 1501, Level = LogLevel.Warning,
+        Message = "Combine {Name} failed: {Reason}")]
+    public static partial void CombineFailed(this ILogger logger, string name, string reason);
 }
