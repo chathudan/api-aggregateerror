@@ -315,8 +315,9 @@
 
     @if (_test is not null)
     {
-        <p class="@(_test.Passed ? "ok" : "bad")">
-            @(_test.Passed ? "Test passed" : "Test didn't pass") · HTTP @_test.StatusCode · @_test.DurationMs ms @(_test.Partial ? "· partial response" : "")
+        <p role="status">
+            <StatusPill State="@(_test.Passed ? StatusPill.Kind.Ok : StatusPill.Kind.Bad)" Text="@(_test.Passed ? "Test passed" : "Test didn't pass")" />
+            HTTP @_test.StatusCode · @_test.DurationMs ms @(_test.Partial ? "· partial response (an optional call failed)" : "")
         </p>
         @if (!string.IsNullOrEmpty(_test.CorrelationId))
         {
@@ -354,7 +355,7 @@
         <h2>History <HelpLink Topic="history" /></h2>
         @if (_history is null)
         {
-            <p class="muted">Loading…</p>
+            <Loading Text="Loading the history…" />
         }
         else if (_history.Count == 0)
         {

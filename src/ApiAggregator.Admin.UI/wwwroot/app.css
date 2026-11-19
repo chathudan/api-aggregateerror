@@ -193,3 +193,18 @@ section.card[id^="step-"], #history { scroll-margin-top: 16px; }
 .sticky-footer .summary { flex: 1; font-size: 14px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 .leave-box { position: sticky; bottom: 70px; z-index: 11; }
 input:disabled, select:disabled, textarea:disabled { background: var(--page); color: var(--muted); border-style: dashed; cursor: not-allowed; }
+
+/* ---- services: add-service stages, "More" menu, search */
+.stepper.small { margin: 4px 0 12px; }
+.stepper.small .stage { display: flex; align-items: center; gap: 8px; padding: 4px 10px; border-radius: 999px; font-size: 13px; color: var(--muted); }
+.stepper.small .stage.current { color: var(--text); font-weight: 500; background: var(--page); }
+fieldset.choice { border: none; padding: 0; }
+details.more { position: relative; }
+details.more > summary { list-style: none; }
+details.more > summary::-webkit-details-marker { display: none; }
+details.more > summary::after { content: " ▾"; }
+details.more .menu { position: absolute; right: 0; top: calc(100% + 4px); z-index: 20; display: flex; flex-direction: column; align-items: flex-start; gap: 2px; min-width: 200px; padding: 8px 12px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: 0 6px 20px rgba(0,0,0,.1); }
+.danger-text { color: var(--bad); }
+.service-tools { align-items: flex-end; margin-bottom: 4px; }
+.card.service h2 { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 2px; }
+.card.service p.muted { margin: 0 0 6px; }

@@ -1,6 +1,7 @@
-@* An inline "are you sure?" box for actions that change what's live or remove something. Says what will happen, in plain words, before anything happens. *@
-<div class="confirm @(Danger ? "danger" : "")" role="alertdialog" aria-label="@ConfirmText">
-    <div>@ChildContent</div>
+@* An inline "are you sure?" box for actions that change what's live or remove something. Says what will happen, in plain words,
+   before anything happens. Focus moves into it when it opens (keyboard and screen reader users land on it); Escape cancels. *@
+<div class="confirm @(Danger ? "danger" : "")" role="alertdialog" aria-labelledby="@_id" tabindex="-1" @ref="_box" @onkeydown="OnKey">
+    <div id="@_id">@ChildContent</div>
     <div class="inline">
         <button class="button @(Danger ? "danger" : "primary")" disabled="@_busy" @onclick="Confirm">@ConfirmText</button>
         <button class="link" disabled="@_busy" @onclick="OnCancel">Cancel</button>
@@ -14,7 +15,19 @@
     [Parameter] public EventCallback OnCancel { get; set; }
     [Parameter] public bool Danger { get; set; }
 
+    private readonly string _id = "confirm-" + Guid.NewGuid().ToString("n")[..8];
+    private ElementReference _box;
     private bool _busy; // one click only: these actions must not run twice
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender) await _box.FocusAsync();
+    }
+
+    private async Task OnKey(KeyboardEventArgs e)
+    {
+        if (e.Key == "Escape" && !_busy) await OnCancel.InvokeAsync();
+    }
 
     private async Task Confirm()
     {

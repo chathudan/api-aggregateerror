@@ -20,6 +20,21 @@ public sealed class NewServiceForm
 
     public string Id => Slug.From(Name);
 
+    /// <summary>Stage 1 (where it is): with a spec, it has to be loaded first.</summary>
+    public IEnumerable<string> SourceProblems()
+    {
+        if (FromSpec && Operations.Count == 0) yield return "Load the spec first (choose Load), or choose Enter by hand.";
+    }
+
+    /// <summary>Stage 2 (name and endpoints).</summary>
+    public IEnumerable<string> DetailProblems()
+    {
+        if (string.IsNullOrWhiteSpace(Name)) yield return "Give the service a name.";
+        if (!Uri.TryCreate(BaseUrl, UriKind.Absolute, out var u) || u.Scheme is not ("http" or "https"))
+            yield return "Enter the base address, e.g. https://orders.internal/api.";
+        if (FromSpec && Selected.Count == 0) yield return "Pick at least one operation to import.";
+    }
+
     public IEnumerable<string> Problems()
     {
         if (string.IsNullOrWhiteSpace(Name)) yield return "Give the service a name.";
@@ -43,12 +58,18 @@ public sealed class NewServiceForm
         Selected.Clear();
         foreach (var op in Operations) Selected.Add(op["operationId"]!.ToString());
 
-        SuggestedSignIn = (preview["authHints"] as JsonArray)?.FirstOrDefault()?["suggestedKind"]?.ToString();
+        var hint = (preview["authHints"] as JsonArray)?.FirstOrDefault();
+        SuggestedSignIn = hint?["suggestedKind"]?.ToString();
         if (SuggestedSignIn is not null && SignIn.None)
         {
             SignIn.None = false;
             SignIn.Steps.Clear();
-            SignIn.Steps.Add(new SignInStepForm { Kind = SuggestedSignIn });
+            var step = new SignInStepForm { Kind = SuggestedSignIn };
+            // Plain values the spec states (an API key's header name, never a secret) are filled in for you.
+            if (hint?["settings"] is JsonObject settings)
+                foreach (var (key, value) in settings)
+                    if (value?.ToString() is { Length: > 0 } text) step.Values[key] = text;
+            SignIn.Steps.Add(step);
         }
     }
 }

@@ -187,22 +187,8 @@
     /// <summary>The pill for a service: from the last check of its sign-in, in words as well as colour.</summary>
     private (StatusPill.Kind State, string Text, string Message, string When) SignIn(ApiService s)
     {
-        if (s.AuthProfileId is null) return (StatusPill.Kind.Neutral, "No sign-in", "This service doesn't need a sign-in.", "");
-        var row = _signIns.FirstOrDefault(r => r.ProfileId == s.AuthProfileId);
-        var when = row?.CheckedAt is { } at ? $"checked {Ago(at)}" : "";
-        return row?.State switch
-        {
-            "signedIn" => (StatusPill.Kind.Ok, "Signed in", row.Message, when),
-            "settingsOk" => (StatusPill.Kind.Ok, "Ready", row.Message, when),
-            "failed" => (StatusPill.Kind.Bad, "Failed", row.Message, when),
-            _ => (StatusPill.Kind.Warn, "Not checked", "Not checked since the admin API started. Choose Check all sign-ins.", "")
-        };
-    }
-
-    private static string Ago(DateTimeOffset at)
-    {
-        var span = DateTimeOffset.UtcNow - at;
-        return span.TotalMinutes < 1 ? "just now" : span.TotalHours < 1 ? $"{(int)span.TotalMinutes} min ago" : at.ToLocalTime().ToString("d MMM, HH:mm");
+        var d = SignInDisplay.For(s, _signIns);
+        return (d.State, d.Text, d.Message, SignInDisplay.Ago(d.CheckedAt));
     }
 
     private static string Shorten(string message) => message.Length <= 140 ? message : message[..140] + "…";

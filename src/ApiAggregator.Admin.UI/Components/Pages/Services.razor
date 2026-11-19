@@ -1,64 +1,85 @@
 @page "/services"
 @inject AdminApiClient Api
+@inject ToastService Toasts
 
 <PageShell Title="Services" Purpose="The APIs you can combine into aggregated endpoints, and how the gateway signs in to each." HelpTopic="add-service">
     <Actions>
-        @if (_newService is null) { <button class="button primary" @onclick="StartNewService">Add service</button> }
+        @* The page's one primary action, hidden while a form is open (that form's button is the primary then). *@
+        @if (_newService is null && _openFor is null) { <button class="button primary" @onclick="StartNewService">Add service</button> }
     </Actions>
 </PageShell>
 
-@* ------------------------------------------------------------------ add service *@
+@* ------------------------------------------------------------------ add service: three stages *@
 @if (_newService is { } ns)
 {
-    <section class="card accent">
-        <div class="header-row"><h2>Add a service</h2><HelpLink Topic="before" Text="What to ask the service owner" /></div>
+    <section class="card accent" aria-labelledby="add-heading">
+        <div class="header-row"><h2 id="add-heading">Add a service</h2><HelpLink Topic="before" Text="What to ask the service owner" /></div>
+        <ol class="stepper small" aria-label="Add a service in three stages">
+            @foreach (var (n, title) in new[] { (1, "Where it is"), (2, "Name and endpoints"), (3, "Sign-in and check") })
+            {
+                <li class="@(n < _stage ? "done" : "")"><span class="stage @(n == _stage ? "current" : "")" aria-current="@(n == _stage ? "step" : null)">
+                    <span class="num" aria-hidden="true">@(n < _stage ? "✓" : n.ToString())</span>@title</span></li>
+            }
+        </ol>
 
-        <div class="choice">
-            <button class="kind @(ns.FromSpec ? "selected" : "")" @onclick="() => ns.FromSpec = true">
-                <strong>From an OpenAPI spec</strong><span>Recommended. Endpoints, parameters and fields are filled in for you.</span>
-            </button>
-            <button class="kind @(!ns.FromSpec ? "selected" : "")" @onclick="() => ns.FromSpec = false">
-                <strong>Enter by hand</strong><span>For services without a spec. Add endpoints afterwards.</span>
-            </button>
-        </div>
-
-        @if (ns.FromSpec)
+        @if (_stage == 1)
         {
-            <div class="inline">
-                <label class="grow">Spec address <input @bind="ns.SpecUrl" placeholder="https://orders.internal/swagger/v1/swagger.json" /></label>
-                <button class="button" @onclick="LoadSpec">Load</button>
-            </div>
+            <fieldset class="choice" aria-label="How to add it">
+                <button class="kind @(ns.FromSpec ? "selected" : "")" aria-pressed="@ns.FromSpec" @onclick="() => ns.FromSpec = true">
+                    <strong>From an OpenAPI spec</strong><span>Recommended. Endpoints, parameters and fields are filled in for you.</span>
+                </button>
+                <button class="kind @(!ns.FromSpec ? "selected" : "")" aria-pressed="@(!ns.FromSpec)" @onclick="() => ns.FromSpec = false">
+                    <strong>Enter by hand</strong><span>For services without a spec. You add its endpoints afterwards.</span>
+                </button>
+            </fieldset>
+            @if (ns.FromSpec)
+            {
+                <div class="inline">
+                    <label class="grow">Spec address <input @bind="ns.SpecUrl" placeholder="https://orders.internal/swagger/v1/swagger.json" /></label>
+                    <button class="button" disabled="@_busy" @onclick="LoadSpec">@(_busy ? "Loading…" : "Load")</button>
+                </div>
+                <p class="hint">Try it with the sample billing service: <code>http://localhost:5100/d/openapi.json</code></p>
+            }
         }
-
-        <div class="grid">
-            <label>Name <input @bind="ns.Name" placeholder="Orders service" /></label>
-            <label>Base address <input @bind="ns.BaseUrl" placeholder="https://orders.internal/api" /></label>
-        </div>
-        @if (!string.IsNullOrEmpty(ns.Name)) { <p class="hint">Id: <code>@ns.Id</code></p> }
-
-        @if (ns.FromSpec && ns.Operations.Count > 0)
+        else if (_stage == 2)
         {
-            <h3>Operations to import <span class="muted">(@ns.Selected.Count of @ns.Operations.Count)</span></h3>
-            <div class="ops">
-                @foreach (var op in ns.Operations)
-                {
-                    var id = op["operationId"]!.ToString();
-                    <label class="check">
-                        <input type="checkbox" checked="@ns.Selected.Contains(id)" @onchange="e => Toggle(ns.Selected, id, (bool)e.Value!)" />
-                        <code>@op["method"] @op["path"]</code> <span class="muted">@(op["summary"]?.ToString() ?? id)</span>
-                    </label>
-                }
+            <div class="grid">
+                <label>Name <input @bind="ns.Name" placeholder="Orders service" /></label>
+                <label>Base address <input @bind="ns.BaseUrl" placeholder="https://orders.internal/api" /></label>
             </div>
+            @if (!string.IsNullOrEmpty(ns.Name)) { <p class="hint">Id: <code>@ns.Id</code>. Endpoints refer to the service by this id, so it never changes, even if you rename the service.</p> }
+            @if (ns.FromSpec)
+            {
+                <h3>Operations to import <span class="muted">(@ns.Selected.Count of @ns.Operations.Count)</span></h3>
+                <div class="ops">
+                    @foreach (var op in ns.Operations)
+                    {
+                        var id = op["operationId"]!.ToString();
+                        <label class="check">
+                            <input type="checkbox" checked="@ns.Selected.Contains(id)" @onchange="e => Toggle(ns.Selected, id, (bool)e.Value!)" />
+                            <code>@op["method"] @op["path"]</code> <span class="muted">@(op["summary"]?.ToString() ?? id)</span>
+                        </label>
+                    }
+                </div>
+            }
+            else
+            {
+                <p class="hint">You'll add its endpoints after saving, with <strong>Add endpoint</strong>.</p>
+            }
         }
-
-        <h3>How the gateway signs in <HelpLink Topic="sign-in" Text="Which one do I pick?" /></h3>
-        @if (ns.SuggestedSignIn is not null) { <p class="hint">The spec suggests <strong>@SignInKinds.Get(ns.SuggestedSignIn).Title</strong>. Change it if needed.</p> }
-        <SignInEditor Form="ns.SignIn" ServiceId="@ns.Id" CanSaveSecrets="_canSaveSecrets" />
+        else
+        {
+            <h3>How the gateway signs in <HelpLink Topic="sign-in" Text="Which one do I pick?" /></h3>
+            @if (ns.SuggestedSignIn is not null) { <p class="hint">The spec suggests <strong>@SignInKinds.Get(ns.SuggestedSignIn).Title</strong>. Change it if the service owner told you otherwise.</p> }
+            <SignInEditor Form="ns.SignIn" ServiceId="@ns.Id" CanSaveSecrets="_canSaveSecrets" />
+        }
 
         <Problems Items="_problems" />
         <div class="inline">
-            <button class="button primary" @onclick="SaveNewService">Save service</button>
-            <button class="link" @onclick="() => _newService = null">Cancel</button>
+            @if (_stage > 1) { <button class="button" @onclick="() => { _stage--; _problems = []; }">Back</button> }
+            @if (_stage < 3) { <button class="button primary" @onclick="Next">Next</button> }
+            else { <button class="button primary" disabled="@_busy" @onclick="SaveNewService">@(_busy ? "Saving…" : "Save and check sign-in")</button> }
+            <button class="link" @onclick="() => { _newService = null; _problems = []; }">Cancel</button>
         </div>
     </section>
 }
@@ -66,62 +87,100 @@
 @* ------------------------------------------------------------------ existing services *@
 @if (_services is null)
 {
-    <p class="muted">Loading…</p>
+    <Loading />
 }
 else if (_services.Count == 0 && _newService is null)
 {
-    <div class="card empty">
-        <h2>Add your first service</h2>
-        <p>Point at an OpenAPI spec or enter the address by hand.</p>
-        <button class="button" @onclick="StartNewService">Add service</button>
-    </div>
+    <EmptyState Title="Add your first service">
+        <ChildContent><p>A service is an API the gateway calls, such as a customer or orders system. Point at its OpenAPI spec, or enter the address by hand.</p></ChildContent>
+        <Action><button class="button" @onclick="StartNewService">Add service</button></Action>
+    </EmptyState>
 }
-else
+else if (_services.Count > 0)
 {
-    @foreach (var s in _services)
+    <div class="inline service-tools">
+        <label class="search grow">Search services and endpoints
+            <input type="search" @bind="_search" @bind:event="oninput" placeholder="For example orders, /customers or getInvoice" />
+        </label>
+        <button class="button" disabled="@_checkingAll" @onclick="CheckAll">@(_checkingAll ? "Checking…" : "Check all sign-ins")</button>
+    </div>
+    var shown = _services.Where(MatchesService).ToList();
+    <p class="hint" role="status">@(string.IsNullOrWhiteSpace(_search) ? $"{_services.Count} services" : $"{shown.Count} of {_services.Count} services match")</p>
+    @if (shown.Count == 0) { <p class="muted">No service or endpoint matches "@_search".</p> }
+
+    @foreach (var s in shown)
     {
         var profile = _profiles.FirstOrDefault(p => p.Id == s.AuthProfileId);
-        <section class="card" id="service-@s.Id">
+        var signIn = SignInDisplay.For(s, _signIns);
+        var endpoints = s.Endpoints.Where(e => MatchesEndpoint(s, e)).ToList();
+        var expanded = _expanded.Contains(s.Id) || !string.IsNullOrWhiteSpace(_search);
+        <section class="card service" id="service-@s.Id" aria-labelledby="name-@s.Id">
             <div class="header-row">
-                <div>
-                    <h2>@(string.IsNullOrEmpty(s.Name) ? s.Id : s.Name)</h2>
+                <div class="grow">
+                    <h2 id="name-@s.Id">@(string.IsNullOrEmpty(s.Name) ? s.Id : s.Name) <StatusPill State="signIn.State" Text="@signIn.Text" Title="@signIn.Message" /></h2>
                     <p class="muted">
                         <code>@s.BaseUrl</code> ·
                         @(profile is null ? "No sign-in" : string.Join(" + ", profile.Steps.Select(st => SignInKinds.Get(st.Kind).Title)))
+                        @if (SignInDisplay.Ago(signIn.CheckedAt) is { Length: > 0 } ago) { <span> · @ago</span> }
                     </p>
                 </div>
                 <div class="inline">
                     <button class="button" @onclick="() => Open(s.Id, Panel.Endpoint)">Add endpoint</button>
                     <button class="button" @onclick="() => OpenSignIn(s, profile)">Sign-in</button>
-                    <button class="button" @onclick="() => Open(s.Id, Panel.Import)">Import from OpenAPI</button>
-                    <button class="link" @onclick="() => OpenRename(s)">Rename</button>
-                    <button class="link" @onclick="() => OpenDelete(s)">Delete</button>
+                    @if (profile is not null) { <button class="button" disabled="@_checking.Contains(s.Id)" @onclick="() => Check(s, profile)">@(_checking.Contains(s.Id) ? "Checking…" : "Check sign-in")</button> }
+                    <details class="more">
+                        <summary class="button">More<span class="visually-hidden"> actions for @s.Name</span></summary>
+                        <div class="menu">
+                            <button class="link" @onclick="() => Open(s.Id, Panel.Import)">Import from OpenAPI</button>
+                            <button class="link" @onclick="() => OpenRename(s)">Rename</button>
+                            <button class="link danger-text" @onclick="() => OpenDelete(s)">Delete service</button>
+                        </div>
+                    </details>
                 </div>
             </div>
 
-            @if (_checks.TryGetValue(s.Id, out var check)) { <p class="@(check.Ok ? "ok" : "bad")">@check.Message @if (!check.Ok) { <HelpLink Topic="troubleshooting" Text="What does this mean?" /> }</p> }
+            @if (signIn.State == StatusPill.Kind.Bad)
+            {
+                <ErrorBanner Message="@($"Sign-in failed: {signIn.Message}")" HelpTopic="troubleshooting" />
+            }
 
             @if (s.Endpoints.Count == 0)
             {
-                <p class="muted">No endpoints yet. Use <strong>Add endpoint</strong> or <strong>Import from OpenAPI</strong>.</p>
+                <p class="muted">No endpoints yet. Use <strong>Add endpoint</strong>, or <strong>More › Import from OpenAPI</strong>.</p>
             }
             else
             {
-                <table class="list">
-                    <thead><tr><th>Endpoint</th><th>Call</th><th>Parameters</th><th>Fields known</th><th></th></tr></thead>
-                    <tbody>
-                        @foreach (var e in s.Endpoints)
-                        {
-                            <tr>
-                                <td>@(e.Summary ?? Slug.Humanize(e.Id))</td>
-                                <td><code>@e.Method @e.Path</code></td>
-                                <td>@string.Join(", ", e.Parameters.Select(p => $"{p.Name} ({p.In}{(p.Required ? ", required" : "")})"))</td>
-                                <td>@(e.ResponseSchema is null ? "—" : "Yes")</td>
-                                <td><button class="link" @onclick="() => RemoveEndpoint(s, e)">Remove</button></td>
-                            </tr>
-                        }
-                    </tbody>
-                </table>
+                <button class="link" aria-expanded="@expanded" aria-controls="endpoints-@s.Id" @onclick="() => ToggleExpanded(s.Id)">
+                    @(expanded ? "Hide" : "Show") @(string.IsNullOrWhiteSpace(_search) ? $"{s.Endpoints.Count} endpoint{(s.Endpoints.Count == 1 ? "" : "s")}" : $"{endpoints.Count} matching endpoint{(endpoints.Count == 1 ? "" : "s")}")
+                </button>
+                @if (expanded)
+                {
+                    <table class="list" id="endpoints-@s.Id">
+                        <caption class="visually-hidden">Endpoints of @s.Name</caption>
+                        <thead><tr><th scope="col">Endpoint</th><th scope="col">Call</th><th scope="col">Values it needs</th><th scope="col">Fields known</th><th scope="col"><span class="visually-hidden">Remove</span></th></tr></thead>
+                        <tbody>
+                            @foreach (var e in endpoints)
+                            {
+                                <tr>
+                                    <td>@(e.Summary ?? Slug.Humanize(e.Id))</td>
+                                    <td><code>@e.Method @e.Path</code></td>
+                                    <td>@(e.Parameters.Count == 0 ? "None" : string.Join(", ", e.Parameters.Select(p => $"{p.Name} ({p.In}{(p.Required ? ", required" : "")})")))</td>
+                                    <td>@(e.ResponseSchema is null ? "No" : "Yes")</td>
+                                    <td><button class="link" @onclick="() => _confirmRemove = (s.Id, e.Id)">Remove<span class="visually-hidden"> @(e.Summary ?? e.Id)</span></button></td>
+                                </tr>
+                                @if (_confirmRemove == (s.Id, e.Id))
+                                {
+                                    <tr><td colspan="5">
+                                        <ConfirmBox Danger="true" ConfirmText="Remove endpoint" OnConfirm="() => RemoveEndpoint(s, e)" OnCancel="() => _confirmRemove = null">
+                                            <p>Remove <strong>@(e.Summary ?? e.Id)</strong> from @s.Name? Aggregated endpoints that call it will show a problem until you change them.</p>
+                                        </ConfirmBox>
+                                    </td></tr>
+                                }
+                            }
+                        </tbody>
+                    </table>
+                    <p class="hint">"Fields known" means the wizard can offer this endpoint's response fields in its dropdowns.</p>
+                }
             }
 
             @* --- add endpoint by hand *@
@@ -142,20 +201,23 @@ else
                     {
                         <p class="hint">Path values: @string.Join(", ", _newEndpoint.PathParams) (required)</p>
                     }
-                    <table class="list">
-                        <thead><tr><th>Other value</th><th>Sent as</th><th>Required</th><th></th></tr></thead>
-                        <tbody>
-                            @foreach (var p in _newEndpoint.Parameters)
-                            {
-                                <tr>
-                                    <td><input @bind="p.Name" placeholder="status or X-Customer-Id" /></td>
-                                    <td><select @bind="p.In"><option>query</option><option>header</option><option>cookie</option></select></td>
-                                    <td><input type="checkbox" @bind="p.Required" /></td>
-                                    <td><button class="link" @onclick="() => _newEndpoint.Parameters.Remove(p)">Remove</button></td>
-                                </tr>
-                            }
-                        </tbody>
-                    </table>
+                    @if (_newEndpoint.Parameters.Count > 0)
+                    {
+                        <table class="list">
+                            <thead><tr><th scope="col">Other value</th><th scope="col">Sent as</th><th scope="col">Required</th><th scope="col"><span class="visually-hidden">Remove</span></th></tr></thead>
+                            <tbody>
+                                @foreach (var p in _newEndpoint.Parameters)
+                                {
+                                    <tr>
+                                        <td><input @bind="p.Name" placeholder="status or X-Customer-Id" aria-label="Value name" /></td>
+                                        <td><select @bind="p.In" aria-label="Sent as"><option>query</option><option>header</option><option>cookie</option></select></td>
+                                        <td><input type="checkbox" @bind="p.Required" aria-label="Required" /></td>
+                                        <td><button class="link" @onclick="() => _newEndpoint.Parameters.Remove(p)">Remove</button></td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    }
                     <button class="link" @onclick="() => _newEndpoint.Parameters.Add(new ParamRow())">Add a query or header value</button>
                     <label>Sample response (optional, lets the wizard offer its fields)
                         <textarea rows="5" @bind="_newEndpoint.SampleResponse" placeholder='{ "id": "O-1", "total": 20.5, "items": [ { "sku": "A" } ] }'></textarea>
@@ -176,8 +238,7 @@ else
                     <SignInEditor Form="_signIn" ServiceId="@s.Id" CanSaveSecrets="_canSaveSecrets" />
                     <Problems Items="_problems" />
                     <div class="inline">
-                        <button class="button primary" @onclick="() => SaveSignIn(s, profile)">Save sign-in</button>
-                        @if (profile is not null) { <button class="button" @onclick="() => Check(s, profile)">Check sign-in</button> }
+                        <button class="button primary" @onclick="() => SaveSignIn(s, profile)">Save and check sign-in</button>
                         <button class="link" @onclick="Close">Cancel</button>
                     </div>
                 </div>
@@ -204,11 +265,14 @@ else
                 <div class="panel">
                     @if (usage.Published.Count > 0)
                     {
-                        <div class="issues">
-                            <strong>@s.Name can't be deleted yet.</strong> These published endpoints still call it. Change them to use another service, or delete them, first:
-                            <ul>@foreach (var r in usage.Published) { <li><a href="/endpoints/@r.Id">@r.Name</a></li> }</ul>
+                        <div class="banner error" role="alert">
+                            <span class="pill-icon" aria-hidden="true">✕</span>
+                            <div class="grow">
+                                <p><strong>@s.Name can't be deleted yet.</strong> These published endpoints still call it. Change them to use another service, or delete them, first:</p>
+                                <ul>@foreach (var r in usage.Published) { <li><a href="/endpoints/@r.Id">@r.Name</a></li> }</ul>
+                            </div>
+                            <button class="link" @onclick="Close">Close</button>
                         </div>
-                        <button class="link" @onclick="Close">Close</button>
                     }
                     else
                     {
@@ -247,24 +311,30 @@ else
                                 </label>
                             }
                         </div>
-                        <button class="button primary" @onclick="() => Import(s)">Import @_selected.Count operation(s)</button>
                     }
-                    <button class="link" @onclick="Close">Cancel</button>
+                    <Problems Items="_problems" />
+                    <div class="inline">
+                        @if (_candidates is not null) { <button class="button primary" @onclick="() => Import(s)">Import @_selected.Count operation(s)</button> }
+                        <button class="link" @onclick="Close">Cancel</button>
+                    </div>
                 </div>
             }
         </section>
     }
 }
 
-@if (_message is not null) { <p class="status">@_message</p> }
-
 @code {
     private enum Panel { None, Endpoint, SignIn, Import, Rename, Delete }
 
+    /// <summary>"/services?add=1" opens Add service straight away (the Home page's quick action).</summary>
+    [SupplyParameterFromQuery(Name = "add")] public int? AddFromQuery { get; set; }
+
     private List<ApiService>? _services;
     private List<AuthProfile> _profiles = [];
+    private List<SignInStatusRow> _signIns = [];
     private bool _canSaveSecrets;
     private NewServiceForm? _newService;
+    private int _stage = 1;
     private NewEndpointForm _newEndpoint = new();
     private SignInForm? _signIn;
     private string? _openFor;
@@ -272,14 +342,14 @@ else
     private string _specUrl = "";
     private List<JsonNode>? _candidates;
     private readonly HashSet<string> _selected = [];
-    private readonly Dictionary<string, (bool Ok, string Message)> _checks = [];
+    private readonly HashSet<string> _expanded = [];
+    private readonly HashSet<string> _checking = [];
+    private bool _checkingAll, _busy;
     private List<string> _problems = [];
-    private string? _message;
     private string _newName = "";
     private ServiceUsage? _usage;
-
-    /// <summary>"/services?add=1" opens Add service straight away (the Home page's quick action).</summary>
-    [SupplyParameterFromQuery(Name = "add")] public int? AddFromQuery { get; set; }
+    private (string Service, string Endpoint)? _confirmRemove;
+    private string _search = "";
 
     protected override async Task OnInitializedAsync()
     {
@@ -292,11 +362,26 @@ else
     {
         _services = await Api.GetServicesAsync() ?? [];
         _profiles = await Api.GetAuthProfilesAsync() ?? [];
+        _signIns = await Api.GetSignInStatusAsync() ?? [];
     }
+
+    // ------------------------------------------------------------------ search
+
+    private bool MatchesService(ApiService s) =>
+        string.IsNullOrWhiteSpace(_search) || Has($"{s.Name} {s.Id} {s.BaseUrl}") || s.Endpoints.Any(e => MatchesEndpoint(s, e));
+
+    private bool MatchesEndpoint(ApiService s, ApiEndpoint e) =>
+        string.IsNullOrWhiteSpace(_search) || Has($"{s.Name} {s.Id}") || Has($"{e.Summary} {e.Id} {e.Method} {e.Path}");
+
+    private bool Has(string text) => text.Contains(_search.Trim(), StringComparison.OrdinalIgnoreCase);
+
+    private void ToggleExpanded(string id) { if (!_expanded.Remove(id)) _expanded.Add(id); }
+
+    // ------------------------------------------------------------------ panels
 
     private void Open(string serviceId, Panel panel)
     {
-        _openFor = serviceId; _panel = panel; _problems = []; _message = null;
+        _openFor = serviceId; _panel = panel; _problems = [];
         _newEndpoint = new NewEndpointForm();
         _candidates = null; _selected.Clear();
         _specUrl = _services?.FirstOrDefault(s => s.Id == serviceId)?.OpenApiSource ?? "";
@@ -308,15 +393,29 @@ else
 
     // ------------------------------------------------------------------ add service
 
-    private void StartNewService() { _newService = new NewServiceForm(); _problems = []; _message = null; }
+    private void StartNewService() { _newService = new NewServiceForm(); _stage = 1; _problems = []; Close(); }
 
     private async Task LoadSpec()
     {
         var ns = _newService!;
-        var preview = await Api.PreviewOpenApiAsync("new", ns.SpecUrl);
-        if (preview?["endpoints"] is null) { _problems = [preview?["title"]?.ToString() ?? "Couldn't read that spec. Check the address."]; return; }
-        ns.ApplyPreview(preview);
-        _problems = [];
+        _busy = true;
+        try
+        {
+            var preview = await Api.PreviewOpenApiAsync("new", ns.SpecUrl);
+            if (preview?["endpoints"] is null) { _problems = [preview?["title"]?.ToString() ?? "Couldn't read that spec. Check the address."]; return; }
+            ns.ApplyPreview(preview);
+            _problems = [];
+            _stage = 2; // loaded: straight on to the name and the operations
+        }
+        finally { _busy = false; }
+    }
+
+    private void Next()
+    {
+        var ns = _newService!;
+        _problems = (_stage == 1 ? ns.SourceProblems() : ns.DetailProblems()).ToList();
+        if (_stage == 2 && _services!.Any(s => s.Id == ns.Id)) _problems.Add($"A service with id '{ns.Id}' already exists. Pick another name.");
+        if (_problems.Count == 0) _stage++;
     }
 
     private async Task SaveNewService()
@@ -326,17 +425,23 @@ else
         if (_services!.Any(s => s.Id == ns.Id)) _problems.Add($"A service with id '{ns.Id}' already exists. Pick another name.");
         if (_problems.Count > 0) return;
 
-        var profile = ns.SignIn.ToProfile($"{ns.Id}-signin", ns.Id, ns.Name, out var secrets);
-        if (await SaveSignInParts(profile, secrets) is { } error) { _problems = [error]; return; }
+        _busy = true;
+        try
+        {
+            var profile = ns.SignIn.ToProfile($"{ns.Id}-signin", ns.Id, ns.Name, out var secrets);
+            if (await SaveSignInParts(profile, secrets) is { } error) { _problems = [error]; return; }
 
-        var service = new ApiService { Id = ns.Id, Name = ns.Name.Trim(), BaseUrl = ns.BaseUrl.Trim(), AuthProfileId = profile?.Id, TimeoutMs = ns.TimeoutMs, OpenApiSource = ns.FromSpec ? ns.SpecUrl : null };
-        if (await Api.SaveServiceAsync(service) is { } saveError) { _problems = [saveError]; return; }
-        if (ns.FromSpec && await Api.ImportOpenApiAsync(service.Id, ns.SpecUrl, ns.Selected.ToArray()) is { } importError) { _problems = [importError]; return; }
+            var service = new ApiService { Id = ns.Id, Name = ns.Name.Trim(), BaseUrl = ns.BaseUrl.Trim(), AuthProfileId = profile?.Id, TimeoutMs = ns.TimeoutMs, OpenApiSource = ns.FromSpec ? ns.SpecUrl : null };
+            if (await Api.SaveServiceAsync(service) is { } saveError) { _problems = [saveError]; return; }
+            if (ns.FromSpec && await Api.ImportOpenApiAsync(service.Id, ns.SpecUrl, ns.Selected.ToArray()) is { } importError) { _problems = [importError]; return; }
 
-        _message = $"{service.Name} added{(ns.FromSpec ? $" with {ns.Selected.Count} endpoint(s)" : ". Add its endpoints next")}.";
-        _newService = null;
-        await Reload();
-        if (profile is not null) await Check(service, profile);
+            Toasts.Success($"{service.Name} added{(ns.FromSpec ? $" with {ns.Selected.Count} endpoint(s)" : ". Add its endpoints next")}.");
+            _newService = null;
+            _expanded.Add(service.Id);
+            await Reload();
+            if (profile is not null) await Check(service, profile);
+        }
+        finally { _busy = false; }
     }
 
     // ------------------------------------------------------------------ endpoints, sign-in, import
@@ -347,15 +452,18 @@ else
         if (_problems.Count > 0) return;
         var endpoint = _newEndpoint.ToEndpoint();
         if (await Api.SaveServiceAsync(s.With(s.Endpoints.Append(endpoint).ToList())) is { } error) { _problems = [error]; return; }
-        _message = $"Added {endpoint.Summary} to {s.Name}.";
+        Toasts.Success($"Added {endpoint.Summary} to {s.Name}.");
         Close();
+        _expanded.Add(s.Id);
         await Reload();
     }
 
     private async Task RemoveEndpoint(ApiService s, ApiEndpoint e)
     {
         var error = await Api.SaveServiceAsync(s.With(s.Endpoints.Where(x => x.Id != e.Id).ToList()));
-        _message = error ?? $"Removed {e.Summary ?? e.Id}. Endpoints that used it will show a problem until you change them.";
+        _confirmRemove = null;
+        if (error is not null) { Toasts.Error(error); return; }
+        Toasts.Success($"Removed {e.Summary ?? e.Id}. Endpoints that used it will show a problem until you change them.");
         await Reload();
     }
 
@@ -376,7 +484,7 @@ else
 
         Close();
         await Reload();
-        if (profile is not null) await Check(s, profile); else _message = $"{s.Name} now has no sign-in.";
+        if (profile is not null) await Check(s, profile); else Toasts.Success($"{s.Name} now has no sign-in.");
     }
 
     /// <summary>Secrets first (Development only), then the profile, so the profile never points at a missing secret.</summary>
@@ -387,6 +495,49 @@ else
             foreach (var (name, value) in secrets)
                 if (await Api.SaveSecretAsync(name, value) is { } error) return error;
         return await Api.SaveAuthProfileAsync(profile);
+    }
+
+    private async Task Check(ApiService s, AuthProfile profile)
+    {
+        _checking.Add(s.Id);
+        try
+        {
+            var (ok, message) = await Api.CheckSignInAsync(profile.Id);
+            _signIns = await Api.GetSignInStatusAsync() ?? _signIns;
+            if (ok) Toasts.Success($"{s.Name}: {message}");
+            else Toasts.Error($"{s.Name}: sign-in failed. {message}", "What does this mean?", "/help#troubleshooting");
+        }
+        finally { _checking.Remove(s.Id); }
+    }
+
+    private async Task CheckAll()
+    {
+        _checkingAll = true;
+        var result = await Api.CheckAllSignInsAsync();
+        _checkingAll = false;
+        if (result is null) { Toasts.Error("Couldn't check the sign-ins. Is the admin API running?"); return; }
+        _signIns = result;
+        var failed = result.Count(r => r.State == "failed");
+        if (failed == 0) Toasts.Success("Every sign-in works, or is ready for its first call.");
+        else Toasts.Error($"{failed} sign-in{(failed == 1 ? "" : "s")} failed. Each one is marked Failed, with the reason.");
+    }
+
+    private async Task Preview(ApiService s)
+    {
+        var preview = await Api.PreviewOpenApiAsync(s.Id, _specUrl);
+        _candidates = (preview?["endpoints"] as JsonArray)?.Where(n => n is not null).Select(n => n!).ToList();
+        _problems = _candidates is null ? [preview?["title"]?.ToString() ?? "Couldn't read that spec."] : [];
+        foreach (var c in _candidates ?? []) _selected.Add(c["operationId"]!.ToString());
+    }
+
+    private async Task Import(ApiService s)
+    {
+        var error = await Api.ImportOpenApiAsync(s.Id, _specUrl, _selected.ToArray());
+        if (error is not null) { _problems = [error]; return; }
+        Toasts.Success($"Imported {_selected.Count} operation(s) into {s.Name}.");
+        Close();
+        _expanded.Add(s.Id);
+        await Reload();
     }
 
     // ------------------------------------------------------------------ rename, delete
@@ -402,7 +553,7 @@ else
         var name = _newName.Trim();
         if (name.Length == 0) { _problems = ["Enter a name."]; return; }
         if (await Api.SaveServiceAsync(s.With(name: name)) is { } error) { _problems = [error]; return; }
-        _message = $"Renamed to {name}.";
+        Toasts.Success($"Renamed to {name}. Endpoints that use it keep working.");
         Close();
         await Reload();
     }
@@ -411,32 +562,15 @@ else
     {
         Open(s.Id, Panel.Delete);
         _usage = await Api.GetServiceUsageAsync(s.Id);
-        if (_usage is null) { _message = "Couldn't check which endpoints use this service. Try again."; Close(); }
+        if (_usage is null) { Toasts.Error("Couldn't check which endpoints use this service. Try again."); Close(); }
     }
 
     private async Task DeleteService(ApiService s)
     {
         var error = await Api.DeleteServiceAsync(s.Id);
-        _message = error ?? $"Deleted {s.Name}.";
         Close();
-        await Reload();
-    }
-
-    private async Task Check(ApiService s, AuthProfile profile) => _checks[s.Id] = await Api.CheckSignInAsync(profile.Id);
-
-    private async Task Preview(ApiService s)
-    {
-        var preview = await Api.PreviewOpenApiAsync(s.Id, _specUrl);
-        _candidates = (preview?["endpoints"] as JsonArray)?.Where(n => n is not null).Select(n => n!).ToList();
-        _problems = _candidates is null ? [preview?["title"]?.ToString() ?? "Couldn't read that spec."] : [];
-        foreach (var c in _candidates ?? []) _selected.Add(c["operationId"]!.ToString());
-    }
-
-    private async Task Import(ApiService s)
-    {
-        var error = await Api.ImportOpenApiAsync(s.Id, _specUrl, _selected.ToArray());
-        _message = error ?? $"Imported {_selected.Count} operation(s) into {s.Name}.";
-        Close();
+        if (error is not null) { Toasts.Error(error); return; }
+        Toasts.Success($"Deleted {s.Name}.");
         await Reload();
     }
 }

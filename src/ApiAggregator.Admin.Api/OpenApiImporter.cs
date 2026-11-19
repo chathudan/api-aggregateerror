@@ -12,7 +12,8 @@ public sealed record OpenApiImportRequest(string? Url, string? Spec, string[]? O
 
 public sealed record EndpointCandidate(string OperationId, string Method, string Path, string? Summary, string[] Tags, ParamDef[] Parameters);
 
-public sealed record AuthHint(string SchemeName, string SuggestedKind, string Note);
+/// <summary>A sign-in the spec describes. <see cref="Settings"/> are the plain (never secret) values it states, such as an API key's header name.</summary>
+public sealed record AuthHint(string SchemeName, string SuggestedKind, string Note, Dictionary<string, string>? Settings = null);
 
 public sealed record ImportPreview(string? Title, string? Version, string[] Servers, EndpointCandidate[] Endpoints, AuthHint[] AuthHints, string[] Warnings);
 
@@ -140,7 +141,8 @@ public sealed class OpenApiImporter(IHttpClientFactory httpClientFactory, IConfi
         {
             SecuritySchemeType.Http when kv.Value.Scheme == "basic" => new AuthHint(kv.Key, "Basic", "Add the username and a secret: reference for the password."),
             SecuritySchemeType.Http when kv.Value.Scheme == "bearer" => new AuthHint(kv.Key, "StaticBearer", "Or PassThroughUserToken if the service trusts your users' tokens."),
-            SecuritySchemeType.ApiKey => new AuthHint(kv.Key, "ApiKey", $"Key name '{kv.Value.Name}' in {kv.Value.In}."),
+            SecuritySchemeType.ApiKey => new AuthHint(kv.Key, "ApiKey", $"Key name '{kv.Value.Name}' in {kv.Value.In}.",
+                new Dictionary<string, string> { ["name"] = kv.Value.Name ?? "", ["in"] = kv.Value.In == ParameterLocation.Query ? "query" : "header" }),
             SecuritySchemeType.OAuth2 => new AuthHint(kv.Key, "OAuthClientCredentials", "Needs a client id and a secret: reference for the client secret."),
             SecuritySchemeType.OpenIdConnect => new AuthHint(kv.Key, "OAuthClientCredentials", "Use the provider's token endpoint."),
             _ => new AuthHint(kv.Key, "SessionLogin", "Not described by the spec: check with the service owner.")
