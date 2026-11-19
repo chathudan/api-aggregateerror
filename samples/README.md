@@ -7,17 +7,20 @@
 | Path | Service | Sign-in | Used by |
 |---|---|---|---|
 | `/a` | Customers | Basic `svc-a` / `pass-a` | `customer-overview`, `customer-profile` |
-| `/b` | Orders | Session login `svc-b` / `pass-b` | `customer-overview` |
+| `/b` | Orders (`GET /b/orders`, and `POST /b/orders/search` with a JSON body) | Session login `svc-b` / `pass-b` | `customer-overview` |
 | `/c` | Recommendations | OAuth client credentials `client-c` / `secret-c` | `customer-overview` |
 | `/d` | Billing (invoices) | API key `X-Api-Key: key-d` | Not in the config: use it to try **Add service** |
 | `/e` | Identity: users | API key `X-Api-Key: key-e` | `people-directory`, `people-newest` |
 | `/f` | CRM: contacts, notes, orders | Basic `svc-f` / `pass-f` | all three people recipes |
 | `/g` | Billing: accounts | API key `X-Api-Key: key-g` | `people-directory`, `people-newest` |
 | `/h` | Links: billing account → user | None (internal) | `people-directory`, `people-newest` |
+| `/i` | Loyalty | Fixed token `Authorization: Bearer token-i` | `customer-loyalty` |
+| `/j` | Preferences | The caller's own token (passed on) | `my-preferences` |
+| `/k` | Appointments | API key `X-Api-Key: key-k` **and** a token from `POST /k/auth/login` (`svc-k` / `pass-k`) | `customer-appointments` |
 
 Each of A, D, E, F, G and H has its spec at `/<x>/openapi.json`, with response schemas, so the wizard's
 dropdowns list the fields. `GET /_stats` shows how many times each endpoint was called. The E–H
-services, sign-ins and recipes are already in `config/`, and the Development settings of the gateway and
+services, sign-ins and recipes are in `samples/config/`, and the Development settings of the gateway and
 admin API hold their mock secrets.
 
 ## Trying "Combine lists"
@@ -34,9 +37,9 @@ Run the recipes from the command line (mocks running, secrets from the environme
 
 ```bash
 export Secrets__service-e-api-key=key-e Secrets__service-f-password=pass-f Secrets__service-g-api-key=key-g
-dotnet run --project tools/ApiAggregator.Cli -- run people-directory
-dotnet run --project tools/ApiAggregator.Cli -- run people-newest
-dotnet run --project tools/ApiAggregator.Cli -- run contacts-unique
+dotnet run --project tools/ApiAggregator.Cli -- run people-directory --config samples/config
+dotnet run --project tools/ApiAggregator.Cli -- run people-newest --config samples/config
+dotnet run --project tools/ApiAggregator.Cli -- run contacts-unique --config samples/config
 ```
 
 (zsh's `export` refuses names with dashes. There, put `env "Secrets__service-e-api-key=key-e" …` in front of each command.)
@@ -109,5 +112,5 @@ services use the same field name for different things, give that field an owner,
   `f.getContactNotes` going up by 3 per run.
 
 These results are checked by `tests/ApiAggregator.Engine.Tests/SampleDataTests.cs`. The tests link
-`PeopleSamples.cs` and load these recipe and config files, so they don't need the mocks running. If
+`PeopleSamples.cs` and load these recipe and config files from `samples/config`, so they don't need the mocks running. If
 you change the data, update this page and the tests together.

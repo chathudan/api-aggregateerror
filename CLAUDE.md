@@ -28,7 +28,7 @@ service (Basic, session login, OAuth/JWT, API key, pass-through) in any combinat
   can't be bound (`RecipeValidator.BlockedHeaders`).
 - Downstream HttpClients use `UseCookies = false` and `AllowAutoRedirect = false` (`ServiceCollectionExtensions`).
 - **Secrets only as `secret:<name>` references.** Never log, return or cache secret values per user.
-  The admin API may *store* a value only in Development (`config/secrets.local.json`, git-ignored) and never returns one.
+  The admin API may *store* a value only in Development (`secrets.local.json` in the config folder, git-ignored) and never returns one.
 - **Caching is off by default and per caller by default.** Keys are hashed and include the recipe
   and config version. Never cache partial or non-2xx responses.
 - **No scripting in recipes.** The path language and the transform list are fixed (ADR 0002).
@@ -61,17 +61,18 @@ If a change touches any of these, run the `security-review` skill and add or adj
 | `src/ApiAggregator.Admin.UI` | `Pages/EndpointEditor.razor` (wizard), `Pages/Services.razor` (add service, endpoints, sign-in, rename, delete), `Shared/SignInEditor.razor`, `Shared/ConfirmBox.razor` (confirm before anything destructive); form models in `Services/` (`RecipeForm`, `SignInForm` + `SignInKinds`, `ServiceForms`) |
 | `src/ApiAggregator.Hosting` | `InboundAuth` (JWT setup, scopes, caller context), `LocalSecrets` (Development-only secrets file) |
 | `tools/ApiAggregator.Cli` | `aggregator validate | run` |
-| `samples/MockServices` | Service A (Basic `svc-a/pass-a`), B (session `svc-b/pass-b`), C (OAuth `client-c/secret-c`), D (API key `X-Api-Key: key-d`, spec at `/d/openapi.json`, not in the sample config: use it to try **Add service**); E Identity, F CRM, G Billing, H Links: people data for **Combine lists** (`PeopleSamples.cs`, explained in `samples/README.md`). All on :5100 |
-| `config/` | Sample services, profiles, published recipes |
+| `samples/MockServices` | Service A (Basic `svc-a/pass-a`), B (session `svc-b/pass-b`), C (OAuth `client-c/secret-c`), D (API key `X-Api-Key: key-d`, spec at `/d/openapi.json`, not in the sample config: use it to try **Add service**); B also has `POST /b/orders/search` (body); I fixed token (`token-i`), J the caller's token, K API key `key-k` + login `svc-k/pass-k`; E Identity, F CRM, G Billing, H Links: people data for **Combine lists** (`PeopleSamples.cs`, explained in `samples/README.md`). All on :5100 |
+| `samples/config/` | Sample services, sign-ins and recipes (used by `dev-run.sh`, the guides and the tests; has `SAMPLE-DATA.md`) |
+| `config/` | Your own configuration (real mode: `dev-run.sh --real`). Starts empty |
 
 ## Commands
 
 ```bash
 dotnet build                                                   # whole solution
 dotnet test                                                    # engine + gateway + admin API host tests (must stay green)
-dotnet run --project tools/ApiAggregator.Cli -- validate      # check every recipe and auth profile
-dotnet run --project tools/ApiAggregator.Cli -- run customer-overview --route id=C-10042   # needs mocks + Secrets__* env
-./scripts/dev-run.sh                                           # mocks :5100, gateway :5200, admin API :5210, UI :5300
+dotnet run --project tools/ApiAggregator.Cli -- validate --config samples/config   # check every recipe and auth profile (also run for config/)
+dotnet run --project tools/ApiAggregator.Cli -- run customer-overview --route id=C-10042 --config samples/config   # needs mocks + Secrets__* env
+./scripts/dev-run.sh                                           # mocks :5100, gateway :5200, admin API :5210, UI :5300 (--real for config/)
 ./scripts/try-gateway.sh                                       # call the sample endpoints with a dev token
 ```
 

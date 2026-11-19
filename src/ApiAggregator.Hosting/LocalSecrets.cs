@@ -9,7 +9,7 @@ using Microsoft.Extensions.Hosting;
 namespace ApiAggregator.Hosting;
 
 /// <summary>
-/// DEVELOPMENT ONLY: secrets typed into the admin UI are kept in config/secrets.local.json
+/// DEVELOPMENT ONLY: secrets typed into the admin UI are kept in secrets.local.json in the config folder
 /// (git-ignored), never in services.json or auth-profiles.json. The gateway and the admin API read
 /// the file directly whenever a secret is needed (not through configuration reload, which lags by up
 /// to a second), so a value saved in the UI works on the very next call, e.g. "Check sign-in".
@@ -54,7 +54,7 @@ public static class LocalSecrets
 
 /// <summary>
 /// Development resolver: configuration first (user-secrets, environment variables, appsettings),
-/// then config/secrets.local.json, re-read only when the file has changed.
+/// then secrets.local.json in the config folder, re-read only when the file has changed.
 /// </summary>
 public sealed class LocalSecretsResolver(IConfiguration configuration, string file) : ISecretResolver
 {

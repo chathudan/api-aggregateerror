@@ -81,6 +81,23 @@ public sealed class FileConfigStoreTests : IDisposable
     }
 
     [Fact]
+    public async Task Unpublishing_a_recipe_added_by_hand_keeps_its_content_so_it_can_be_restored()
+    {
+        Directory.CreateDirectory(Path.Combine(_dir, "recipes"));
+        await File.WriteAllTextAsync(Path.Combine(_dir, "recipes", "orders.json"), """{ "id": "orders", "name": "By hand", "version": 1, "status": "published", "route": "orders" }""");
+        var store = Store();
+
+        Assert.True(await store.UnpublishAsync("orders", Change));
+
+        var history = await store.GetHistoryAsync("orders");
+        Assert.Equal([HistoryAction.Unpublished, HistoryAction.Published], history.Select(e => e.Action));
+        var kept = history[1];
+        Assert.Equal("By hand", kept.Recipe!.Name);
+        Assert.Null(kept.By); // who added it by hand isn't known
+        Assert.Null(kept.At);
+    }
+
+    [Fact]
     public async Task A_running_gateway_stops_serving_a_recipe_another_process_unpublished()
     {
         await Store().PublishAsync(Recipe(1), Change);

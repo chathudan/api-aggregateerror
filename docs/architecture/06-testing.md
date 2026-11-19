@@ -4,7 +4,7 @@
 |---|---|---|
 | Unit | Expressions, auto-binding suggestions, transforms, conditions, planner, validator, input binding, request building (escaping, injection), executor (A→B→C, partial, 502, 400, cache on/off, per-caller isolation) | `tests/ApiAggregator.Engine.Tests` with xUnit: `dotnet test` |
 | File store | Write-once history, entries from before ADR 0012, unpublish entries, a running store dropping a recipe another process unpublished | `tests/ApiAggregator.Engine.Tests/FileConfigStoreTests.cs` |
-| Sample recipes | `people-directory`, `people-newest`, `contacts-unique` from `config/recipes`, run against the mock people data (`samples/MockServices/PeopleSamples.cs`, linked into the test project): the exact counts and record placement documented in `samples/README.md` | `tests/ApiAggregator.Engine.Tests/SampleDataTests.cs` |
+| Sample recipes | `people-directory`, `people-newest`, `contacts-unique` from `samples/config/recipes`, run against the mock people data (`samples/MockServices/PeopleSamples.cs`, linked into the test project): the exact counts and record placement documented in `samples/README.md` | `tests/ApiAggregator.Engine.Tests/SampleDataTests.cs` |
 | Host (gateway) | The real `Program.cs` in memory (`WebApplicationFactory`), running as Production with its own config folder and stubbed downstream HTTP: valid, forged, expired and malformed JWTs (401 `unauthenticated`), missing scope (403 `insufficient_scope`), 404 `not_found`, 429 `rate_limited` with `Retry-After`, 500 `internal_error` without exception text, 502 `auth_failed` without secret or profile names, `X-Correlation-Id` (echoed when safe, replaced when not) and `Cache-Control: no-store` on every response including errors, `/_admin/logs` needing an aggregator role, `/bff/openapi.json` parsing as OpenAPI 3.0 without internal details, `/bff/docs` and `/dev/token` off outside Development, startup failing with `Auth:DevSigningKey` outside Development | `tests/ApiAggregator.Gateway.Tests` |
 | Host (admin API) | Save → test → publish round trip keeps the recipe's `combine` block in the published file and the history copy; history records who and when; roll back (new version, restoredFrom, refused when no longer valid); versions never reused after a roll back or delete; delete endpoint (gateway store stops serving it, history kept, restorable); discard draft; publisher-only actions; service delete blocked while published endpoints use it; rename; startup fails with `Auth:DevSigningKey` outside Development | `tests/ApiAggregator.Admin.Api.Tests` |
 | Recipe checks in CI | Every recipe and auth profile is valid | `dotnet run --project tools/ApiAggregator.Cli -- validate` (exit code 1 on problems) |
@@ -18,7 +18,8 @@ Run everything:
 
 ```bash
 dotnet test
-dotnet run --project tools/ApiAggregator.Cli -- validate --config config
+dotnet run --project tools/ApiAggregator.Cli -- validate --config samples/config
+dotnet run --project tools/ApiAggregator.Cli -- validate --config config   # your own config
 ```
 
 `dotnet test` runs all three test projects. They need no network, no mock services and no secrets.

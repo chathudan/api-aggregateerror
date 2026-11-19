@@ -1,0 +1,130 @@
+[
+  {
+    "id": "service-a-basic",
+    "name": "Service A - Basic auth",
+    "steps": [
+      {
+        "kind": "Basic",
+        "settings": {
+          "username": "svc-a",
+          "password": "secret:service-a-password"
+        }
+      }
+    ]
+  },
+  {
+    "id": "service-b-session",
+    "name": "Service B - session login",
+    "steps": [
+      {
+        "kind": "SessionLogin",
+        "settings": {
+          "loginUrl": "http://localhost:5100/b/auth/login",
+          "username": "svc-b",
+          "password": "secret:service-b-password",
+          "format": "json",
+          "ttlSeconds": "900"
+        }
+      }
+    ]
+  },
+  {
+    "id": "service-c-oauth",
+    "name": "Service C - OAuth client credentials (JWT)",
+    "steps": [
+      {
+        "kind": "OAuthClientCredentials",
+        "settings": {
+          "tokenUrl": "http://localhost:5100/c/oauth/token",
+          "clientId": "client-c",
+          "clientSecret": "secret:service-c-client-secret"
+        }
+      }
+    ]
+  },
+  {
+    "id": "service-e-apikey",
+    "name": "Service E - API key",
+    "steps": [
+      {
+        "kind": "ApiKey",
+        "settings": {
+          "name": "X-Api-Key",
+          "value": "secret:service-e-api-key"
+        }
+      }
+    ]
+  },
+  {
+    "id": "service-f-basic",
+    "name": "Service F - Basic auth",
+    "steps": [
+      {
+        "kind": "Basic",
+        "settings": {
+          "username": "svc-f",
+          "password": "secret:service-f-password"
+        }
+      }
+    ]
+  },
+  {
+    "id": "service-g-apikey",
+    "name": "Service G - API key",
+    "steps": [
+      {
+        "kind": "ApiKey",
+        "settings": {
+          "name": "X-Api-Key",
+          "value": "secret:service-g-api-key"
+        }
+      }
+    ]
+  },
+  {
+    "id": "service-i-token",
+    "name": "Service I - fixed token",
+    "steps": [
+      {
+        "kind": "StaticBearer",
+        "settings": {
+          "token": "secret:service-i-token"
+        }
+      }
+    ]
+  },
+  {
+    "id": "service-j-caller",
+    "name": "Service J - the caller's own token",
+    "steps": [
+      {
+        "kind": "PassThroughUserToken",
+        "settings": {}
+      }
+    ]
+  },
+  {
+    "id": "service-k-key-and-login",
+    "name": "Service K - API key and login",
+    "steps": [
+      {
+        "kind": "ApiKey",
+        "settings": {
+          "name": "X-Api-Key",
+          "value": "secret:service-k-api-key"
+        }
+      },
+      {
+        "kind": "SessionLogin",
+        "settings": {
+          "loginUrl": "http://localhost:5100/k/auth/login",
+          "username": "svc-k",
+          "password": "secret:service-k-password",
+          "format": "json",
+          "tokenPath": "token",
+          "ttlSeconds": "900"
+        }
+      }
+    ]
+  }
+]

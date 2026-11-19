@@ -42,13 +42,13 @@ Or with Docker: `docker compose up --build`.
 
 ```bash
 export Secrets__service-a-password=pass-a Secrets__service-b-password=pass-b Secrets__service-c-client-secret=secret-c
-dotnet run --project tools/ApiAggregator.Cli -- validate
-dotnet run --project tools/ApiAggregator.Cli -- run customer-overview --route id=C-10042 --query status=open --repeat 2
+dotnet run --project tools/ApiAggregator.Cli -- validate --config samples/config
+dotnet run --project tools/ApiAggregator.Cli -- run customer-overview --route id=C-10042 --query status=open --repeat 2 --config samples/config
 ```
 
 ## Where everything is stored
 
-All configuration lives in `config/` as plain JSON, so it can be reviewed in pull requests. The
+Sample data lives in `samples/config/` (what `dev-run.sh` uses); your own configuration goes in `config/` (`dev-run.sh --real`). Both are plain JSON, so it can be reviewed in pull requests. The
 admin UI and admin API write these files; the gateway reloads them within 2 seconds.
 
 | File | Holds |

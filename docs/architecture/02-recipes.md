@@ -4,7 +4,7 @@ A **recipe** defines one aggregated endpoint. The gateway hosts any number of th
 versioned and published independently. Recipes are JSON (`config/recipes/*.json`), but QA and
 technicians build them in the admin UI and never need to edit the JSON.
 
-Full example: [`config/recipes/customer-overview.json`](../../config/recipes/customer-overview.json).
+Full example: [`samples/config/recipes/customer-overview.json`](../../samples/config/recipes/customer-overview.json).
 
 ## Building blocks
 

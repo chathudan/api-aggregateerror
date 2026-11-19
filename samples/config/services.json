@@ -1,0 +1,557 @@
+[
+  {
+    "id": "service-a",
+    "name": "Service A (customers)",
+    "baseUrl": "http://localhost:5100/a",
+    "authProfileId": "service-a-basic",
+    "timeoutMs": 3000,
+    "openApiSource": "http://localhost:5100/a/openapi.json",
+    "endpoints": [
+      {
+        "id": "getCustomer",
+        "summary": "Get one customer",
+        "method": "GET",
+        "path": "/customers/{customerId}",
+        "parameters": [
+          {
+            "name": "customerId",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          }
+        ],
+        "responseSchema": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "name": {
+              "type": "string"
+            },
+            "accountNo": {
+              "type": "string"
+            },
+            "segmentCode": {
+              "type": "string"
+            },
+            "isPremium": {
+              "type": "boolean"
+            }
+          }
+        },
+        "source": "openapi"
+      },
+      {
+        "id": "getAddresses",
+        "method": "GET",
+        "path": "/customers/{customerId}/addresses",
+        "parameters": [
+          {
+            "name": "customerId",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          }
+        ],
+        "source": "openapi"
+      }
+    ]
+  },
+  {
+    "id": "service-b",
+    "name": "Service B (orders)",
+    "baseUrl": "http://localhost:5100/b",
+    "authProfileId": "service-b-session",
+    "timeoutMs": 3000,
+    "endpoints": [
+      {
+        "id": "getOrders",
+        "method": "GET",
+        "path": "/orders",
+        "parameters": [
+          {
+            "name": "X-Customer-Id",
+            "in": "header",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "account",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "type": "integer"
+          }
+        ],
+        "source": "manual"
+      },
+      {
+        "id": "getOrderLines",
+        "method": "GET",
+        "path": "/orders/{orderId}/lines",
+        "parameters": [
+          {
+            "name": "orderId",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          }
+        ],
+        "source": "manual"
+      },
+      {
+        "id": "searchOrders",
+        "summary": "Search orders (customer in the body)",
+        "method": "POST",
+        "path": "/orders/search",
+        "parameters": [],
+        "requestSchema": {
+          "type": "object",
+          "properties": {
+            "customerId": {
+              "type": "string"
+            },
+            "status": {
+              "type": "string"
+            }
+          }
+        },
+        "responseSchema": {
+          "type": "object",
+          "properties": {
+            "customerId": {
+              "type": "string"
+            },
+            "status": {
+              "type": "string"
+            },
+            "count": {
+              "type": "integer"
+            },
+            "items": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  },
+                  "total": {
+                    "type": "number"
+                  },
+                  "status": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "source": "manual"
+      }
+    ]
+  },
+  {
+    "id": "service-c",
+    "name": "Service C (recommendations)",
+    "baseUrl": "http://localhost:5100/c",
+    "authProfileId": "service-c-oauth",
+    "timeoutMs": 2000,
+    "endpoints": [
+      {
+        "id": "getRecommendations",
+        "method": "GET",
+        "path": "/recommendations",
+        "parameters": [
+          {
+            "name": "segment",
+            "in": "query",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "X-Tier",
+            "in": "header",
+            "required": false,
+            "type": "string"
+          }
+        ],
+        "source": "manual"
+      }
+    ]
+  },
+  {
+    "id": "service-e-identity",
+    "name": "Service E (identity)",
+    "baseUrl": "http://localhost:5100/e",
+    "authProfileId": "service-e-apikey",
+    "timeoutMs": 3000,
+    "openApiSource": "http://localhost:5100/e/openapi.json",
+    "endpoints": [
+      {
+        "id": "listUsers",
+        "summary": "List users",
+        "method": "GET",
+        "path": "/users",
+        "parameters": [],
+        "responseSchema": {
+          "type": "object",
+          "properties": {
+            "users": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  },
+                  "name": {
+                    "type": "string"
+                  },
+                  "email": {
+                    "type": "string"
+                  },
+                  "updatedAt": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "source": "openapi"
+      }
+    ]
+  },
+  {
+    "id": "service-f-crm",
+    "name": "Service F (CRM)",
+    "baseUrl": "http://localhost:5100/f",
+    "authProfileId": "service-f-basic",
+    "timeoutMs": 3000,
+    "openApiSource": "http://localhost:5100/f/openapi.json",
+    "endpoints": [
+      {
+        "id": "listContacts",
+        "summary": "List contacts",
+        "method": "GET",
+        "path": "/contacts",
+        "parameters": [],
+        "responseSchema": {
+          "type": "object",
+          "properties": {
+            "contacts": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  },
+                  "identityUserId": {
+                    "type": "string"
+                  },
+                  "name": {
+                    "type": "string"
+                  },
+                  "email": {
+                    "type": "string"
+                  },
+                  "phone": {
+                    "type": "string"
+                  },
+                  "updatedAt": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "source": "openapi"
+      },
+      {
+        "id": "getContactNotes",
+        "summary": "Notes for one contact",
+        "method": "GET",
+        "path": "/contacts/{contactId}/notes",
+        "parameters": [
+          {
+            "name": "contactId",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          }
+        ],
+        "responseSchema": {
+          "type": "object",
+          "properties": {
+            "contactId": {
+              "type": "string"
+            },
+            "notes": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "date": {
+                    "type": "string"
+                  },
+                  "text": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "source": "openapi"
+      },
+      {
+        "id": "listOrders",
+        "summary": "List orders",
+        "method": "GET",
+        "path": "/orders",
+        "parameters": [],
+        "responseSchema": {
+          "type": "object",
+          "properties": {
+            "orders": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  },
+                  "contactId": {
+                    "type": "string"
+                  },
+                  "total": {
+                    "type": "number"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "source": "openapi"
+      }
+    ]
+  },
+  {
+    "id": "service-g-billing",
+    "name": "Service G (billing accounts)",
+    "baseUrl": "http://localhost:5100/g",
+    "authProfileId": "service-g-apikey",
+    "timeoutMs": 3000,
+    "openApiSource": "http://localhost:5100/g/openapi.json",
+    "endpoints": [
+      {
+        "id": "listAccounts",
+        "summary": "List billing accounts",
+        "method": "GET",
+        "path": "/accounts",
+        "parameters": [],
+        "responseSchema": {
+          "type": "object",
+          "properties": {
+            "accounts": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "accountNo": {
+                    "type": "string"
+                  },
+                  "plan": {
+                    "type": "string"
+                  },
+                  "status": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "source": "openapi"
+      }
+    ]
+  },
+  {
+    "id": "service-h-links",
+    "name": "Service H (links, internal)",
+    "baseUrl": "http://localhost:5100/h",
+    "timeoutMs": 2000,
+    "openApiSource": "http://localhost:5100/h/openapi.json",
+    "endpoints": [
+      {
+        "id": "listLinks",
+        "summary": "Billing account to Identity user links",
+        "method": "GET",
+        "path": "/links",
+        "parameters": [],
+        "responseSchema": {
+          "type": "object",
+          "properties": {
+            "links": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "billingAccountNo": {
+                    "type": "string"
+                  },
+                  "userId": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "source": "openapi"
+      }
+    ]
+  },
+  {
+    "id": "service-i-loyalty",
+    "name": "Service I (loyalty)",
+    "baseUrl": "http://localhost:5100/i",
+    "authProfileId": "service-i-token",
+    "timeoutMs": 3000,
+    "endpoints": [
+      {
+        "id": "getLoyalty",
+        "summary": "Loyalty points for a customer",
+        "method": "GET",
+        "path": "/loyalty/{customerId}",
+        "parameters": [
+          {
+            "name": "customerId",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          }
+        ],
+        "responseSchema": {
+          "type": "object",
+          "properties": {
+            "customerId": {
+              "type": "string"
+            },
+            "points": {
+              "type": "integer"
+            },
+            "tier": {
+              "type": "string"
+            },
+            "memberSince": {
+              "type": "string"
+            }
+          }
+        },
+        "source": "manual"
+      }
+    ]
+  },
+  {
+    "id": "service-j-preferences",
+    "name": "Service J (preferences)",
+    "baseUrl": "http://localhost:5100/j",
+    "authProfileId": "service-j-caller",
+    "timeoutMs": 3000,
+    "endpoints": [
+      {
+        "id": "getPreferences",
+        "summary": "The signed-in person's preferences",
+        "method": "GET",
+        "path": "/preferences",
+        "parameters": [],
+        "responseSchema": {
+          "type": "object",
+          "properties": {
+            "subject": {
+              "type": "string"
+            },
+            "language": {
+              "type": "string"
+            },
+            "contactBy": {
+              "type": "string"
+            },
+            "newsletter": {
+              "type": "boolean"
+            }
+          }
+        },
+        "source": "manual"
+      }
+    ]
+  },
+  {
+    "id": "service-k-appointments",
+    "name": "Service K (appointments)",
+    "baseUrl": "http://localhost:5100/k",
+    "authProfileId": "service-k-key-and-login",
+    "timeoutMs": 3000,
+    "endpoints": [
+      {
+        "id": "listAppointments",
+        "summary": "Appointments for a customer",
+        "method": "GET",
+        "path": "/appointments",
+        "parameters": [
+          {
+            "name": "customerId",
+            "in": "query",
+            "required": true,
+            "type": "string"
+          }
+        ],
+        "responseSchema": {
+          "type": "object",
+          "properties": {
+            "customerId": {
+              "type": "string"
+            },
+            "appointments": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  },
+                  "date": {
+                    "type": "string"
+                  },
+                  "time": {
+                    "type": "string"
+                  },
+                  "type": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "source": "manual"
+      }
+    ]
+  }
+]

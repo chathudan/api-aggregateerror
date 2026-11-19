@@ -1,0 +1,39 @@
+{
+  "id": "customer-appointments",
+  "name": "Customer appointments (API key and login)",
+  "version": 1,
+  "status": "published",
+  "method": "GET",
+  "route": "customer/{id}/appointments",
+  "requireAuthentication": true,
+  "requiredScope": "customer.read",
+  "inputs": {
+    "route.id": {
+      "type": "string",
+      "required": true,
+      "pattern": "^C-[0-9]{5}$"
+    }
+  },
+  "steps": [
+    {
+      "alias": "appts",
+      "displayName": "Get appointments",
+      "endpoint": "service-k-appointments/listAppointments",
+      "bind": [
+        {
+          "from": "request.route.id",
+          "to": "query.customerId"
+        }
+      ]
+    }
+  ],
+  "response": {
+    "customerId": "{{appts.body.customerId}}",
+    "appointments": "{{appts.body.appointments}}",
+    "count": "{{appts.body.appointments | count}}"
+  },
+  "cache": {
+    "enabled": false
+  },
+  "timeoutMs": 5000
+}

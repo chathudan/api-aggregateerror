@@ -72,6 +72,7 @@ app.UseAuthorization();
 
 var requireTestBeforePublish = builder.Configuration.GetValue("Admin:RequireTestBeforePublish", true);
 var passedTests = new ConcurrentDictionary<string, string>(); // recipe id -> hash of the draft that last passed "Try it"
+var signInStatus = new ConcurrentDictionary<string, SignInStatus>(StringComparer.Ordinal); // auth profile id -> last check (never secrets)
 // Publish, roll back, delete endpoint and delete service run one at a time, so "no published endpoint uses this service"
 // can't change between the check and the delete. (The file store is single-instance; see ADR 0007.)
 var liveChanges = new SemaphoreSlim(1, 1);
@@ -149,11 +150,13 @@ admin.MapPost("/services/{id}/openapi/import", async (string id, OpenApiImportRe
 admin.MapPost("/schema/infer", (System.Text.Json.Nodes.JsonNode sample) => Results.Ok(SourceCatalog.InferSchema(sample)));
 
 // ---------------------------------------------------------------- what this installation allows
-admin.MapGet("/capabilities", (IEnumerable<IAuthStep> steps, IWebHostEnvironment env, HttpContext http) => new
+admin.MapGet("/capabilities", (IEnumerable<IAuthStep> steps, IWebHostEnvironment env, HttpContext http, Microsoft.Extensions.Options.IOptions<FileConfigOptions> files) => new
 {
+    // The sample configuration (samples/config) carries SAMPLE-DATA.md; the UI shows a "Sample data" badge for it.
+    sampleData = File.Exists(Path.Combine(Path.GetFullPath(files.Value.Directory), "SAMPLE-DATA.md")),
     // So the UI can hide publish, roll back and delete for authors. The API still checks the role on every call.
     canPublish = InboundAuth.HasScope(http.User, "aggregator.publisher"),
-    // Development: the UI may store secret values (in config/secrets.local.json, git-ignored).
+    // Development: the UI may store secret values (secrets.local.json in the config folder, git-ignored).
     // Elsewhere: the UI shows the secret NAME to put in Key Vault and never sends the value.
     canSaveSecrets = env.IsDevelopment(),
     authKinds = steps.Select(s => new { kind = s.Kind, requiredSettings = s.RequiredSettings })
@@ -183,30 +186,29 @@ admin.MapGet("/auth-kinds", (IEnumerable<IAuthStep> steps) =>
     steps.Select(s => new { kind = s.Kind, requiredSettings = s.RequiredSettings }));
 
 // Signs in once with the profile (login / token call), so problems show up before anyone builds an endpoint.
+// The result is remembered (in memory, until restart) for the dashboard and the Services page.
 admin.MapPost("/auth-profiles/{id}/check", async (string id, IConfigStore store, DownstreamAuthenticator auth, CancellationToken ct) =>
 {
     var config = await store.GetSnapshotAsync(ct);
     var profile = config.GetAuthProfile(id);
     if (profile is null) return Results.NotFound(new { title = $"Sign-in '{id}' not found." });
-    var service = config.Services.FirstOrDefault(s => s.AuthProfileId == id);
-
-    using var probe = new HttpRequestMessage(HttpMethod.Get, service?.BaseUrl ?? "http://localhost/");
-    try
-    {
-        auth.Invalidate(profile, "sign-in check requested");
-        await auth.ApplyAsync(profile, probe, CallerContext.Anonymous(), ct);
-        var signsInOnline = profile.Steps.Any(s => s.Kind is "SessionLogin" or "OAuthClientCredentials");
-        return Results.Ok(new
-        {
-            ok = true,
-            message = signsInOnline
-                ? "Signed in."
-                : "Settings and secrets are complete. This sign-in type is checked by the service on the first real call."
-        });
-    }
-    catch (AuthFailedException ex) { return Results.Ok(new { ok = false, message = ex.Message }); }
-    catch (HttpRequestException) { return Results.Ok(new { ok = false, message = "Couldn't reach the sign-in address. Check the URL and that the service is running." }); }
+    var status = await CheckSignIn(profile, config, auth, ct);
+    signInStatus[id] = status;
+    return Results.Ok(new { ok = status.State != SignInState.Failed, message = status.Message });
 });
+
+admin.MapPost("/auth-profiles/check-all", async (IConfigStore store, DownstreamAuthenticator auth, CancellationToken ct) =>
+{
+    var config = await store.GetSnapshotAsync(ct);
+    foreach (var profile in config.AuthProfiles)
+        signInStatus[profile.Id] = await CheckSignIn(profile, config, auth, ct);
+    return Results.Ok(SignInStatuses(config));
+});
+
+// Last check per sign-in: signedIn (logged in or got a token), settingsOk (complete; the service checks it on the
+// first real call), failed, or notChecked (since this admin API started).
+admin.MapGet("/auth-profiles/status", async (IConfigStore store, CancellationToken ct) =>
+    Results.Ok(SignInStatuses(await store.GetSnapshotAsync(ct))));
 
 admin.MapGet("/auth-profiles", async (IConfigStore store, CancellationToken ct) => (await store.GetSnapshotAsync(ct)).AuthProfiles.OrderBy(p => p.Id));
 
@@ -407,6 +409,38 @@ static string Hash(Recipe r)
     return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(JsonSerializer.Serialize(content, AggregatorJson.Options))));
 }
 
+/// <summary>
+/// Signs in once (or, for kinds that can only be checked by the service, checks the settings and secrets).
+/// Messages are the plain-English ones from the auth steps: they never contain secret values.
+/// </summary>
+static async Task<SignInStatus> CheckSignIn(AuthProfile profile, ConfigSnapshot config, DownstreamAuthenticator auth, CancellationToken ct)
+{
+    var service = config.Services.FirstOrDefault(s => s.AuthProfileId == profile.Id);
+    using var probe = new HttpRequestMessage(HttpMethod.Get, service?.BaseUrl ?? "http://localhost/");
+    var signsInOnline = profile.Steps.Any(s => s.Kind is "SessionLogin" or "OAuthClientCredentials");
+    try
+    {
+        auth.Invalidate(profile, "sign-in check requested");
+        await auth.ApplyAsync(profile, probe, CallerContext.Anonymous(), ct);
+        return signsInOnline
+            ? new SignInStatus(profile.Id, SignInState.SignedIn, "Signed in.", DateTimeOffset.UtcNow)
+            : new SignInStatus(profile.Id, SignInState.SettingsOk, "Settings and secrets are complete. This sign-in type is checked by the service on the first real call.", DateTimeOffset.UtcNow);
+    }
+    catch (AuthFailedException ex)
+    {
+        // Passing the caller's token on can't be checked without a caller: that's expected, not a failure.
+        if (profile.Steps.All(s => s.Kind == "PassThroughUserToken"))
+            return new SignInStatus(profile.Id, SignInState.SettingsOk, "Passes on the caller's own token. Check it with Try it, signed in as a test user.", DateTimeOffset.UtcNow);
+        return new SignInStatus(profile.Id, SignInState.Failed, ex.Message, DateTimeOffset.UtcNow);
+    }
+    catch (HttpRequestException) { return new SignInStatus(profile.Id, SignInState.Failed, "Couldn't reach the sign-in address. Check the URL and that the service is running.", DateTimeOffset.UtcNow); }
+}
+
+List<SignInStatus> SignInStatuses(ConfigSnapshot config) =>
+    config.AuthProfiles.OrderBy(p => p.Id)
+        .Select(p => signInStatus.TryGetValue(p.Id, out var last) ? last : new SignInStatus(p.Id, SignInState.NotChecked, "Not checked yet.", null))
+        .ToList();
+
 static string? Subject(HttpContext http) => http.User.FindFirst("sub")?.Value;
 
 static ChangeInfo Change(HttpContext http, int? restoredFrom = null) => new(Subject(http), DateTimeOffset.UtcNow, restoredFrom);
@@ -437,6 +471,11 @@ static bool IsSecretName(string name) =>
 public sealed record SecretValue(string? Value);
 
 public sealed record RecipeRef(string Id, string Name);
+
+public enum SignInState { NotChecked, SignedIn, SettingsOk, Failed }
+
+/// <summary>The last sign-in check of one auth profile. Holds a plain-English message, never a secret.</summary>
+public sealed record SignInStatus(string ProfileId, SignInState State, string Message, DateTimeOffset? CheckedAt);
 
 public sealed record RecipeListItem(string Id, string Name, string Method, string Route, int? PublishedVersion, bool HasDraft, bool Deleted);
 

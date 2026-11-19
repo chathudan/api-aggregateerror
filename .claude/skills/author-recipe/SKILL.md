@@ -5,11 +5,11 @@ description: Write, fix or review an aggregated-endpoint recipe (config/recipes/
 
 # Author a recipe
 
-Reference: `docs/architecture/02-recipes.md`. Example: `config/recipes/customer-overview.json`.
+Reference: `docs/architecture/02-recipes.md`. Example: `samples/config/recipes/customer-overview.json`. Sample recipes live in `samples/config`; real ones in `config/`.
 
 ## Steps
 
-1. **Find the endpoints** in `config/services.json` (`serviceId/endpointId`). Note required parameters and their location (path, query or header).
+1. **Find the endpoints** in `services.json` of the config folder (`samples/config` or `config`) (`serviceId/endpointId`). Note required parameters and their location (path, query or header).
 2. **Declare inputs** for everything the caller sends: every `{param}` in `route` needs `route.<param>`. Give ids a `pattern`, and closed lists an `enum`.
 3. **Write steps** in a sensible order. Each `bind` item has `from` (or `template`) and `to`:
    - caller values: `request.route.id`, `request.query.status`, `request.header.X-Tenant`, `request.claims.sub`
@@ -20,7 +20,7 @@ Reference: `docs/architecture/02-recipes.md`. Example: `config/recipes/customer-
 5. Use `when` and `forEach` only when needed. `forEach` should slice to a small number (`[0:5]`).
 6. **Response template:** pick only the fields the app needs. Use `{{alias.body.field}}`.
 7. **Caching:** leave it off unless asked. If you turn it on, keep `perCaller: true` for any customer, patient or user data.
-8. **Validate:** `dotnet run --project tools/ApiAggregator.Cli -- validate`, and fix every message.
+8. **Validate:** `dotnet run --project tools/ApiAggregator.Cli -- validate --config samples/config` (or `--config config`), and fix every message.
 9. **Run:** start `samples/MockServices` (or point at a test environment), export `Secrets__*`, then
    `dotnet run --project tools/ApiAggregator.Cli -- run <id> --route id=... --repeat 2`. Check each step's trace line.
 10. New recipes start as `"status": "draft"` unless the user asks to publish. Publishing normally goes through the admin API, so it's recorded with the publisher's identity.

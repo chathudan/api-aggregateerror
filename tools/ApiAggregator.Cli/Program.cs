@@ -2,7 +2,9 @@
 //
 //   aggregator validate [--config ./config]                       validate every recipe (exit code 1 on problems; use in CI)
 //   aggregator run <recipeId> [--route id=C-10042] [--query status=open] [--header X-Tenant=t1]
-//                  [--sub test-user] [--repeat 3] [--config ./config]
+//                  [--sub test-user] [--token <caller's token>] [--repeat 3] [--config ./config]
+//
+// The sample data used by the guides is in samples/config:  aggregator run people-directory --config samples/config
 //
 // Secrets for "secret:" references come from environment variables, e.g.
 //   export Secrets__service-a-password=pass-a
@@ -20,7 +22,7 @@ using Microsoft.Extensions.Logging;
 
 if (args.Length == 0 || args[0] is "-h" or "--help")
 {
-    Console.WriteLine("Usage: aggregator validate [--config dir] | aggregator run <recipeId> [--route k=v] [--query k=v] [--header k=v] [--sub user] [--repeat n]");
+    Console.WriteLine("Usage: aggregator validate [--config dir] | aggregator run <recipeId> [--route k=v] [--query k=v] [--header k=v] [--sub user] [--token caller-token] [--repeat n]");
     return 0;
 }
 
@@ -66,7 +68,8 @@ switch (args[0])
         }
 
         var executor = host.Services.GetRequiredService<CompositionExecutor>();
-        var caller = new CallerContext { Subject = options.Subject };
+        // --token plays the app's own sign-in, for endpoints whose sign-in passes the caller's token on.
+        var caller = new CallerContext { Subject = options.Subject, BearerToken = options.Token };
         var inbound = new InboundRequest { Route = options.Route, Query = options.Query, Headers = options.Headers };
         var mode = new ExecutionMode { UseCache = true, IncludeRequestDetails = true };
 
@@ -91,6 +94,7 @@ sealed class Options
 {
     public string ConfigDir { get; private set; } = "config";
     public string? Subject { get; private set; } = "cli-user";
+    public string? Token { get; private set; }
     public int Repeat { get; private set; } = 1;
     public Dictionary<string, string?> Route { get; } = new(StringComparer.OrdinalIgnoreCase);
     public Dictionary<string, string?> Query { get; } = new(StringComparer.OrdinalIgnoreCase);
@@ -106,6 +110,7 @@ sealed class Options
             {
                 case "--config": o.ConfigDir = value; break;
                 case "--sub": o.Subject = value; break;
+                case "--token": o.Token = value; break;
                 case "--repeat": o.Repeat = Math.Max(1, int.Parse(value)); break;
                 case "--route": Put(o.Route, value); break;
                 case "--query": Put(o.Query, value); break;

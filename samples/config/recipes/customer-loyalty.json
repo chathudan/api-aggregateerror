@@ -1,0 +1,39 @@
+{
+  "id": "customer-loyalty",
+  "name": "Customer loyalty (fixed token)",
+  "version": 1,
+  "status": "published",
+  "method": "GET",
+  "route": "customer/{id}/loyalty",
+  "requireAuthentication": true,
+  "requiredScope": "customer.read",
+  "inputs": {
+    "route.id": {
+      "type": "string",
+      "required": true,
+      "pattern": "^C-[0-9]{5}$"
+    }
+  },
+  "steps": [
+    {
+      "alias": "loyalty",
+      "displayName": "Get loyalty",
+      "endpoint": "service-i-loyalty/getLoyalty",
+      "bind": [
+        {
+          "from": "request.route.id",
+          "to": "path.customerId"
+        }
+      ]
+    }
+  ],
+  "response": {
+    "customerId": "{{loyalty.body.customerId}}",
+    "points": "{{loyalty.body.points}}",
+    "tier": "{{loyalty.body.tier}}"
+  },
+  "cache": {
+    "enabled": false
+  },
+  "timeoutMs": 5000
+}

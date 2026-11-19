@@ -139,6 +139,21 @@ public class LifecycleTests(AdminApp app) : IClassFixture<AdminApp>
     }
 
     [Fact]
+    public async Task An_endpoint_added_straight_to_the_config_folder_can_be_deleted_and_restored()
+    {
+        await File.WriteAllTextAsync(Path.Combine(app.ConfigDir, "recipes", "by-hand.json"),
+            RecipeJson("by-hand", "Added by hand").Replace("\"method\"", "\"status\": \"published\", \"method\""));
+        Assert.NotNull(await Live("by-hand"));
+
+        Assert.Equal(HttpStatusCode.OK, (await Client(Publisher).DeleteAsync("/admin/recipes/by-hand")).StatusCode);
+        var restore = await Client(Publisher).PostAsync("/admin/recipes/by-hand/rollback/1", null);
+
+        Assert.Equal(HttpStatusCode.OK, restore.StatusCode);
+        Assert.Equal("Added by hand", (await Live("by-hand"))!.Name);
+        Assert.Equal(2, (await Live("by-hand"))!.Version);
+    }
+
+    [Fact]
     public async Task Publishing_again_after_deleting_uses_a_new_version()
     {
         await Publish("del-again");
@@ -219,6 +234,39 @@ public class LifecycleTests(AdminApp app) : IClassFixture<AdminApp>
         var body = JsonNode.Parse(await Client(scope).GetStringAsync("/admin/capabilities"))!;
 
         Assert.Equal(canPublish, body["canPublish"]!.GetValue<bool>());
+    }
+
+    [Fact]
+    public async Task Sign_in_status_starts_as_not_checked_and_remembers_the_last_check()
+    {
+        await PutProfile("status-key", """[ { "kind": "ApiKey", "settings": { "name": "X-Api-Key", "value": "secret:status-missing" } } ]""");
+
+        Assert.Equal("notChecked", (await Status("status-key"))["state"]!.GetValue<string>());
+
+        await Client(Publisher).PostAsync("/admin/auth-profiles/status-key/check", null);
+
+        var after = await Status("status-key");
+        Assert.Equal("failed", after["state"]!.GetValue<string>());
+        Assert.Contains("status-missing", after["message"]!.GetValue<string>()); // names the secret to add, never a value
+        Assert.NotNull(after["checkedAt"]);
+    }
+
+    [Fact]
+    public async Task Passing_on_the_callers_token_counts_as_complete_not_failed()
+    {
+        await PutProfile("status-caller", """[ { "kind": "PassThroughUserToken", "settings": {} } ]""");
+
+        var all = JsonNode.Parse(await (await Client(Publisher).PostAsync("/admin/auth-profiles/check-all", null)).Content.ReadAsStringAsync())!.AsArray();
+
+        Assert.Equal("settingsOk", all.Single(s => s!["profileId"]!.GetValue<string>() == "status-caller")!["state"]!.GetValue<string>());
+    }
+
+    [Fact]
+    public async Task Capabilities_say_when_the_config_is_not_sample_data()
+    {
+        var body = JsonNode.Parse(await Client(Publisher).GetStringAsync("/admin/capabilities"))!;
+
+        Assert.False(body["sampleData"]!.GetValue<bool>()); // the test folder has no SAMPLE-DATA.md
     }
 
     [Fact]
@@ -358,6 +406,17 @@ public class LifecycleTests(AdminApp app) : IClassFixture<AdminApp>
 
     private async Task SaveService(string id, string name, bool withEndpoint) =>
         Assert.Equal(HttpStatusCode.OK, (await PutService(id, name, withEndpoint)).StatusCode);
+
+    private async Task PutProfile(string id, string stepsJson)
+    {
+        var json = $$"""{ "id": "{{id}}", "name": "{{id}}", "steps": {{stepsJson}} }""";
+        var response = await Client(Publisher).PutAsync($"/admin/auth-profiles/{id}", new StringContent(json, Encoding.UTF8, "application/json"));
+        Assert.True(response.IsSuccessStatusCode, await response.Content.ReadAsStringAsync());
+    }
+
+    private async Task<JsonNode> Status(string profileId) =>
+        JsonNode.Parse(await Client(Publisher).GetStringAsync("/admin/auth-profiles/status"))!.AsArray()
+            .Single(s => s!["profileId"]!.GetValue<string>() == profileId)!;
 
     private async Task<JsonArray> History(string id) =>
         JsonNode.Parse(await Client(Publisher).GetStringAsync($"/admin/recipes/{id}/history"))!.AsArray();

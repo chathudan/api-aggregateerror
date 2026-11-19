@@ -15,7 +15,7 @@ using MockServices;
 namespace ApiAggregator.Engine.Tests;
 
 /// <summary>
-/// The sample recipes in config/recipes (people-directory, people-newest, contacts-unique), run against the
+/// The sample recipes in samples/config/recipes (people-directory, people-newest, contacts-unique), run against the
 /// mock data in samples/MockServices/PeopleSamples.cs, without the mocks running. These are the exact
 /// results samples/README.md promises QA; if one changes, update the README in the same change.
 /// </summary>
@@ -208,7 +208,7 @@ public class SampleDataTests
         return fake;
     }
 
-    /// <summary>Runs a sample recipe from config/recipes. <paramref name="changeCombine"/> edits its "people" combine first.</summary>
+    /// <summary>Runs a sample recipe from samples/config/recipes. <paramref name="changeCombine"/> edits its "people" combine first.</summary>
     private static Task<CompositionResult> Run(string id, Action<JsonObject>? changeCombine = null, FakeDownstream? downstream = null)
     {
         var (recipe, snapshot) = Load(id, changeCombine);
@@ -227,10 +227,10 @@ public class SampleDataTests
         return executor.ExecuteAsync(recipe, new InboundRequest(), CallerContext.Anonymous("corr-sample"), ExecutionMode.AdminTest, default);
     }
 
-    /// <summary>The recipe plus the services and sign-ins from the repo's config folder (the files QA uses).</summary>
+    /// <summary>The recipe plus the services and sign-ins from samples/config (the files QA and the guides use).</summary>
     private static (Recipe Recipe, ConfigSnapshot Snapshot) Load(string id, Action<JsonObject>? changeCombine = null)
     {
-        var config = Path.Combine(RepoRoot(), "config");
+        var config = Path.Combine(RepoRoot(), "samples", "config");
         var node = JsonNode.Parse(File.ReadAllText(Path.Combine(config, "recipes", id + ".json")))!.AsObject();
         if (changeCombine is not null) changeCombine(node["combine"]!["people"]!.AsObject());
 

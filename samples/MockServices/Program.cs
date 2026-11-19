@@ -3,6 +3,11 @@
 //   /b  Service B - orders          - session cookie login  (svc-b / pass-b)
 //   /c  Service C - recommendations - OAuth client credentials -> JWT (client-c / secret-c)
 //   /d  Service D - billing         - API key (X-Api-Key: key-d), has an OpenAPI spec at /d/openapi.json
+//   /b  also POST /b/orders/search with a JSON body (for "send a value in the body")
+// One per remaining sign-in type, so every guide example runs:
+//   /i  Service I - loyalty         - fixed token (Authorization: Bearer token-i)
+//   /j  Service J - preferences     - the caller's own token (any Bearer token; the mock reads its "sub")
+//   /k  Service K - appointments    - API key (X-Api-Key: key-k) AND a token from POST /k/auth/login (svc-k / pass-k)
 // For "Combine lists" (data in PeopleSamples.cs, explained in samples/README.md), each with /<x>/openapi.json:
 //   /e  Identity  - users                     - API key (X-Api-Key: key-e)
 //   /f  CRM       - contacts, notes, orders   - Basic auth (svc-f / pass-f)
@@ -73,6 +78,15 @@ b.MapGet("/orders", (HttpRequest req, string? account, string? status, int? page
     var items = Enumerable.Range(1, 7).Select(i => new { id = $"O-{customerId[^3..]}-{i}", total = 20.5 * i, status = status ?? "open" });
     return Results.Ok(new { customerId, account, page = page ?? 1, tier = customerId == "C-10042" ? "gold" : "standard", items });
 });
+// Same orders as GET /orders, but the customer and status come in the JSON body.
+b.MapPost("/orders/search", (OrderSearch body) =>
+{
+    Count("b.searchOrders");
+    if (string.IsNullOrEmpty(body.CustomerId)) return Results.BadRequest(new { error = "customerId is required in the body" });
+    var status = body.Status ?? "open";
+    var items = Enumerable.Range(1, 3).Select(i => new { id = $"O-{body.CustomerId[^3..]}-{i}", total = 20.5 * i, status });
+    return Results.Ok(new { customerId = body.CustomerId, status, count = 3, items });
+});
 b.MapGet("/orders/{orderId}/lines", (string orderId) =>
 {
     Count("b.getOrderLines");
@@ -118,6 +132,64 @@ d.MapGet("/invoices/{invoiceId}", (string invoiceId) =>
 });
 app.MapGet("/d/openapi.json", () => Results.Text(OpenApiSpecs.ServiceD, "application/json"));
 
+// ------------------------------------------------------------------ Service I (fixed token)
+var loyalty = new Dictionary<string, object>
+{
+    ["C-10042"] = new { customerId = "C-10042", points = 1250, tier = "gold", memberSince = "2019-04-01" },
+    ["C-20001"] = new { customerId = "C-20001", points = 80, tier = "standard", memberSince = "2025-11-12" }
+};
+var i = app.MapGroup("/i").AddEndpointFilter(async (ctx, next) =>
+    ctx.HttpContext.Request.Headers.Authorization == "Bearer token-i" ? await next(ctx) : Results.Unauthorized());
+i.MapGet("/loyalty/{customerId}", (string customerId) =>
+{
+    Count("i.getLoyalty");
+    return loyalty.TryGetValue(customerId, out var l) ? Results.Ok(l) : Results.NotFound();
+});
+
+// ------------------------------------------------------------------ Service J (the caller's own token)
+// A real service would validate the token with the identity provider. The mock only reads "sub" so the
+// answer shows the token arrived: never copy this into anything real.
+var j = app.MapGroup("/j").AddEndpointFilter(async (ctx, next) =>
+    ctx.HttpContext.Request.Headers.Authorization.ToString().StartsWith("Bearer ") ? await next(ctx) : Results.Unauthorized());
+j.MapGet("/preferences", (HttpRequest req) =>
+{
+    Count("j.getPreferences");
+    var subject = Jwt.SubjectOf(req.Headers.Authorization.ToString()["Bearer ".Length..]) ?? "unknown";
+    return Results.Ok(new { subject, language = "en-AU", contactBy = "email", newsletter = false });
+});
+
+// ------------------------------------------------------------------ Service K (API key + login)
+var kTokens = new ConcurrentDictionary<string, DateTimeOffset>();
+app.MapPost("/k/auth/login", (LoginRequest body) =>
+{
+    Count("k.login");
+    if (body.Username != "svc-k" || body.Password != "pass-k") return Results.Unauthorized();
+    var token = Convert.ToHexString(RandomNumberGenerator.GetBytes(16));
+    kTokens[token] = DateTimeOffset.UtcNow.AddMinutes(20);
+    return Results.Ok(new { token, expiresIn = 1200 });
+});
+var k = app.MapGroup("/k").AddEndpointFilter(async (ctx, next) =>
+{
+    var h = ctx.HttpContext.Request.Headers;
+    var auth = h.Authorization.ToString();
+    var tokenOk = auth.StartsWith("Bearer ") && kTokens.TryGetValue(auth[7..], out var exp) && exp > DateTimeOffset.UtcNow;
+    return h["X-Api-Key"] == "key-k" && tokenOk ? await next(ctx) : Results.Unauthorized();
+});
+k.MapGet("/appointments", (string? customerId) =>
+{
+    Count("k.listAppointments");
+    if (string.IsNullOrEmpty(customerId)) return Results.BadRequest(new { error = "customerId is required" });
+    return Results.Ok(new
+    {
+        customerId,
+        appointments = new[]
+        {
+            new { id = "AP-1", date = "2026-12-02", time = "09:30", type = "review" },
+            new { id = "AP-2", date = "2027-01-15", time = "14:00", type = "follow-up" }
+        }
+    });
+});
+
 // ------------------------------------------------------------------ E, F, G, H: people data for "Combine lists"
 IResult Json(string name, string json) { Count(name); return Results.Text(json, "application/json"); }
 
@@ -151,6 +223,8 @@ app.Run();
 
 record LoginRequest(string? Username, string? Password);
 
+record OrderSearch(string? CustomerId, string? Status);
+
 static class Jwt
 {
     static string B64(byte[] b) => Convert.ToBase64String(b).TrimEnd('=').Replace('+', '-').Replace('/', '_');
@@ -161,6 +235,19 @@ static class Jwt
         var header = B64(Encoding.UTF8.GetBytes("""{"alg":"HS256","typ":"JWT"}"""));
         var payload = B64(JsonSerializer.SerializeToUtf8Bytes(new { sub = subject, exp = DateTimeOffset.UtcNow.Add(life).ToUnixTimeSeconds() }));
         return $"{header}.{payload}.{B64(HMACSHA256.HashData(key, Encoding.UTF8.GetBytes($"{header}.{payload}")))}";
+    }
+
+    /// <summary>The "sub" of a JWT, WITHOUT checking its signature (mock only), or null if it isn't a JWT.</summary>
+    public static string? SubjectOf(string token)
+    {
+        var parts = token.Split('.');
+        if (parts.Length != 3) return null;
+        try
+        {
+            using var doc = JsonDocument.Parse(FromB64(parts[1]));
+            return doc.RootElement.TryGetProperty("sub", out var sub) ? sub.GetString() : null;
+        }
+        catch (Exception ex) when (ex is FormatException or JsonException) { return null; }
     }
 
     public static bool IsValid(byte[] key, string token)

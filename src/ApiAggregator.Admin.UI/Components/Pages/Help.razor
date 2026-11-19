@@ -100,7 +100,7 @@
 <ul>
     <li>Password, secret and key boxes never show a saved value again. "Saved. Type to replace" means a value is stored.</li>
     <li>Values are <strong>never</strong> stored in the service settings. The settings only hold a name like <code>secret:service-d-billing-value</code> that points to the real value.</li>
-    <li><strong>On your own computer (development)</strong>, typed values go into <code>config/secrets.local.json</code>. That file stays on your machine and isn't shared through git.</li>
+    <li><strong>On your own computer (development)</strong>, typed values go into <code>secrets.local.json</code> in the config folder. That file stays on your machine and isn't shared through git.</li>
     <li><strong>In test and production environments</strong>, the screen shows the secret's name instead of saving it. Send that name to an administrator, who adds the value to Key Vault. Never send passwords in chat or email.</li>
 </ul>
 </section>

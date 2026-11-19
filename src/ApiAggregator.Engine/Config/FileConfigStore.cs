@@ -147,6 +147,16 @@ public sealed class FileConfigStore : IConfigStore
         if (await ReadRecipeAsync(live, ct) is not { } recipe) return false;
 
         System.IO.Directory.CreateDirectory(HistoryDir);
+
+        // A recipe added straight to recipes/ (by hand, or a sample) has no history yet. Keep its content first,
+        // so the endpoint can still be restored by rolling back. Who and when aren't known for it.
+        var published = SafePath(HistoryDir, $"{id}.v{recipe.Version}");
+        if (!File.Exists(published))
+        {
+            var kept = new RecipeHistoryEntry { Id = id, Version = recipe.Version, Action = HistoryAction.Published, Recipe = recipe };
+            await WriteOnceAsync(published, JsonSerializer.Serialize(kept, AggregatorJson.Options), ct);
+        }
+
         var entry = new RecipeHistoryEntry { Id = id, Version = recipe.Version, Action = HistoryAction.Unpublished, At = change.At, By = change.By };
         await WriteOnceAsync(SafePath(HistoryDir, $"{id}.v{recipe.Version}.unpublished"), JsonSerializer.Serialize(entry, AggregatorJson.Options), ct);
         File.Delete(live); // the gateway's next config check sees one recipe fewer and stops serving it
