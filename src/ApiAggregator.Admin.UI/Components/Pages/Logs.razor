@@ -3,18 +3,8 @@
 @implements IAsyncDisposable
 @inject LiveLogClient LogClient
 
-<PageTitle>Logs</PageTitle>
-
-<div class="header-row">
-    <div>
-        <h1>Logs</h1>
-        <p class="muted">
-            Shows the last 2,000 lines from each running process. Logs never include customer data or secrets.
-            In production with several gateway instances, use your central log store.
-            <HelpLink Topic="logs" />
-        </p>
-    </div>
-</div>
+<PageShell Title="Logs" HelpTopic="logs"
+           Purpose="The latest 2,000 lines from the gateway and the admin API. Logs never include customer data or secrets. With several gateway instances in production, use your central log store." />
 
 <section class="card">
     <div class="log-controls">
@@ -109,6 +99,9 @@
     /// <summary>Pre-sets the correlation filter, e.g. from the "See logs for this test" link.</summary>
     [SupplyParameterFromQuery(Name = "correlation")] public string? CorrelationFromQuery { get; set; }
 
+    /// <summary>Pre-sets the level filter: "warn" (warnings and errors) or "error", e.g. from the Home page.</summary>
+    [SupplyParameterFromQuery(Name = "level")] public string? LevelFromQuery { get; set; }
+
     private sealed record Row(string Source, LiveLogEntry Entry)
     {
         public string Key => $"{Source}:{Entry.Seq}";
@@ -141,6 +134,7 @@
     protected override void OnParametersSet()
     {
         if (!string.IsNullOrEmpty(CorrelationFromQuery)) _correlation = CorrelationFromQuery;
+        if (LevelFromQuery is "warn" or "error") _levelFilter = LevelFromQuery;
         Refilter();
     }
 

@@ -1,0 +1,22 @@
+@implements IDisposable
+@inject ToastService ToastService
+
+@* Polite live region: screen readers announce new messages without interrupting. *@
+<div class="toasts" aria-live="polite" aria-atomic="false">
+    @foreach (var t in ToastService.Current)
+    {
+        <div class="toast @t.Kind.ToString().ToLowerInvariant()" role="@(t.Kind == ToastKind.Error ? "alert" : "status")">
+            <span class="pill-icon" aria-hidden="true">@(t.Kind switch { ToastKind.Success => "✓", ToastKind.Error => "✕", _ => "i" })</span>
+            <span class="grow">@t.Message
+                @if (t.LinkHref is not null) { <a href="@t.LinkHref">@t.LinkText</a> }
+            </span>
+            <button class="link" aria-label="Close this message" @onclick="() => ToastService.Dismiss(t.Id)">×</button>
+        </div>
+    }
+</div>
+
+@code {
+    protected override void OnInitialized() => ToastService.Changed += OnChanged;
+    private void OnChanged() => _ = InvokeAsync(StateHasChanged);
+    public void Dispose() => ToastService.Changed -= OnChanged;
+}

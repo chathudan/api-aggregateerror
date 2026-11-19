@@ -1,92 +1,209 @@
 @page "/"
+@using ApiAggregator.Engine.Logging.Live
 @inject AdminApiClient Api
+@inject LiveLogClient Logs
+@inject ToastService Toasts
 @inject IConfiguration Config
 
-<PageTitle>Aggregated endpoints</PageTitle>
-
-<div class="header-row">
-    <h1>Aggregated endpoints</h1>
-    <div class="actions">
-        <a class="button" href="@DocsUrl" target="_blank" rel="noopener">API docs</a>
+<PageShell Title="Home" Purpose="What's running and what needs your attention." HelpTopic="start">
+    <Actions>
+        <a class="button" href="/services?add=1">Add service</a>
+        <a class="button" href="@DocsUrl" target="_blank" rel="noopener">Open API docs <span aria-hidden="true">↗</span><span class="visually-hidden"> (opens in a new tab)</span></a>
         <a class="button primary" href="/endpoints/new">Create endpoint</a>
-    </div>
-</div>
-<p class="muted">
-    <a href="@SpecUrl" target="_blank" rel="noopener">OpenAPI spec</a>:
-    download the spec for Postman, Insomnia or client generators.
-</p>
-
-@if (_recipes is null)
-{
-    <p class="muted">Loading…</p>
-}
-else if (_recipes.All(r => r.Deleted))
-{
-    <div class="card empty">
-        <h2>Create your first aggregated endpoint</h2>
-        <p>Combine calls to your services into one endpoint for web and mobile apps.</p>
-        <a class="button" href="/endpoints/new">Create endpoint</a>
-    </div>
-}
-else
-{
-    <table class="list">
-        <thead><tr><th>Name</th><th>Address</th><th>Live version</th><th>Draft</th><th></th></tr></thead>
-        <tbody>
-            @foreach (var r in _recipes.Where(r => !r.Deleted))
-            {
-                <tr>
-                    <td><a href="/endpoints/@r.Id">@(string.IsNullOrEmpty(r.Name) ? r.Id : r.Name)</a></td>
-                    <td><code>@r.Method @r.Route</code></td>
-                    <td>@(r.PublishedVersion is { } v ? $"v{v}" : "Not published")</td>
-                    <td>@(r.HasDraft ? "Unpublished changes" : "")</td>
-                    <td>
-                        @if (r.PublishedVersion is not null)
+    </Actions>
+    <ChildContent>
+        <div class="dashboard">
+            @* ---------------------------------------------------------------- services and their sign-in *@
+            <section class="card" aria-labelledby="services-heading">
+                <div class="header-row">
+                    <h2 id="services-heading">Services <HelpLink Topic="sign-in" /></h2>
+                    <button class="button" disabled="@_checking" @onclick="CheckAll">@(_checking ? "Checking…" : "Check all sign-ins")</button>
+                </div>
+                @if (_services is null)
+                {
+                    <Loading />
+                }
+                else if (_services.Count == 0)
+                {
+                    <p class="muted">No services yet. <a href="/services?add=1">Add the first one</a>: an OpenAPI spec address is all you need to start.</p>
+                }
+                else
+                {
+                    <ul class="rows">
+                        @foreach (var s in _services.OrderBy(s => s.Name))
                         {
-                            <a href="@DocsLink(r)" target="_blank" rel="noopener">Try in API docs</a>
+                            var (state, text, message, when) = SignIn(s);
+                            <li>
+                                <a class="grow" href="/services#service-@s.Id">@(string.IsNullOrEmpty(s.Name) ? s.Id : s.Name)</a>
+                                <span class="muted">@when</span>
+                                <StatusPill State="state" Text="@text" Title="@message" />
+                            </li>
+                            @if (state == StatusPill.Kind.Bad) { <li class="sub"><span class="muted">@message</span> <HelpLink Topic="troubleshooting" Text="How do I fix this?" /></li> }
                         }
-                    </td>
-                </tr>
-            }
-        </tbody>
-    </table>
-}
+                    </ul>
+                    <p class="hint">
+                        <strong>Signed in</strong>: the gateway logged in or got a token.
+                        <strong>Ready</strong>: settings are complete, and the service checks them on the first real call.
+                    </p>
+                }
+            </section>
 
-@if (_recipes?.Where(r => r.Deleted).ToList() is { Count: > 0 } deleted)
-{
-    <h2>Deleted endpoints <HelpLink Topic="delete" /></h2>
-    <p class="hint">The gateway doesn't serve these. Their history is kept, so a publisher can bring one back.</p>
-    <table class="list">
-        <thead><tr><th>Name</th><th>Address it had</th><th></th></tr></thead>
-        <tbody>
-            @foreach (var r in deleted)
+            @* ---------------------------------------------------------------- endpoints *@
+            <section class="card" aria-labelledby="endpoints-heading">
+                <div class="header-row">
+                    <h2 id="endpoints-heading">Endpoints</h2>
+                    <a href="/endpoints">All endpoints</a>
+                </div>
+                @if (_recipes is null)
+                {
+                    <Loading />
+                }
+                else
+                {
+                    <p class="counts">
+                        <span><strong>@_recipes.Count(r => r.PublishedVersion is not null)</strong> live</span>
+                        <span><strong>@_recipes.Count(r => r.HasDraft)</strong> with unpublished changes</span>
+                        <span><strong>@_recipes.Count(r => r.Deleted)</strong> deleted</span>
+                    </p>
+                    @if (_recipes.All(r => r.Deleted))
+                    {
+                        <p class="muted">Nothing built yet. <a href="/endpoints/new">Create your first endpoint</a>.</p>
+                    }
+                    else
+                    {
+                        <ul class="rows">
+                            @foreach (var r in _recipes.Where(r => !r.Deleted).OrderByDescending(r => r.HasDraft).ThenBy(r => r.Name).Take(8))
+                            {
+                                <li>
+                                    <a class="grow" href="/endpoints/@r.Id">@(string.IsNullOrEmpty(r.Name) ? r.Id : r.Name)</a>
+                                    @if (r.PublishedVersion is { } v) { <StatusPill State="StatusPill.Kind.Ok" Text="@($"Live v{v}")" /> }
+                                    else { <StatusPill State="StatusPill.Kind.Neutral" Text="Not published" /> }
+                                    @if (r.HasDraft) { <StatusPill State="StatusPill.Kind.Info" Text="Unpublished changes" /> }
+                                </li>
+                            }
+                        </ul>
+                    }
+                }
+            </section>
+        </div>
+
+        @* ---------------------------------------------------------------- recent warnings and errors *@
+        <section class="card" aria-labelledby="problems-heading">
+            <div class="header-row">
+                <h2 id="problems-heading">Recent warnings and errors <HelpLink Topic="logs" /></h2>
+                <a href="/logs?level=warn">Open logs</a>
+            </div>
+            @if (_problems is null)
             {
-                <tr>
-                    <td>@(string.IsNullOrEmpty(r.Name) ? r.Id : r.Name)</td>
-                    <td><code>@r.Method @r.Route</code></td>
-                    <td><a href="/endpoints/@r.Id#history">History and restore</a></td>
-                </tr>
+                <Loading Text="Reading the latest log lines…" />
             }
-        </tbody>
-    </table>
-}
+            else if (_problems.Count == 0)
+            {
+                <p class="muted">@(_logError ?? "Nothing to look at: no warnings or errors in the latest log lines.")</p>
+            }
+            else
+            {
+                <table class="list">
+                    <caption class="visually-hidden">The latest warnings and errors from the gateway and the admin API</caption>
+                    <thead><tr><th scope="col">Time</th><th scope="col">Level</th><th scope="col">Where</th><th scope="col">Code</th><th scope="col">What happened</th><th scope="col"><span class="visually-hidden">Logs</span></th></tr></thead>
+                    <tbody>
+                        @foreach (var (source, e) in _problems)
+                        {
+                            <tr>
+                                <td class="nowrap">@e.Timestamp.ToLocalTime().ToString("HH:mm:ss")</td>
+                                <td>
+                                    @if (e.Level is "Error" or "Critical") { <StatusPill State="StatusPill.Kind.Bad" Text="Error" /> }
+                                    else { <StatusPill State="StatusPill.Kind.Warn" Text="Warning" /> }
+                                </td>
+                                <td>@source@(e.RecipeId is null ? "" : $" · {e.RecipeId}")@(e.ServiceId is null ? "" : $" · {e.ServiceId}")</td>
+                                <td>@if (e.ErrorCode is not null) { <code>@e.ErrorCode</code> }</td>
+                                <td>@Shorten(e.Message)</td>
+                                <td class="nowrap">
+                                    @if (e.CorrelationId is not null) { <a href="/logs?correlation=@Uri.EscapeDataString(e.CorrelationId)">See this request</a> }
+                                    else { <a href="/logs?level=warn">See logs</a> }
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+                @if (_logError is not null) { <p class="hint">@_logError</p> }
+            }
+        </section>
+    </ChildContent>
+</PageShell>
 
 @code {
+    private List<ApiService>? _services;
+    private List<SignInStatusRow> _signIns = [];
     private List<RecipeSummary>? _recipes;
+    private List<(string Source, LiveLogEntry Entry)>? _problems;
+    private string? _logError;
+    private bool _checking;
 
-    // The gateway serves the docs page and the spec. Base URL ends with "/" (see appsettings).
-    private string GatewayBase => (Config["Gateway:BaseUrl"] ?? "http://localhost:5200/").TrimEnd('/') + "/";
-    private string DocsUrl => GatewayBase + "bff/docs";
-    private string SpecUrl => GatewayBase + "bff/openapi.json";
+    private string DocsUrl => (Config["Gateway:BaseUrl"] ?? "http://localhost:5200/").TrimEnd('/') + "/bff/docs";
 
-    /// <summary>Swagger UI deep link: #/&lt;tag&gt;/&lt;operationId&gt;. The tag is the first part of the route.</summary>
-    private string DocsLink(RecipeSummary r) => $"{DocsUrl}#/{Uri.EscapeDataString(DocsTag(r.Route))}/{Uri.EscapeDataString(r.Id)}";
-
-    private static string DocsTag(string route)
+    protected override async Task OnInitializedAsync()
     {
-        var first = route.Trim('/').Split('/')[0];
-        return first.StartsWith('{') ? "other" : first;
+        // Independent calls: start them together.
+        var services = Api.GetServicesAsync();
+        var signIns = Api.GetSignInStatusAsync();
+        var recipes = Api.GetRecipesAsync();
+        var problems = LoadProblems();
+
+        _services = await services ?? [];
+        _signIns = await signIns ?? [];
+        _recipes = await recipes ?? [];
+        await problems;
     }
 
-    protected override async Task OnInitializedAsync() => _recipes = await Api.GetRecipesAsync() ?? [];
+    /// <summary>The newest warnings and errors from both processes (from their in-memory live logs).</summary>
+    private async Task LoadProblems()
+    {
+        var found = new List<(string, LiveLogEntry)>();
+        var unreachable = new List<string>();
+        foreach (var source in new[] { LogSource.Gateway, LogSource.AdminApi })
+        {
+            var (page, _) = await Logs.ReadAsync(source, after: 0, waitSeconds: 0, CancellationToken.None);
+            if (page is null) { unreachable.Add(source == LogSource.Gateway ? "the gateway" : "the admin API"); continue; }
+            found.AddRange(page.Entries.Where(e => e.Level is "Warning" or "Error" or "Critical").Select(e => (page.Source, e)));
+        }
+        _problems = found.OrderByDescending(p => p.Item2.Timestamp).Take(6).ToList();
+        _logError = unreachable.Count == 0 ? null : $"Couldn't read the logs of {string.Join(" and ", unreachable)}. Is it running?";
+    }
+
+    private async Task CheckAll()
+    {
+        _checking = true;
+        var result = await Api.CheckAllSignInsAsync();
+        _checking = false;
+        if (result is null) { Toasts.Error("Couldn't check the sign-ins. Is the admin API running?", "See logs", "/logs?level=warn"); return; }
+
+        _signIns = result;
+        var failed = result.Count(r => r.State == "failed");
+        if (failed == 0) Toasts.Success("Every sign-in works, or is ready for its first call.");
+        else Toasts.Error($"{failed} sign-in{(failed == 1 ? "" : "s")} failed. The services list shows which and why.");
+    }
+
+    /// <summary>The pill for a service: from the last check of its sign-in, in words as well as colour.</summary>
+    private (StatusPill.Kind State, string Text, string Message, string When) SignIn(ApiService s)
+    {
+        if (s.AuthProfileId is null) return (StatusPill.Kind.Neutral, "No sign-in", "This service doesn't need a sign-in.", "");
+        var row = _signIns.FirstOrDefault(r => r.ProfileId == s.AuthProfileId);
+        var when = row?.CheckedAt is { } at ? $"checked {Ago(at)}" : "";
+        return row?.State switch
+        {
+            "signedIn" => (StatusPill.Kind.Ok, "Signed in", row.Message, when),
+            "settingsOk" => (StatusPill.Kind.Ok, "Ready", row.Message, when),
+            "failed" => (StatusPill.Kind.Bad, "Failed", row.Message, when),
+            _ => (StatusPill.Kind.Warn, "Not checked", "Not checked since the admin API started. Choose Check all sign-ins.", "")
+        };
+    }
+
+    private static string Ago(DateTimeOffset at)
+    {
+        var span = DateTimeOffset.UtcNow - at;
+        return span.TotalMinutes < 1 ? "just now" : span.TotalHours < 1 ? $"{(int)span.TotalMinutes} min ago" : at.ToLocalTime().ToString("d MMM, HH:mm");
+    }
+
+    private static string Shorten(string message) => message.Length <= 140 ? message : message[..140] + "…";
 }

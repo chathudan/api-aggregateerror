@@ -1,18 +1,11 @@
 @page "/services"
 @inject AdminApiClient Api
 
-<PageTitle>Services</PageTitle>
-
-<div class="header-row">
-    <div>
-        <h1>Services</h1>
-        <p class="muted">The APIs you can combine into aggregated endpoints. <HelpLink Topic="add-service" Text="How to add a service" /></p>
-    </div>
-    @if (_newService is null)
-    {
-        <button class="button primary" @onclick="StartNewService">Add service</button>
-    }
-</div>
+<PageShell Title="Services" Purpose="The APIs you can combine into aggregated endpoints, and how the gateway signs in to each." HelpTopic="add-service">
+    <Actions>
+        @if (_newService is null) { <button class="button primary" @onclick="StartNewService">Add service</button> }
+    </Actions>
+</PageShell>
 
 @* ------------------------------------------------------------------ add service *@
 @if (_newService is { } ns)
@@ -88,7 +81,7 @@ else
     @foreach (var s in _services)
     {
         var profile = _profiles.FirstOrDefault(p => p.Id == s.AuthProfileId);
-        <section class="card">
+        <section class="card" id="service-@s.Id">
             <div class="header-row">
                 <div>
                     <h2>@(string.IsNullOrEmpty(s.Name) ? s.Id : s.Name)</h2>
@@ -285,10 +278,14 @@ else
     private string _newName = "";
     private ServiceUsage? _usage;
 
+    /// <summary>"/services?add=1" opens Add service straight away (the Home page's quick action).</summary>
+    [SupplyParameterFromQuery(Name = "add")] public int? AddFromQuery { get; set; }
+
     protected override async Task OnInitializedAsync()
     {
         _canSaveSecrets = await Api.CanSaveSecretsAsync();
         await Reload();
+        if (AddFromQuery == 1) StartNewService();
     }
 
     private async Task Reload()

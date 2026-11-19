@@ -1,0 +1,98 @@
+@page "/endpoints"
+@inject AdminApiClient Api
+@inject IConfiguration Config
+
+<PageShell Title="Endpoints" Purpose="Every aggregated endpoint: what's live, what has unpublished changes, and what was deleted." HelpTopic="build">
+    <Actions>
+        <a class="button" href="@SpecUrl" target="_blank" rel="noopener">Download OpenAPI spec</a>
+        <a class="button primary" href="/endpoints/new">Create endpoint</a>
+    </Actions>
+    <ChildContent>
+        @if (_recipes is null)
+        {
+            <Loading />
+        }
+        else if (_recipes.All(r => r.Deleted))
+        {
+            <EmptyState Title="Create your first aggregated endpoint">
+                <ChildContent><p>Combine calls to your services into one endpoint for web and mobile apps.</p></ChildContent>
+                <Action><a class="button primary" href="/endpoints/new">Create endpoint</a></Action>
+            </EmptyState>
+        }
+        else
+        {
+            <section class="card">
+                <label class="search">Search endpoints
+                    <input type="search" @bind="_search" @bind:event="oninput" placeholder="Name or address, for example customer" />
+                </label>
+                @{ var shown = Visible.ToList(); }
+                <p class="hint" role="status">@shown.Count of @_recipes.Count(r => !r.Deleted) endpoints</p>
+                <table class="list">
+                    <caption class="visually-hidden">Aggregated endpoints</caption>
+                    <thead><tr><th scope="col">Name</th><th scope="col">Address</th><th scope="col">Status</th><th scope="col"><span class="visually-hidden">Links</span></th></tr></thead>
+                    <tbody>
+                        @foreach (var r in shown)
+                        {
+                            <tr>
+                                <td><a href="/endpoints/@r.Id">@NameOf(r)</a></td>
+                                <td><code>@r.Method @r.Route</code></td>
+                                <td>
+                                    @if (r.PublishedVersion is { } v) { <StatusPill State="StatusPill.Kind.Ok" Text="@($"Live v{v}")" /> }
+                                    else { <StatusPill State="StatusPill.Kind.Neutral" Text="Not published" /> }
+                                    @if (r.HasDraft) { <StatusPill State="StatusPill.Kind.Info" Text="Unpublished changes" /> }
+                                </td>
+                                <td>@if (r.PublishedVersion is not null) { <a href="@DocsLink(r)" target="_blank" rel="noopener">Try in API docs</a> }</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+                @if (shown.Count == 0) { <p class="muted">Nothing matches "@_search".</p> }
+            </section>
+        }
+
+        @if (_recipes?.Where(r => r.Deleted).ToList() is { Count: > 0 } deleted)
+        {
+            <section class="card">
+                <h2>Deleted endpoints <HelpLink Topic="delete" /></h2>
+                <p class="hint">The gateway doesn't serve these. Their history is kept, so a publisher can bring one back.</p>
+                <table class="list">
+                    <thead><tr><th scope="col">Name</th><th scope="col">Address it had</th><th scope="col"><span class="visually-hidden">Links</span></th></tr></thead>
+                    <tbody>
+                        @foreach (var r in deleted)
+                        {
+                            <tr>
+                                <td>@NameOf(r)</td>
+                                <td><code>@r.Method @r.Route</code></td>
+                                <td><a href="/endpoints/@r.Id#history">History and restore</a></td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </section>
+        }
+    </ChildContent>
+</PageShell>
+
+@code {
+    private List<RecipeSummary>? _recipes;
+    private string _search = "";
+
+    private IEnumerable<RecipeSummary> Visible => _recipes!.Where(r => !r.Deleted).Where(r =>
+        string.IsNullOrWhiteSpace(_search) || $"{r.Name} {r.Id} {r.Route}".Contains(_search.Trim(), StringComparison.OrdinalIgnoreCase));
+
+    private static string NameOf(RecipeSummary r) => string.IsNullOrEmpty(r.Name) ? r.Id : r.Name;
+
+    // The gateway serves the docs page and the spec. Base URL ends with "/" (see appsettings).
+    private string GatewayBase => (Config["Gateway:BaseUrl"] ?? "http://localhost:5200/").TrimEnd('/') + "/";
+    private string SpecUrl => GatewayBase + "bff/openapi.json";
+
+    /// <summary>Swagger UI deep link: #/&lt;tag&gt;/&lt;operationId&gt;. The tag is the first part of the route.</summary>
+    private string DocsLink(RecipeSummary r)
+    {
+        var first = r.Route.Replace("/bff/", "").Trim('/').Split('/')[0];
+        var tag = first.StartsWith('{') ? "other" : first;
+        return $"{GatewayBase}bff/docs#/{Uri.EscapeDataString(tag)}/{Uri.EscapeDataString(r.Id)}";
+    }
+
+    protected override async Task OnInitializedAsync() => _recipes = await Api.GetRecipesAsync() ?? [];
+}

@@ -41,7 +41,13 @@ public sealed record RecipeRef(string Id, string Name);
 
 public sealed record ServiceUsage(List<RecipeRef> Published, List<RecipeRef> Drafts);
 
-public sealed record Capabilities(bool CanSaveSecrets, bool CanPublish);
+public sealed record Capabilities(bool CanSaveSecrets, bool CanPublish, bool SampleData = false);
+
+/// <summary>
+/// Last sign-in check of one auth profile. State: signedIn, settingsOk (complete; checked by the service on the first
+/// real call), failed, or notChecked (since the Admin API started).
+/// </summary>
+public sealed record SignInStatusRow(string ProfileId, string State, string Message, DateTimeOffset? CheckedAt);
 
 public sealed record TestOutcome(bool Passed, int StatusCode, long DurationMs, bool Partial, List<TraceRow>? Trace, JsonNode? Body, List<IssueRow>? Issues, string? CorrelationId = null, List<IssueRow>? Warnings = null);
 
@@ -71,6 +77,14 @@ public sealed class AdminApiClient(HttpClient http, AdminTokenProvider tokens)
     /// <summary>What this user may do here. Only hides buttons: the Admin API checks the role on every call.</summary>
     public async Task<Capabilities> GetCapabilitiesAsync(CancellationToken ct = default) =>
         await GetAsync<Capabilities>("admin/capabilities", ct) ?? new Capabilities(false, false);
+
+    public Task<List<SignInStatusRow>?> GetSignInStatusAsync(CancellationToken ct = default) => GetAsync<List<SignInStatusRow>>("admin/auth-profiles/status", ct);
+
+    public async Task<List<SignInStatusRow>?> CheckAllSignInsAsync(CancellationToken ct = default)
+    {
+        using var response = await SendRawAsync(HttpMethod.Post, "admin/auth-profiles/check-all", null, ct);
+        return response.IsSuccessStatusCode ? await response.Content.ReadFromJsonAsync<List<SignInStatusRow>>(Json, ct) : null;
+    }
 
     // ------------------------------------------------------------------ history, roll back, delete
 

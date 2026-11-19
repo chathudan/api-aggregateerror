@@ -1,0 +1,13 @@
+@* A status word with an icon. The colour helps, but the icon and the word carry the meaning (never colour alone). *@
+<span class="pill @Css" title="@Title"><span class="pill-icon" aria-hidden="true">@Icon</span>@Text</span>
+
+@code {
+    public enum Kind { Ok, Warn, Bad, Neutral, Info }
+
+    [Parameter, EditorRequired] public Kind State { get; set; }
+    [Parameter, EditorRequired] public string Text { get; set; } = "";
+    [Parameter] public string? Title { get; set; }
+
+    private string Css => State.ToString().ToLowerInvariant();
+    private string Icon => State switch { Kind.Ok => "✓", Kind.Warn => "!", Kind.Bad => "✕", Kind.Info => "i", _ => "•" };
+}

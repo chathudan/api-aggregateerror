@@ -1,0 +1,25 @@
+@* Something went wrong: say what, and link to the matching help and to the logs for this request. *@
+@if (!string.IsNullOrEmpty(Message))
+{
+    <div class="banner error" role="alert">
+        <span class="pill-icon" aria-hidden="true">✕</span>
+        <div class="grow">
+            <p>@Message</p>
+            <p class="links">
+                <HelpLink Topic="@HelpTopic" Text="What does this mean?" />
+                @if (!string.IsNullOrEmpty(CorrelationId))
+                {
+                    <a href="/logs?correlation=@Uri.EscapeDataString(CorrelationId)">See logs for this request</a>
+                }
+            </p>
+        </div>
+        @if (OnClose.HasDelegate) { <button class="link" aria-label="Close this message" @onclick="OnClose">Close</button> }
+    </div>
+}
+
+@code {
+    [Parameter] public string? Message { get; set; }
+    [Parameter] public string HelpTopic { get; set; } = "troubleshooting";
+    [Parameter] public string? CorrelationId { get; set; }
+    [Parameter] public EventCallback OnClose { get; set; }
+}
