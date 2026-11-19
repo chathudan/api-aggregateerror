@@ -1,0 +1,57 @@
+{
+  "id": "customer-summary",
+  "name": "Customer summary (values passed into path, body, query and header)",
+  "version": 1,
+  "status": "published",
+  "method": "GET",
+  "route": "customer/{id}/summary",
+  "requireAuthentication": true,
+  "requiredScope": "customer.read",
+  "inputs": {
+    "route.id":     { "type": "string", "required": true, "pattern": "^C-[0-9]{5}$" },
+    "query.status": { "type": "string", "enum": ["open", "closed"], "default": "open" }
+  },
+  "steps": [
+    {
+      "alias": "customer",
+      "displayName": "Get customer",
+      "endpoint": "service-a/getCustomer",
+      "bind": [ { "from": "request.route.id", "to": "path.customerId" } ]
+    },
+    {
+      "alias": "loyalty",
+      "displayName": "Get loyalty (customer id in the path)",
+      "endpoint": "service-i-loyalty/getLoyalty",
+      "required": false,
+      "bind": [ { "from": "customer.body.id", "to": "path.customerId" } ]
+    },
+    {
+      "alias": "orders",
+      "displayName": "Search orders (customer id in the body)",
+      "endpoint": "service-b/searchOrders",
+      "bind": [
+        { "template": { "customerId": "{{customer.body.id}}", "status": "{{request.query.status}}" }, "to": "body" }
+      ]
+    },
+    {
+      "alias": "offers",
+      "displayName": "Get offers (uses customer and loyalty)",
+      "endpoint": "service-c/getRecommendations",
+      "required": false,
+      "bind": [
+        { "from": "customer.body.segmentCode", "to": "query.segment" },
+        { "from": "loyalty.body.tier",         "to": "header.X-Tier" }
+      ]
+    }
+  ],
+  "response": {
+    "name": "{{customer.body.name}}",
+    "points": "{{loyalty.body.points}}",
+    "tier": "{{loyalty.body.tier}}",
+    "orderStatus": "{{orders.body.status}}",
+    "orderIds": "{{orders.body.items[*].id}}",
+    "offers": "{{offers.body.items[*].title}}"
+  },
+  "cache": { "enabled": false },
+  "timeoutMs": 8000
+}

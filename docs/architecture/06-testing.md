@@ -7,6 +7,8 @@
 | Sample recipes | `people-directory`, `people-newest`, `contacts-unique` from `samples/config/recipes`, run against the mock people data (`samples/MockServices/PeopleSamples.cs`, linked into the test project): the exact counts and record placement documented in `samples/README.md` | `tests/ApiAggregator.Engine.Tests/SampleDataTests.cs` |
 | Host (gateway) | The real `Program.cs` in memory (`WebApplicationFactory`), running as Production with its own config folder and stubbed downstream HTTP: valid, forged, expired and malformed JWTs (401 `unauthenticated`), missing scope (403 `insufficient_scope`), 404 `not_found`, 429 `rate_limited` with `Retry-After`, 500 `internal_error` without exception text, 502 `auth_failed` without secret or profile names, `X-Correlation-Id` (echoed when safe, replaced when not) and `Cache-Control: no-store` on every response including errors, `/_admin/logs` needing an aggregator role, `/bff/openapi.json` parsing as OpenAPI 3.0 without internal details, `/bff/docs` and `/dev/token` off outside Development, startup failing with `Auth:DevSigningKey` outside Development | `tests/ApiAggregator.Gateway.Tests` |
 | Host (admin API) | Save → test → publish round trip keeps the recipe's `combine` block in the published file and the history copy; history records who and when; roll back (new version, restoredFrom, refused when no longer valid); versions never reused after a roll back or delete; delete endpoint (gateway store stops serving it, history kept, restorable); discard draft; publisher-only actions; service delete blocked while published endpoints use it; rename; startup fails with `Auth:DevSigningKey` outside Development | `tests/ApiAggregator.Admin.Api.Tests` |
+| Admin UI (browser) | Journeys: add a service from its spec, build/test/publish an endpoint (and call it through the gateway), see the logs for a test run. Every page: named controls, one h1, no skipped headings, at most one primary button, no sideways scrolling at 1280px; skip link first in the tab order with a visible focus outline | `tests/ApiAggregator.UI.Tests` (Playwright, [ADR 0013](../adr/0013-playwright-for-admin-ui-tests.md)). Once per machine: `scripts/install-playwright.sh`; skipped without browsers. `ServiceFormTests` there need no browser: a spec's server becomes a base address only if it's http(s) |
+| Guide examples | Every example in `docs/` marked with a `check:` comment: `aggregator run` / `validate` against the mocks, or a call through the gateway with a dev token, compared with the output the guide shows (JSON, or lines of text with timings ignored). The format is in [docs/README.md](../README.md#how-these-guides-stay-correct) | `tests/ApiAggregator.Docs.Tests` (built mocks, gateway and CLI as processes on free ports over a temporary copy of `samples/config`). Alone: `scripts/check-docs.sh` |
 | Recipe checks in CI | Every recipe and auth profile is valid | `dotnet run --project tools/ApiAggregator.Cli -- validate` (exit code 1 on problems) |
 | End to end (local) | Real HTTP against Services A/B/C mocks with Basic, session and OAuth/JWT | `scripts/dev-run.sh`, then `scripts/try-gateway.sh`, or `aggregator run customer-overview --route id=C-10042` |
 | Admin "Try it" | QA runs a draft against the test environment before publishing | Admin UI step 5; required by the publish gate |
@@ -22,7 +24,15 @@ dotnet run --project tools/ApiAggregator.Cli -- validate --config samples/config
 dotnet run --project tools/ApiAggregator.Cli -- validate --config config   # your own config
 ```
 
-`dotnet test` runs all three test projects. They need no network, no mock services and no secrets.
+`dotnet test` runs every test project. None needs network, running services or secrets: the UI tests start
+their own copies of the apps on free ports (and are skipped if Playwright's browsers aren't installed).
+
+Refresh the screenshots the guides use (stop `dev-run.sh` first; they're taken on the usual ports):
+
+```bash
+./scripts/install-playwright.sh   # once per machine, and after upgrading Microsoft.Playwright
+./scripts/screenshots.sh          # writes docs/images/*.png
+```
 
 ### How the host tests work
 

@@ -1,0 +1,21 @@
+@* A link to the full guide in the repository (docs/guides), which has every example with its real answer.
+   The address comes from "Docs:BaseUrl", so a fork or another git host only changes configuration. *@
+@inject IConfiguration Config
+
+<a class="help-link" href="@Url" target="_blank" rel="noopener">@Text <span aria-hidden="true">↗</span><span class="visually-hidden"> (opens in a new tab)</span></a>
+
+@code {
+    /// <summary>The guide's file name without ".md", optionally with "#anchor", e.g. "adding-services#secrets".</summary>
+    [Parameter, EditorRequired] public string Guide { get; set; } = "getting-started";
+    [Parameter] public string Text { get; set; } = "Full guide";
+
+    private string Url
+    {
+        get
+        {
+            var root = (Config["Docs:BaseUrl"] ?? "https://github.com/chathudan/api-aggregateerror/blob/main/docs/guides/").TrimEnd('/');
+            var (file, anchor) = Guide.IndexOf('#') is var i and >= 0 ? (Guide[..i], Guide[i..]) : (Guide, "");
+            return $"{root}/{file}.md{anchor}";
+        }
+    }
+}

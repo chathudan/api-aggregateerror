@@ -44,13 +44,26 @@ public sealed class NewServiceForm
         foreach (var p in SignIn.Problems()) yield return p;
     }
 
+    /// <summary>
+    /// The base address a spec's first server stands for, or null when it isn't an http(s) address.
+    /// A relative server ("/d") is relative to the spec's own address; with pasted spec text there is none.
+    /// The scheme check matters: on macOS and Linux "/d" also parses as an absolute file:// address, and a spec
+    /// could name file:, javascript: and so on. The admin API refuses those anyway, so this only keeps the form sane.
+    /// </summary>
+    public static string? ResolveServer(string server, string? specUrl)
+    {
+        if (Uri.TryCreate(server, UriKind.Absolute, out var abs) && abs.Scheme is "http" or "https") return server;
+        if (!Uri.TryCreate(specUrl, UriKind.Absolute, out var spec) || spec.Scheme is not ("http" or "https")) return null;
+        return Uri.TryCreate(spec, server, out var resolved) && resolved.Scheme is "http" or "https" ? resolved.ToString() : null;
+    }
+
     /// <summary>Fills name, base address and the sign-in suggestion from an import preview.</summary>
     public void ApplyPreview(JsonNode preview)
     {
         if (string.IsNullOrWhiteSpace(Name)) Name = preview["title"]?.ToString() ?? "";
         var server = (preview["servers"] as JsonArray)?.FirstOrDefault()?.ToString();
         if (!string.IsNullOrEmpty(server) && string.IsNullOrWhiteSpace(BaseUrl))
-            BaseUrl = Uri.TryCreate(server, UriKind.Absolute, out _) ? server : new Uri(new Uri(SpecUrl), server).ToString();
+            BaseUrl = ResolveServer(server, SpecUrl) ?? "";
         if (string.IsNullOrWhiteSpace(BaseUrl) && Uri.TryCreate(SpecUrl, UriKind.Absolute, out var spec))
             BaseUrl = spec.GetLeftPart(UriPartial.Authority);
 

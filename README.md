@@ -1,86 +1,64 @@
 # API Aggregator
 
-Combine calls to several backend APIs into **one endpoint** for your web and mobile apps, without
-writing code for each one.
+Combine calls to several backend APIs into **one endpoint** for your web and mobile apps, built in an
+admin UI without writing code.
 
 ```
-GET /bff/customer/C-10042/overview
-   ├─ Service A  GET /customers/C-10042                    (Basic auth)
-   ├─ Service B  GET /orders   X-Customer-Id: <A.id>        (session login)
-   └─ Service C  GET /recommendations?segment=<A.segment>   (OAuth → JWT)
-                 X-Tier: <B.tier>
+GET /bff/customer/C-10042/summary
+   ├─ Service A  GET  /customers/C-10042                     (Basic auth)
+   ├─ Service I  GET  /loyalty/<A.id>                        (fixed token)
+   ├─ Service B  POST /orders/search  { "customerId": <A.id> } (login session)
+   └─ Service C  GET  /recommendations?segment=<A.segment>   (OAuth → JWT)
+                      X-Tier: <I.tier>
 ```
 
-- **Many aggregated endpoints**, each built in a guided admin UI by QA or technicians, then tested,
-  published and rolled back without a redeploy.
-- **Pass values between calls** into the path, query, header, cookie or body. Steps run in parallel
-  automatically when they don't depend on each other.
-- **Any downstream auth combination:** Basic, session login (cookie and/or JWT), OAuth client
-  credentials, API key, or the caller's own token.
-- **OpenAPI import** for services that have a spec.
-- **API docs**: typed OpenAPI spec at `/bff/openapi.json` and a Swagger UI page at `/bff/docs` (Development) for testers.
-- **Caching on/off** per endpoint and per step. Entries are kept per caller, so nobody sees another
-  person's data.
-- **Secure by default:** declared inputs only, escaped values, no shared cookie jar, no redirects,
-  secrets by reference, rate limiting, `no-store` responses.
+- **Many aggregated endpoints**, each built, tested, published and rolled back in a guided wizard, with no redeploy.
+- **Values passed between calls** into the path, query, header or body. Calls that don't depend on each other run in parallel.
+- **Any sign-in, in any combination:** Basic, login session, OAuth client credentials, API key, fixed token, or the caller's own token.
+- **Combine lists** from several services into one list of records, on exact shared ids only.
+- **Secure by default:** declared inputs only, escaped values, secrets by reference, per-user caching, no values in logs.
+- **API docs** at `/bff/docs` and a typed `/bff/openapi.json` for generating app clients.
 
-## Quick start (macOS / Linux, .NET 10 SDK)
+## Quick start
+
+Needs the .NET 10 SDK on macOS or Linux (or Docker: `docker compose up --build`).
 
 ```bash
-dotnet --version              # 10.x (or build with -p:AggregatorTargetFramework=net9.0)
-dotnet restore && dotnet build
-dotnet test                   # engine tests
-
-./scripts/dev-run.sh          # mocks :5100, gateway :5200, admin API :5210, admin UI :5300
-./scripts/try-gateway.sh      # in another terminal: dev token + calls to the sample endpoints
-open http://localhost:5300    # admin UI (see Help in the top bar for the technician guide)
+dotnet build
+./scripts/dev-run.sh          # mocks :5100, gateway :5200, admin API :5210, admin UI :5300 (sample data)
+open http://localhost:5300    # the admin UI
+./scripts/try-gateway.sh      # in another terminal: call the sample endpoints
 ```
 
-Or with Docker: `docker compose up --build`.
+The full walk-through, including your own configuration (`./scripts/dev-run.sh --real`), is in
+[Getting started](docs/guides/getting-started.md).
 
-**QA and CI without the gateway:**
+![The admin UI home page](docs/images/home.png)
+
+## Documentation
+
+**[docs/README.md](docs/README.md)** is the index, by audience:
+
+| I'm… | Start with |
+|---|---|
+| A technician or tester | [Adding services](docs/guides/adding-services.md), [Building endpoints](docs/guides/building-endpoints.md) |
+| Building an app | [For app developers](docs/guides/for-app-developers.md) |
+| Running the platform | [Operations](docs/guides/operations.md), [Security and privacy](docs/guides/security-and-privacy.md) |
+| Changing the code | [`CLAUDE.md`](CLAUDE.md), [architecture](docs/architecture/01-overview.md), [decisions](docs/adr/README.md) |
+
+Every example in the guides runs against the mock services: `./scripts/check-docs.sh` (also part of `dotnet test`).
+
+## Commands
 
 ```bash
-export Secrets__service-a-password=pass-a Secrets__service-b-password=pass-b Secrets__service-c-client-secret=secret-c
-dotnet run --project tools/ApiAggregator.Cli -- validate --config samples/config
-dotnet run --project tools/ApiAggregator.Cli -- run customer-overview --route id=C-10042 --query status=open --repeat 2 --config samples/config
+dotnet test                                                                          # all tests
+./scripts/check-docs.sh                                                              # the guides' examples
+dotnet run --project tools/ApiAggregator.Cli -- validate --config samples/config     # check every endpoint and sign-in
+./scripts/install-playwright.sh && ./scripts/screenshots.sh                          # browser for UI tests; refresh docs/images
 ```
-
-## Where everything is stored
-
-Sample data lives in `samples/config/` (what `dev-run.sh` uses); your own configuration goes in `config/` (`dev-run.sh --real`). Both are plain JSON, so it can be reviewed in pull requests. The
-admin UI and admin API write these files; the gateway reloads them within 2 seconds.
-
-| File | Holds |
-|---|---|
-| `config/services.json` | Every service: base address, sign-in profile id, endpoints (method, path, parameters, response fields) |
-| `config/auth-profiles.json` | How the gateway signs in to each service. Secrets appear only as `secret:<name>` references |
-| `config/recipes/<id>.json` | Published aggregated endpoints, which the gateway serves |
-| `config/drafts/<id>.json` | Work in progress from the wizard (never served) |
-| `config/history/<id>.v<n>.json` | Every published version, kept for audit and rollback |
-| `config/secrets.local.json` | **Development only**: secret values typed in the UI. Git-ignored; use Key Vault elsewhere |
-
-For production with several gateway instances, the same data moves to PostgreSQL behind
-`IConfigStore` (see [roadmap](docs/roadmap.md)).
-
-## Repository map
-
-| Path | What |
-|---|---|
-| `src/ApiAggregator.Engine` | The heart: model, expressions, planner, validator, executor, auth, cache. **No NuGet dependencies** |
-| `src/ApiAggregator.Gateway` | Serves published endpoints under `/bff/*` |
-| `src/ApiAggregator.Admin.Api` | Services, auth profiles, OpenAPI import, drafts, test, publish, rollback |
-| `src/ApiAggregator.Admin.UI` | Blazor wizard for QA and technicians |
-| `src/ApiAggregator.Hosting` | Shared inbound JWT setup |
-| `tools/ApiAggregator.Cli` | `aggregator validate` and `aggregator run` |
-| `samples/MockServices` | Services A/B/C with Basic, session and OAuth/JWT auth |
-| `config/` | `services.json`, `auth-profiles.json`, `recipes/` (published), `drafts/`, `history/` |
-| `tests/` | xUnit tests |
-| `docs/` | [Architecture](docs/architecture/01-overview.md), [ADRs](docs/adr/README.md), [roadmap](docs/roadmap.md) |
-| `CLAUDE.md`, `.claude/skills/` | Guidance for Claude Code working in this repo |
 
 ## Status
 
-Development-ready. Before production, work through the "Next" list in [docs/roadmap.md](docs/roadmap.md):
-PostgreSQL config store, Key Vault, OIDC for the admin UI, telemetry, and a privacy and security
+Development-ready. Before production, work through the "Next" list in the [roadmap](docs/roadmap.md):
+PostgreSQL config store, Key Vault, OIDC sign-in for the admin UI, telemetry, and a security and privacy
 review for health or personal data.

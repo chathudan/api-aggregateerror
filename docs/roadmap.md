@@ -14,6 +14,8 @@
 - Admin UI (Blazor): Add service (from OpenAPI or by hand) with sign-in cards and Check sign-in; add endpoints by hand with a sample response; five-step wizard with an endpoint picker, pre-filled ("suggested") values, one-click response fields and live validation
 - Live logs page in the admin UI (gateway and admin API, filter by correlation id)
 - Duplicate handling: `distinct`, de-duplicated forEach calls, `combine` by exact key (ADR 0011)
+- Guides by audience (`docs/README.md`, `docs/guides/`) with screenshots; every example is checked against the mocks by `scripts/check-docs.sh` and `dotnet test`
+- Admin UI tests in a real browser (Playwright, ADR 0013)
 - CLI (`aggregator validate | run`), mock Services A/B/C/D, 60 unit tests, Dockerfile, docker-compose
 
 ## Next: needed before production

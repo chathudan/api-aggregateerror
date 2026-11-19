@@ -6,17 +6,19 @@
 
 | Path | Service | Sign-in | Used by |
 |---|---|---|---|
-| `/a` | Customers | Basic `svc-a` / `pass-a` | `customer-overview`, `customer-profile` |
-| `/b` | Orders (`GET /b/orders`, and `POST /b/orders/search` with a JSON body) | Session login `svc-b` / `pass-b` | `customer-overview` |
-| `/c` | Recommendations | OAuth client credentials `client-c` / `secret-c` | `customer-overview` |
+| `/a` | Customers (`C-10042` premium, `C-20001`, and `C-30003`, who has no loyalty record) | Basic `svc-a` / `pass-a` | `customer-overview`, `customer-profile`, `customer-summary` |
+| `/b` | Orders (`GET /b/orders`, and `POST /b/orders/search` with a JSON body) | Session login `svc-b` / `pass-b` | `customer-overview`, `customer-summary` |
+| `/c` | Recommendations | OAuth client credentials `client-c` / `secret-c` | `customer-overview`, `customer-summary` |
 | `/d` | Billing (invoices) | API key `X-Api-Key: key-d` | Not in the config: use it to try **Add service** |
 | `/e` | Identity: users | API key `X-Api-Key: key-e` | `people-directory`, `people-newest` |
 | `/f` | CRM: contacts, notes, orders | Basic `svc-f` / `pass-f` | all three people recipes |
 | `/g` | Billing: accounts | API key `X-Api-Key: key-g` | `people-directory`, `people-newest` |
 | `/h` | Links: billing account → user | None (internal) | `people-directory`, `people-newest` |
-| `/i` | Loyalty | Fixed token `Authorization: Bearer token-i` | `customer-loyalty` |
+| `/i` | Loyalty | Fixed token `Authorization: Bearer token-i` | `customer-loyalty`, `customer-summary` |
 | `/j` | Preferences | The caller's own token (passed on) | `my-preferences` |
 | `/k` | Appointments | API key `X-Api-Key: key-k` **and** a token from `POST /k/auth/login` (`svc-k` / `pass-k`) | `customer-appointments` |
+
+`customer-summary` passes values from A into I's path, B's JSON body, and C's query and header (C also uses I's answer). With `C-30003` the optional loyalty step fails, which shows a partial answer. The guides in [`docs/guides/`](../docs/guides/) use these endpoints, and `scripts/check-docs.sh` checks every answer they show.
 
 Each of A, D, E, F, G and H has its spec at `/<x>/openapi.json`, with response schemas, so the wizard's
 dropdowns list the fields. `GET /_stats` shows how many times each endpoint was called. The E–H

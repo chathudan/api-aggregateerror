@@ -4,7 +4,9 @@
 
 The admin UI has a **Help** page (`/help`) written for technicians: what to ask a service owner,
 which sign-in to pick, how secrets are handled, building and publishing, a troubleshooting table of
-every common message, and the error codes apps receive. Each screen links to the matching section.
+every common message, and the error codes apps receive. Each screen links to the matching section, and each
+section links to its full guide in `docs/guides/` (**Full guide**, an address built from `Docs:BaseUrl`), so the
+examples there, which `check-docs.sh` keeps true, are one click away.
 
 ## Who does what
 

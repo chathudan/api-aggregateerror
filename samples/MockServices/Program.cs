@@ -32,7 +32,9 @@ app.MapGet("/_stats", () => calls.OrderBy(k => k.Key).ToDictionary(k => k.Key, k
 var customers = new Dictionary<string, object>
 {
     ["C-10042"] = new { id = "C-10042", name = "Alex Example", accountNo = "ACC-778", segmentCode = "family", isPremium = true },
-    ["C-20001"] = new { id = "C-20001", name = "Sam Sample", accountNo = "ACC-901", segmentCode = "single", isPremium = false }
+    ["C-20001"] = new { id = "C-20001", name = "Sam Sample", accountNo = "ACC-901", segmentCode = "single", isPremium = false },
+    // A new customer with no loyalty membership yet: Service I answers 404, which shows an optional step failing.
+    ["C-30003"] = new { id = "C-30003", name = "Jo Trial", accountNo = "ACC-303", segmentCode = "single", isPremium = false }
 };
 
 // ------------------------------------------------------------------ Service A (Basic)
@@ -267,7 +269,7 @@ static class OpenApiSpecs
     {
       "openapi": "3.0.3",
       "info": { "title": "Service D (billing)", "version": "1.0.0" },
-      "servers": [ { "url": "http://localhost:5100/d" } ],
+      "servers": [ { "url": "/d" } ],
       "components": { "securitySchemes": { "key": { "type": "apiKey", "name": "X-Api-Key", "in": "header" } } },
       "security": [ { "key": [] } ],
       "paths": {
@@ -297,7 +299,7 @@ static class OpenApiSpecs
     {
       "openapi": "3.0.3",
       "info": { "title": "Service A - Customers", "version": "1.0.0" },
-      "servers": [ { "url": "http://localhost:5100/a" } ],
+      "servers": [ { "url": "/a" } ],
       "components": { "securitySchemes": { "basic": { "type": "http", "scheme": "basic" } } },
       "security": [ { "basic": [] } ],
       "paths": {
@@ -326,7 +328,7 @@ static class OpenApiSpecs
     {
       "openapi": "3.0.3",
       "info": { "title": "Service E - Identity", "version": "1.0.0" },
-      "servers": [ { "url": "http://localhost:5100/e" } ],
+      "servers": [ { "url": "/e" } ],
       "components": { "securitySchemes": { "key": { "type": "apiKey", "name": "X-Api-Key", "in": "header" } } },
       "security": [ { "key": [] } ],
       "paths": {
@@ -348,7 +350,7 @@ static class OpenApiSpecs
     {
       "openapi": "3.0.3",
       "info": { "title": "Service F - CRM", "version": "1.0.0" },
-      "servers": [ { "url": "http://localhost:5100/f" } ],
+      "servers": [ { "url": "/f" } ],
       "components": { "securitySchemes": { "basic": { "type": "http", "scheme": "basic" } } },
       "security": [ { "basic": [] } ],
       "paths": {
@@ -392,7 +394,7 @@ static class OpenApiSpecs
     {
       "openapi": "3.0.3",
       "info": { "title": "Service G - Billing", "version": "1.0.0" },
-      "servers": [ { "url": "http://localhost:5100/g" } ],
+      "servers": [ { "url": "/g" } ],
       "components": { "securitySchemes": { "key": { "type": "apiKey", "name": "X-Api-Key", "in": "header" } } },
       "security": [ { "key": [] } ],
       "paths": {
@@ -414,7 +416,7 @@ static class OpenApiSpecs
     {
       "openapi": "3.0.3",
       "info": { "title": "Service H - Links (internal)", "version": "1.0.0" },
-      "servers": [ { "url": "http://localhost:5100/h" } ],
+      "servers": [ { "url": "/h" } ],
       "paths": {
         "/links": {
           "get": {

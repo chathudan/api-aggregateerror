@@ -58,18 +58,23 @@ If a change touches any of these, run the `security-review` skill and add or adj
 | `…/Authoring` | `SourceCatalog` (wizard dropdown options, schema inference), `AutoBinder` (pre-filled values) |
 | `src/ApiAggregator.Gateway` | `Program.cs` (one handler for `/bff/{**path}`), `ApiDocsPage` (Swagger UI at `/bff/docs`); the spec comes from `Engine/Authoring/OpenApiDocumentBuilder` |
 | `src/ApiAggregator.Admin.Api` | `Program.cs` (all admin endpoints), `OpenApiImporter` |
-| `src/ApiAggregator.Admin.UI` | `Pages/EndpointEditor.razor` (wizard), `Pages/Services.razor` (add service, endpoints, sign-in, rename, delete), `Shared/SignInEditor.razor`, `Shared/ConfirmBox.razor` (confirm before anything destructive); form models in `Services/` (`RecipeForm`, `SignInForm` + `SignInKinds`, `ServiceForms`) |
+| `src/ApiAggregator.Admin.UI` | Pages: `Home` (dashboard), `Endpoints`, `EndpointEditor` (wizard: stepper, problems next to fields, run-order lanes, sticky footer), `Services`, `Logs`, `Help`. Shared: `PageShell` (every page: one primary action), `StatusPill` (icon + word, never colour alone), `ConfirmBox`, `ErrorBanner`, `Toasts`/`ToastService`, `FieldIssues`, `StepFlow`, `EmptyState`, `Loading`, `SignInEditor`. Form models in `Services/` (`RecipeForm`, `SignInForm` + `SignInKinds`, `ServiceForms`) |
 | `src/ApiAggregator.Hosting` | `InboundAuth` (JWT setup, scopes, caller context), `LocalSecrets` (Development-only secrets file) |
 | `tools/ApiAggregator.Cli` | `aggregator validate | run` |
 | `samples/MockServices` | Service A (Basic `svc-a/pass-a`), B (session `svc-b/pass-b`), C (OAuth `client-c/secret-c`), D (API key `X-Api-Key: key-d`, spec at `/d/openapi.json`, not in the sample config: use it to try **Add service**); B also has `POST /b/orders/search` (body); I fixed token (`token-i`), J the caller's token, K API key `key-k` + login `svc-k/pass-k`; E Identity, F CRM, G Billing, H Links: people data for **Combine lists** (`PeopleSamples.cs`, explained in `samples/README.md`). All on :5100 |
-| `samples/config/` | Sample services, sign-ins and recipes (used by `dev-run.sh`, the guides and the tests; has `SAMPLE-DATA.md`) |
+| `samples/config/` | Sample services, sign-ins and recipes (used by `dev-run.sh`, the guides and the tests; has `SAMPLE-DATA.md`). `customer-summary` shows values passed into path, body, query and header; customer `C-30003` has no loyalty record (a partial answer) |
+| `docs/` | `README.md` (index by audience), `guides/` (getting started, services, endpoints, combine lists, testing, app developers, troubleshooting, operations, security, glossary, FAQ), `architecture/` and `adr/` (the design record), `images/` (screenshots) |
+| `tests/ApiAggregator.Docs.Tests` | Runs every `<!-- check: ... -->` example in `docs/` and compares the output (`scripts/check-docs.sh`) |
 | `config/` | Your own configuration (real mode: `dev-run.sh --real`). Starts empty |
 
 ## Commands
 
 ```bash
 dotnet build                                                   # whole solution
-dotnet test                                                    # engine + gateway + admin API host tests (must stay green)
+dotnet test                                                    # engine, gateway, admin API and UI tests (must stay green)
+./scripts/install-playwright.sh                                # once: browsers for the UI tests (skipped without them)
+./scripts/screenshots.sh                                       # refresh docs/images (dev ports must be free)
+./scripts/check-docs.sh                                        # run every checked example in docs/ (also part of dotnet test)
 dotnet run --project tools/ApiAggregator.Cli -- validate --config samples/config   # check every recipe and auth profile (also run for config/)
 dotnet run --project tools/ApiAggregator.Cli -- run customer-overview --route id=C-10042 --config samples/config   # needs mocks + Secrets__* env
 ./scripts/dev-run.sh                                           # mocks :5100, gateway :5200, admin API :5210, UI :5300 (--real for config/)
@@ -78,7 +83,7 @@ dotnet run --project tools/ApiAggregator.Cli -- run customer-overview --route id
 
 Target framework: set once in `Directory.Build.props` (`AggregatorTargetFramework`, default `net10.0`).
 Package versions: `Directory.Packages.props` (central management). Only Gateway, Admin.Api,
-Hosting and the tests use packages. Keep runtime packages on the 10.x line while targeting `net10.0`.
+Hosting and the tests use packages (the UI tests use Microsoft.Playwright, ADR 0013). Keep runtime packages on the 10.x line while targeting `net10.0`.
 
 ## How to make common changes
 
@@ -99,7 +104,9 @@ Hosting and the tests use packages. Keep runtime packages on the 10.x line while
 - Engine model types are **init-only**. The UI uses its own mutable form models (`RecipeForm`).
 - JSON uses `AggregatorJson.Options` (web defaults, camelCase enums, comments allowed).
 - Tests: xUnit, one scenario per test, names that read as sentences, builders in `TestData`.
-- Docs: update the matching file in `docs/architecture/` in the same change. Write a new ADR for any
+- Docs: update the matching file in `docs/architecture/` and `docs/guides/` in the same change. Write a new ADR for any
   decision that changes an invariant or adds a dependency.
+- Guides: every response shown is real. Mark it with a `check:` comment so `check-docs.sh` keeps it true; never
+  invent output. Technician sections are mirrored in the UI's `Help` page: change both.
 - This is a healthcare-adjacent project: never invent clinical or regulatory requirements. Flag
   them for review by qualified people (see `docs/architecture/03-auth-and-security.md`).

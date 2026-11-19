@@ -15,6 +15,8 @@
     <PackageVersion Include="Microsoft.OpenApi.Readers" Version="1.6.31" />
     <!-- Tests only -->
     <PackageVersion Include="Microsoft.AspNetCore.Mvc.Testing" Version="10.0.15" />
+    <!-- UI tests only (ADR 0013): drives a real browser. Browsers: scripts/install-playwright.sh -->
+    <PackageVersion Include="Microsoft.Playwright" Version="1.65.1" />
     <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="18.12.0" />
     <PackageVersion Include="xunit" Version="2.9.3" />
     <PackageVersion Include="xunit.runner.visualstudio" Version="3.1.5" />
