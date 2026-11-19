@@ -176,7 +176,8 @@
             <li>Values marked <span class="tag suggested">suggested</span> were filled in for you. Check that each one makes sense.</li>
             <li>For any value still empty, pick from <strong>Use value from</strong>: the caller's inputs, or a field from an earlier step. That's how one service's id is passed to another (path, query or header).</li>
             <li>"Runs after…" shows the order the gateway worked out. Steps that don't depend on each other run at the same time.</li>
-            <li><strong>Advanced:</strong> untick "If this call fails, fail the whole endpoint" for nice-to-have data, so apps still get the rest. "Only run when" and "Run once for each item" are for special cases.</li>
+            <li><strong>Run this step:</strong> leave it on <strong>Once</strong>, or choose <strong>Once for each item in a list</strong> to call the service for every item in an earlier step's list (see below).</li>
+            <li><strong>Advanced:</strong> untick "If this call fails, fail the whole endpoint" for nice-to-have data, so apps still get the rest. <strong>Only run when</strong> skips the step unless a value is what you say.</li>
         </ul>
     </li>
     <li><strong>Response:</strong> choose <strong>Add fields from …</strong> for each step, then rename or remove fields. If you add none, each step's full answer is returned.</li>
@@ -196,6 +197,17 @@
 <pre><code>{ "name": "Alex Example", "points": 1250, "tier": "gold", "orderStatus": "open",
   "orderIds": ["O-042-1", "O-042-2", "O-042-3"], "offers": ["Offer for family/gold", "Loyalty bonus"] }</code></pre>
 <p><code>loyalty</code> and <code>orders</code> run at the same time, because neither needs the other. <code>offers</code> waits for both <code>customer</code> and <code>loyalty</code>.</p>
+
+<h3>Run for each item <GuideLink Guide="building-endpoints#run-for-each-item" /></h3>
+<p>Under the step's name, choose <strong>Run this step: Once for each item in a list</strong>, then pick the list. The dropdown names every list in the earlier steps' answers, and every field inside one, for example <strong>Orders from CRM → each order</strong> or <strong>Orders from CRM → each order's contactId</strong>. Then choose <strong>Current item</strong> for the value the service needs. A value with the same name as the looped field is filled in for you, marked <span class="tag suggested">suggested</span>. For a loop over whole records (<strong>each order</strong>), pick <strong>Current item → contactId</strong>. If you choose <strong>Current item</strong> before picking a list, the step says <strong>Choose what to loop over first</strong>.</p>
+<p>Example: open <strong>Unique contacts and their notes</strong> (<code>contacts-unique</code>). Its third step gets the notes of each order's contact: <strong>Orders from CRM → each order's contactId</strong>, with <code>contactId</code> ← <strong>Current item</strong>. The 6 orders belong to 3 contacts, and <strong>Call once per unique item</strong> is ticked, so <strong>Try it</strong> shows <code>calls=3</code>, not 6. Untick it only if the same call really must be repeated.</p>
+<p><strong>Custom expression…</strong> is for lists the dropdown doesn't offer, such as only the first three orders (<code>customer-overview</code>).</p>
+
+<h3>Only run when</h3>
+<p>Under <strong>Advanced</strong>: <strong>Only run when</strong> [value] [<strong>is</strong> / <strong>is not</strong> / <strong>has a value</strong>] [text]. For example <strong>Get customer → isPremium</strong> <strong>is</strong> <code>true</code>. "Has a value" means it's there and isn't empty, false or 0. Upper or lower case doesn't matter. A skipped step isn't an error. <strong>Custom condition…</strong> is for anything else, such as comparing two values.</p>
+
+<h3>Renaming a step <GuideLink Guide="building-endpoints#renaming-a-step" /></h3>
+<p>Under each step's name is its <strong>name in expressions</strong>, for example <em>Name in expressions: getOrders</em>, with a <strong>Copy</strong> button. You only need it for a Custom expression or condition. While nothing uses the step, it follows the display name by itself. Once something uses it, changing the display name asks <strong>Also rename it to ordersFromCrm in expressions?</strong> and says how many places use it. <strong>Rename everywhere</strong> updates all of them. On a live endpoint it always asks, because apps see the name in error details, and as a field name in the answer when there are no response fields. Nothing changes for apps until you publish.</p>
 
 <h3>More things to try with the sample data</h3>
 <table class="list">

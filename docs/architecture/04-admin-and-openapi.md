@@ -130,9 +130,27 @@ show up before anyone builds an endpoint.
 |---|---|---|
 | 1. Endpoint | Name, method, route, sign-in required, scope, cache on/off | The id is generated from the name; the address preview updates as you type |
 | 2. Inputs | Caller inputs and their types | Route `{params}` are added automatically; test values sit next to each input |
-| 3. Steps | **Add step** opens a searchable list of every service endpoint; pick one | The step is named after the endpoint, and every value is **pre-filled** where a match exists (`AutoBinder`): a same-named input, a same-named field from an earlier step, `<thing>Id` → the id of an earlier step about `<thing>`, or the route value for the first step. Pre-filled values carry a "suggested" tag until changed. "Runs after…" is computed automatically. Advanced (required, when, for each, cache) is hidden by default |
-| 4. Response | **Add fields from <step>** in one click, rename or remove; or leave it empty | With no fields, each step's body is returned under its name |
+| 3. Steps | **Add step** opens a searchable list of every service endpoint; pick one | The step is named after the endpoint, and every value is **pre-filled** where a match exists (`AutoBinder`): a same-named input, a same-named field from an earlier step, `<thing>Id` → the id of an earlier step about `<thing>`, or the route value for the first step. Pre-filled values carry a "suggested" tag until changed. "Runs after…" is computed automatically. **Run this step** (once, or once for each item in a list) sits in the step; Advanced (required, only run when, cache) is hidden by default, and opens by itself when the step has a condition |
+| 4. Response | **Add fields from <step>** in one click, rename or remove; or leave it empty | With no fields, each step's body is returned under its name. A for-each step's fields come from every call (`notes[*].body.x`) |
 | 5. Test and publish | Try it with test values; see each call's status, time and URL (query values masked); publish | The same validator as the server runs in the browser, so problems show up immediately in plain English |
+
+### Pickers instead of expressions
+
+Technicians never type an expression or a step's alias. Everything below lives in the engine (`Authoring/`), so it is
+unit-tested without a browser, and the validator still checks the result like any other recipe.
+
+| Need | How | Where |
+|---|---|---|
+| "Once for each item in a list" | `SourceCatalog.LoopOptions` walks earlier steps' response schemas (the same walk as the value dropdown) and lists every array and every field inside one, in words: `Orders from CRM → each order's contactId` = `orders.body.orders[*].contactId`. A saved `forEach` that matches an option opens in the dropdown; anything else (a slice, a transform) opens in **Custom expression…** with its text kept | `SourceCatalog`, `StepChoices.LoadLoop`, `LoopPicker` |
+| "Current item" | Always offered in a step. With a loop over whole records, the item's fields are offered too (`item.contactId`). Chosen without a loop, the row says "Choose what to loop over first". `AutoBinder` rule 0 suggests `item` for a parameter named like the looped field, or `item.<field>` for a loop over whole records | `SourceCatalog.For`, `AutoBinder` |
+| "Only run when" | [value] [is / is not / has a value] [text] writes exactly the syntax `Conditions` already evaluates (`{{x}}`, `{{x}} == t`, `{{x}} != t`). `Conditions.TryParseSimple` opens saved conditions in the picker; anything else is **Custom condition…** | `Conditions`, `StepChoices`, `ConditionPicker` |
+| Step names (aliases) | Shown under the step's name with a **Copy** button (`navigator.clipboard.writeText` through `IJSRuntime`, no script of our own, so a Content-Security-Policy won't break it). Made from the display name by `RecipeRefactor.AliasFor` (camelCase, unique, never reserved). While nothing uses a step, and the endpoint isn't live, the alias follows the display name silently; otherwise the wizard asks first, and on a live endpoint it says that apps see the name in `errors[].step` (and as an answer field when there are no response fields) | `RecipeRefactor`, `EndpointEditor` |
+| Renaming | `RecipeRefactor.RenameStep` rewrites only expressions whose **root** (`ValuePath.Root`) is the old alias: bindings, body templates, when, forEach, response, combine sources, mappings (`via`) and owners that name the step. A field or transform argument spelled like the alias is left alone; a clash or reserved name is refused in plain words. `RecipeForm.RenameStep` applies the same rewrite to the form (a test checks the two give the same recipe) | `RecipeRefactor`, `RecipeForm` |
+| Unknown step names | The validator suggests the closest step, by display name first ("ordersFromCrm" for "Orders from CRM"), then by spelling: *'ordersFromCrm' isn't a step here. Did you mean 'getOrders' (Orders from CRM)?* | `RecipeValidator.UnknownStep` |
+
+The form is lossless: loading any recipe into `RecipeForm` and saving it gives identical JSON, including the settings the
+wizard doesn't show (concurrency, timeouts, binding defaults, input limits, JSON body templates, hand-written response
+values). A test checks every recipe in `samples/config` and `config/`.
 
 ## OpenAPI import
 

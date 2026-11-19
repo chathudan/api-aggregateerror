@@ -72,6 +72,37 @@ public class AutoBinderTests
     [Fact] public void No_guess_when_nothing_matches() =>
         Assert.False(Suggest("getOrders").ContainsKey("query.account"));
 
+    // ---------------------------------------------------------------- steps that run for each item
+
+    private static BindingSuggestion LoopSuggestion(string? forEach) =>
+        Assert.Single(AutoBinder.Suggest(TestData.CrmRecipe(notesForEach: forEach), "notes", TestData.CrmSnapshot()));
+
+    [Fact]
+    public void Looping_over_a_field_with_the_parameters_name_suggests_the_current_item()
+    {
+        var s = LoopSuggestion("{{orders.body.orders[*].contactId}}");
+
+        Assert.Equal(("path.contactId", "item"), (s.Target, s.Expression));
+        Assert.Equal("The current item (each order's contactId)", s.Reason);
+    }
+
+    [Fact]
+    public void Looping_over_whole_items_suggests_the_current_items_matching_field()
+    {
+        var s = LoopSuggestion("{{orders.body.orders[*]}}");
+
+        Assert.Equal(("path.contactId", "item.contactId"), (s.Target, s.Expression));
+        Assert.Equal("From the current item (each order)", s.Reason);
+    }
+
+    [Fact]
+    public void Looping_over_a_field_with_another_name_suggests_nothing_for_it() =>
+        Assert.Empty(AutoBinder.Suggest(TestData.CrmRecipe(notesForEach: "{{orders.body.orders[*].total}}"), "notes", TestData.CrmSnapshot()));
+
+    [Fact]
+    public void Without_a_loop_the_current_item_is_never_suggested() =>
+        Assert.Empty(AutoBinder.Suggest(TestData.CrmRecipe(notesForEach: null), "notes", TestData.CrmSnapshot()));
+
     [Theory]
     [InlineData("X-Customer-Id", "customerid")]
     [InlineData("customer_id", "customerid")]

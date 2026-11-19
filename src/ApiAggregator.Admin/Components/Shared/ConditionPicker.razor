@@ -1,0 +1,90 @@
+@* "Only run when [value] [is | is not | has a value] [text]". Writes the same conditions the engine always read
+   ({{x}}, {{x}} == text, {{x}} != text). "Custom condition…" keeps the old text box for anything else. *@
+<fieldset class="step-choice condition">
+    <legend>Only run when</legend>
+    <div class="inline">
+        <select value="@FieldValue" aria-label="@($"Only run {Step.DisplayName} when this value…")" @onchange="e => PickField(e.Value?.ToString())">
+            <option value="">Always run</option>
+            @foreach (var group in Fields.GroupBy(o => o.Group))
+            {
+                <optgroup label="@group.Key">
+                    @foreach (var o in group) { <option value="@($"src:{o.Expression}")">@o.Label</option> }
+                </optgroup>
+            }
+            @if (Step.ConditionMode == ConditionMode.Picked && !string.IsNullOrEmpty(Step.ConditionField) && Fields.All(f => f.Expression != Step.ConditionField))
+            {
+                <option value="@($"src:{Step.ConditionField}")">@Step.ConditionField (not in the field list)</option>
+            }
+            <option value="custom">Custom condition…</option>
+        </select>
+
+        @if (Step.ConditionMode == ConditionMode.Picked)
+        {
+            <select value="@Step.ConditionOp" aria-label="How to compare it" @onchange="e => SetOp(e.Value?.ToString())">
+                <option value="@ConditionOp.Is">is</option>
+                <option value="@ConditionOp.IsNot">is not</option>
+                <option value="@ConditionOp.HasValue">has a value</option>
+            </select>
+            @if (Step.ConditionOp != ConditionOp.HasValue)
+            {
+                <input value="@Step.ConditionValue" placeholder="e.g. active" aria-label="Value to compare with" @onchange="e => SetValue(e.Value?.ToString())" />
+            }
+        }
+        else if (Step.ConditionMode == ConditionMode.Custom)
+        {
+            <input class="grow" value="@Step.When" placeholder="{{getCustomer.body.status}} == active" aria-label="@($"Custom condition for {Step.DisplayName}")"
+                   @onchange="e => Step.When = string.IsNullOrWhiteSpace(e.Value?.ToString()) ? null : e.Value!.ToString()" />
+        }
+    </div>
+    @if (StepChoices.ConditionProblem(Step) is { } problem)
+    {
+        <ul class="field-issues"><li class="problem"><span aria-hidden="true">✕</span><span class="visually-hidden">Problem: </span>@problem</li></ul>
+    }
+    else if (Step.ConditionMode == ConditionMode.Picked && Step.ConditionOp == ConditionOp.HasValue)
+    {
+        <p class="hint">Runs when the value is there and isn't empty, false or 0.</p>
+    }
+    else if (Step.ConditionMode == ConditionMode.Picked)
+    {
+        <p class="hint">Text is compared without regard to upper or lower case. Otherwise the step is skipped, which isn't an error.</p>
+    }
+</fieldset>
+
+@code {
+    [Parameter, EditorRequired] public StepForm Step { get; set; } = default!;
+    [Parameter] public IReadOnlyList<SourceOption> Fields { get; set; } = [];
+
+    private string FieldValue => Step.ConditionMode switch
+    {
+        ConditionMode.Custom => "custom",
+        ConditionMode.Picked when !string.IsNullOrEmpty(Step.ConditionField) => $"src:{Step.ConditionField}",
+        _ => ""
+    };
+
+    private void PickField(string? value)
+    {
+        if (value == "custom") { Step.ConditionMode = ConditionMode.Custom; return; } // the text box starts with what was there
+        if (string.IsNullOrEmpty(value)) { Step.ConditionMode = ConditionMode.None; Step.ConditionField = null; Step.When = null; return; }
+        Step.ConditionMode = ConditionMode.Picked;
+        Step.ConditionField = value["src:".Length..];
+        Apply();
+    }
+
+    private void SetOp(string? value)
+    {
+        Step.ConditionOp = Enum.TryParse<ConditionOp>(value, out var op) ? op : ConditionOp.Is;
+        Apply();
+    }
+
+    private void SetValue(string? value)
+    {
+        Step.ConditionValue = value;
+        Apply();
+    }
+
+    /// <summary>Writes the condition, unless the value has a problem (then the last good one stays until it's fixed).</summary>
+    private void Apply()
+    {
+        if (StepChoices.ConditionProblem(Step) is null) Step.When = StepChoices.ToWhen(Step);
+    }
+}

@@ -75,6 +75,11 @@ public class PageTests(StackFixture stack)
         await Save(editor, "endpoint-editor", fullPage: false);
         await SaveElement(editor, "#step-3", "endpoint-steps");
 
+        // The pickers: "Run this step" (once for each order's contact) and "Only run when" (premium customers only).
+        var contacts = await stack.OpenAsync("/endpoints/contacts-unique");
+        await SaveElement(contacts, ".step >> nth=2", "endpoint-loop-picker");
+        await SaveElement(editor, ".step >> nth=3 >> fieldset.condition", "endpoint-condition-picker");
+
         // Try it, then the results and the history.
         var profile = await stack.OpenAsync("/endpoints/customer-profile");
         await profile.GetByLabel("Test value for Try it").First.FillAsync("C-10042");

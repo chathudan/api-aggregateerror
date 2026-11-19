@@ -1,0 +1,80 @@
+@* "Run this step: once / once for each item in a list". The lists come from earlier steps' answers, in plain words
+   ("Orders from CRM → each order's contactId"), so nobody types an expression or a step name. "Custom expression…"
+   keeps the old text box for anything the list doesn't offer, such as only the first three orders. *@
+<fieldset class="step-choice loop">
+    <legend>Run this step</legend>
+    <div class="inline">
+        <label class="check"><input type="radio" name="loop-@_id" checked="@(Step.LoopMode == LoopMode.Once)" @onchange="() => SetOnce()" /> Once</label>
+        <label class="check"><input type="radio" name="loop-@_id" checked="@(Step.LoopMode != LoopMode.Once)" @onchange="() => SetList()" /> Once for each item in a list</label>
+    </div>
+
+    @if (Step.LoopMode != LoopMode.Once)
+    {
+        <div class="inline">
+            <select value="@SelectValue" aria-label="@($"List that {Step.DisplayName} goes through")" @onchange="e => Pick(e.Value?.ToString())">
+                <option value="">Pick a list…</option>
+                @foreach (var group in Options.GroupBy(o => o.Group))
+                {
+                    <optgroup label="@group.Key">
+                        @foreach (var o in group) { <option value="@($"opt:{o.Expression}")">@o.Label</option> }
+                    </optgroup>
+                }
+                <option value="custom">Custom expression…</option>
+            </select>
+            @if (Step.LoopMode == LoopMode.Custom)
+            {
+                <input class="grow" value="@Step.ForEach" placeholder="{{getOrders.body.items[0:3].id}}" aria-label="@($"Custom expression: what {Step.DisplayName} goes through")"
+                       @onchange="e => SetCustom(e.Value?.ToString())" />
+            }
+            <label class="check"><input type="checkbox" checked="@Step.Distinct" @onchange="e => Step.Distinct = e.Value is true" /> Call once per unique item</label>
+        </div>
+        @if (Step.LoopMode == LoopMode.List && Options.Count == 0)
+        {
+            <p class="hint">No lists in the answers of the steps above. Add the step that returns the list first (above this one), or choose Custom expression….</p>
+        }
+        else if (Step.LoopMode == LoopMode.List && string.IsNullOrWhiteSpace(Step.ForEach))
+        {
+            <p class="hint">Pick the list. The step then runs once for each item in it, and <strong>Current item</strong> is that item.</p>
+        }
+    }
+</fieldset>
+
+@code {
+    [Parameter, EditorRequired] public StepForm Step { get; set; } = default!;
+    [Parameter] public IReadOnlyList<LoopOption> Options { get; set; } = [];
+
+    /// <summary>Called after the loop changes, so the page can refresh the suggested values.</summary>
+    [Parameter] public EventCallback Changed { get; set; }
+
+    private readonly string _id = Guid.NewGuid().ToString("n")[..8];
+
+    private string SelectValue => Step.LoopMode switch
+    {
+        LoopMode.Custom => "custom",
+        _ when StepChoices.LoopExpression(Step.ForEach) is { } e && Options.Any(o => o.Expression == e) => $"opt:{e}",
+        _ => ""
+    };
+
+    private Task SetOnce()
+    {
+        Step.LoopMode = LoopMode.Once;
+        Step.ForEach = null;
+        return Changed.InvokeAsync();
+    }
+
+    private void SetList() => Step.LoopMode = LoopMode.List; // nothing is saved until a list is picked
+
+    private Task Pick(string? value)
+    {
+        if (value == "custom") { Step.LoopMode = LoopMode.Custom; return Task.CompletedTask; } // the text box starts with what was there
+        Step.LoopMode = LoopMode.List;
+        Step.ForEach = value is { Length: > 4 } && value.StartsWith("opt:", StringComparison.Ordinal) ? StepChoices.ToForEach(value[4..]) : null;
+        return Changed.InvokeAsync();
+    }
+
+    private Task SetCustom(string? text)
+    {
+        Step.ForEach = string.IsNullOrWhiteSpace(text) ? null : text;
+        return Changed.InvokeAsync();
+    }
+}

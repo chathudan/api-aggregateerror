@@ -60,6 +60,32 @@ public static class Template
         }
     }
 
+    /// <summary>
+    /// Rewrites each expression inside "{{ }}" with <paramref name="map"/> and keeps every character outside the braces
+    /// as it is (used to rename a step). Same scan as <see cref="FindExpressions(string?)"/>.
+    /// </summary>
+    public static string MapExpressions(string text, Func<string, string> map)
+    {
+        var sb = new StringBuilder(text.Length);
+        var i = 0;
+        while (i < text.Length)
+        {
+            var open = text.IndexOf("{{", i, StringComparison.Ordinal);
+            var close = open < 0 ? -1 : text.IndexOf("}}", open + 2, StringComparison.Ordinal);
+            if (close < 0) { sb.Append(text, i, text.Length - i); break; }
+            sb.Append(text, i, open + 2 - i);
+            var inner = text[(open + 2)..close];
+            var trimmed = inner.Trim();
+            // Keep the spacing the author used: "{{ a.body }}" becomes "{{ b.body }}".
+            var lead = inner.Length - inner.TrimStart().Length;
+            var trail = inner.Length - inner.TrimEnd().Length;
+            sb.Append(trimmed.Length == 0 ? inner : inner[..lead] + map(trimmed) + inner[(inner.Length - trail)..]);
+            sb.Append("}}");
+            i = close + 2;
+        }
+        return sb.ToString();
+    }
+
     public static IEnumerable<string> FindExpressions(JsonNode? node) => node switch
     {
         JsonObject obj => obj.SelectMany(p => FindExpressions(p.Value)),

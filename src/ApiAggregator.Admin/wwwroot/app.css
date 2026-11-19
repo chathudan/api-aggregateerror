@@ -199,6 +199,12 @@ input:disabled, select:disabled, textarea:disabled { background: var(--page); co
 .stepper.small .stage { display: flex; align-items: center; gap: 8px; padding: 4px 10px; border-radius: 999px; font-size: 13px; color: var(--muted); }
 .stepper.small .stage.current { color: var(--text); font-weight: 500; background: var(--page); }
 fieldset.choice { border: none; padding: 0; }
+/* "Run this step" and "Only run when" inside a step: a plain block, not the .choice card grid */
+fieldset.step-choice { border: none; padding: 0; margin: 10px 0; min-width: 0; }
+fieldset.step-choice > legend { font-size: 13px; color: var(--muted); padding: 0; }
+fieldset.step-choice > .inline { margin-top: 4px; }
+.alias-line { font-size: 12px; margin: 2px 0 8px; }
+.alias-line code { font-size: 12px; }
 details.more { position: relative; }
 details.more > summary { list-style: none; }
 details.more > summary::-webkit-details-marker { display: none; }

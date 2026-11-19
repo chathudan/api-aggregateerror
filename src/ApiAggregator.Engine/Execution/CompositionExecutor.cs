@@ -78,7 +78,11 @@ public sealed class CompositionExecutor(
         }
 
         // 3. steps
-        var plan = _plans.GetOrAdd($"{recipe.Id}:{recipe.Version}:{config.Version}", _ => ExecutionPlanner.Plan(recipe));
+        // A published version never changes, so its plan is worked out once. A draft under "Try it" keeps its version
+        // number while it is edited (steps added, renamed...), so it is planned afresh every time (cheap: no I/O).
+        var plan = mode.UseCache
+            ? _plans.GetOrAdd($"{recipe.Id}:{recipe.Version}:{config.Version}", _ => ExecutionPlanner.Plan(recipe))
+            : ExecutionPlanner.Plan(recipe);
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
         timeout.CancelAfter(recipe.TimeoutMs);
 

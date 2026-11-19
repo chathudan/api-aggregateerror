@@ -1,5 +1,6 @@
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
+using ApiAggregator.Engine.Authoring;
 using ApiAggregator.Engine.Config;
 using ApiAggregator.Engine.Execution;
 using ApiAggregator.Engine.Expressions;
@@ -164,10 +165,22 @@ public static partial class RecipeValidator
                     add(where, $"'{expr}' refers to a combined list that isn't defined. Use combine.<name> with a name from the Combine section.");
                 break;
             default:
-                if (!aliases.Contains(path.Root)) add(where, $"'{expr}' refers to a step named '{path.Root}' that doesn't exist.");
+                if (!aliases.Contains(path.Root)) add(where, UnknownStep(path.Root, recipe));
                 else if (step is not null && path.Root == step.Alias) add(where, "A step can't use its own result.");
                 break;
         }
+    }
+
+    /// <summary>
+    /// "'ordersFromCrm' isn't a step here. Did you mean 'getOrders' (Orders from CRM)?" The usual cause is a step whose
+    /// display name was changed while its name in expressions stayed the same, so display names are matched too.
+    /// </summary>
+    public static string UnknownStep(string name, Recipe recipe)
+    {
+        if (RecipeRefactor.ClosestStep(recipe, name) is not { } step)
+            return $"'{name}' isn't a step here. Pick the value again from the list.";
+        var shown = string.IsNullOrWhiteSpace(step.DisplayName) || step.DisplayName == step.Alias ? "" : $" ({step.DisplayName})";
+        return $"'{name}' isn't a step here. Did you mean '{step.Alias}'{shown}?";
     }
 
     // ------------------------------------------------------------------ combined lists
@@ -218,7 +231,7 @@ public static partial class RecipeValidator
                         if (ExecutionPlanner.ReservedRoots.Contains(root))
                             add(at, $"{label}: '{source.From}' must start with the name of a step. Combined lists can only use step results.");
                         else if (!aliases.Contains(root))
-                            add(at, $"{label}: '{source.From}' refers to a step named '{root}' that doesn't exist.");
+                            add(at, $"{label}: {UnknownStep(root, recipe)}");
                     }
                     catch (FormatException ex) { add(at, $"{label}: {ex.Message}"); }
                 }
@@ -241,7 +254,7 @@ public static partial class RecipeValidator
                 var comparedOn = source.Key; // the fields whose values are compared across lists
                 if (source.Via is { } via)
                 {
-                    CheckVia(via, label, keyParts.Length, aliases, at, add);
+                    CheckVia(via, label, keyParts.Length, recipe, aliases, at, add);
                     comparedOn = via.Use;
                 }
 
@@ -303,7 +316,7 @@ public static partial class RecipeValidator
                 add(at, $"{what} '{part}' isn't a valid field. Use a field name such as userId, or customer.id. Separate several fields with commas.");
     }
 
-    private static void CheckVia(CombineVia via, string label, int keyParts, HashSet<string> aliases, string at, Action<string, string> add)
+    private static void CheckVia(CombineVia via, string label, int keyParts, Recipe recipe, HashSet<string> aliases, string at, Action<string, string> add)
     {
         label += " (mapping)";
         if (string.IsNullOrWhiteSpace(via.From) || via.From.Contains("{{")) add(at, $"{label} needs a 'from' path without braces, such as links.body.items.");
@@ -313,7 +326,7 @@ public static partial class RecipeValidator
             {
                 var root = ValuePath.Parse(via.From).Root;
                 if (ExecutionPlanner.ReservedRoots.Contains(root)) add(at, $"{label}: '{via.From}' must start with the name of a step.");
-                else if (!aliases.Contains(root)) add(at, $"{label}: '{via.From}' refers to a step named '{root}' that doesn't exist.");
+                else if (!aliases.Contains(root)) add(at, $"{label}: {UnknownStep(root, recipe)}");
             }
             catch (FormatException ex) { add(at, $"{label}: {ex.Message}"); }
         }
@@ -326,6 +339,9 @@ public static partial class RecipeValidator
                 add(at, $"{label}: {what} must have the same number of fields as the key ({keyParts}).");
         }
     }
+
+    /// <summary>The shape of a step's name in expressions (and of a combined list's name).</summary>
+    public static bool IsValidStepName(string name) => AliasRegex().IsMatch(name);
 
     private static bool IsFieldName(string s) =>
         s.Length is > 0 and <= 128 && s.All(ch => char.IsLetterOrDigit(ch) || ch is '_' or '-' or '$');

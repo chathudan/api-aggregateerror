@@ -97,6 +97,10 @@ an unknown code like `server_error`.
 
 Show your own friendly text, not `title` or `message`: those are for logs and support.
 
+Act on `code` (and `status`), never on `step` or `name`. Those say which part of the endpoint failed, for
+logs and support. They can change when someone renames a step in the admin app, so an app that checks
+`step == "loyalty"` would break without warning.
+
 ### Error codes
 
 | HTTP | `code` | What happened | Retry? | What the app should do |

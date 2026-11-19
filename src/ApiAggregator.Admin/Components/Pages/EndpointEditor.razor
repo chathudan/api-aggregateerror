@@ -1,6 +1,7 @@
 @page "/endpoints/new"
 @page "/endpoints/{Id}"
 @using System.Text.RegularExpressions
+@using Microsoft.JSInterop
 @using ApiAggregator.Engine.Planning
 @inject AdminService Admin
 @inject CurrentUser User
@@ -8,6 +9,7 @@
 @inject IConfiguration Config
 @inject ToastService Toasts
 @inject UiContext Ui
+@inject IJSRuntime JS
 
 @if (_snapshot is null)
 {
@@ -131,9 +133,29 @@
         var number = i + 1;
         <div class="step">
             <div class="header-row">
-                <input class="step-name" aria-label="Step name" value="@step.DisplayName" @onchange="e => step.DisplayName = e.Value?.ToString() ?? step.DisplayName" />
+                <input class="step-name" aria-label="Step name" value="@step.DisplayName" @onchange="e => OnStepNameChanged(step, e.Value?.ToString())" />
                 <button class="link" @onclick="() => _form.Steps.Remove(step)">Remove step<span class="visually-hidden"> @step.DisplayName</span></button>
             </div>
+            @* The name used inside expressions: shown for anyone writing a custom one, kept in step with the display name. *@
+            <p class="alias-line muted">Name in expressions: <code data-alias>@step.Alias</code>
+                <button class="link" @onclick="() => CopyAlias(step)">Copy<span class="visually-hidden"> @step.Alias</span></button></p>
+            @if (step.PendingAlias is { } pending)
+            {
+                var uses = _form.References(step.Alias);
+                <ConfirmBox ConfirmText="Rename everywhere" CancelText="@($"Keep {step.Alias}")" OnConfirm="() => RenameNow(step, pending)" OnCancel="() => step.PendingAlias = null">
+                    <p>Also rename it to <code>@pending</code> in expressions?
+                        @(uses == 0 ? "Nothing in this endpoint uses it yet." : $"{uses} place{(uses == 1 ? "" : "s")} in this endpoint use{(uses == 1 ? "s" : "")} it, and they're all updated.")
+                        @if (IsLive)
+                        {
+                            <span>Apps calling the live endpoint will see the new name once you publish: in error details (<code>errors[].step</code>, <code>_errors[].step</code>)@(_form.Response.Count == 0 && _form.RawResponse is null ? ", and as a field name in the answer, because it has no response fields" : "").</span>
+                        }
+                    </p>
+                </ConfirmBox>
+            }
+            @if (step.RenameProblem is { } renameProblem)
+            {
+                <ul class="field-issues"><li class="problem"><span aria-hidden="true">✕</span><span class="visually-hidden">Problem: </span>@renameProblem</li></ul>
+            }
             <FieldIssues Problems="@StepProblems(step)" Warnings="@WarningsWhere(w => w == $"steps.{step.Alias}")" />
 
             <label>Calls
@@ -147,6 +169,8 @@
                     }
                 </select>
             </label>
+
+            <LoopPicker Step="step" Options="LoopsFor(step)" Changed="() => OnLoopChanged(step)" />
 
             @if (step.Bindings.Count > 0)
             {
@@ -181,6 +205,10 @@
                                     {
                                         <input @bind="binding.FixedValue" placeholder="@(binding.FixedIsJson ? "JSON value" : "Type the value")" aria-label="@($"Fixed value for {parts[1]}")" />
                                     }
+                                    @if (NeedsLoop(step, binding))
+                                    {
+                                        <p class="hint loop-first">Choose what to loop over first: under <strong>Run this step</strong>, pick <strong>Once for each item in a list</strong>.</p>
+                                    }
                                     <FieldIssues Problems="@BindingProblems(step, target)" />
                                 </td>
                             </tr>
@@ -200,15 +228,14 @@
             {
                 <div class="grid">
                     <label class="check"><input type="checkbox" @bind="step.Required" /> If this call fails, fail the whole endpoint</label>
-                    <label>Only run when <input @bind="step.When" placeholder="{{getCustomer.body.isPremium}} == true" /></label>
-                    <label>Run once for each item in <input @bind="step.ForEach" placeholder="{{getOrders.body.items[0:3].id}}" /></label>
-                    @if (!string.IsNullOrWhiteSpace(step.ForEach))
-                    {
-                        <label class="check"><input type="checkbox" @bind="step.Distinct" /> Call once per unique item</label>
-                    }
                     <label class="check"><input type="checkbox" @bind="step.CacheEnabled" /> Cache this call</label>
                     @if (step.CacheEnabled) { <label>Keep for (seconds) <input type="number" min="1" @bind="step.CacheTtlSeconds" /></label> }
                 </div>
+                @if (step.CacheEnabled && !step.CachePerCaller)
+                {
+                    <p class="issues warnings"><strong>This call's cached answer is shared by every caller</strong> (<code>perCaller: false</code> in the recipe). Only safe for data that is the same for everyone.</p>
+                }
+                <ConditionPicker Step="step" Fields="SourcesFor(step)" />
             }
         </div>
     }
@@ -643,8 +670,15 @@
     private IReadOnlyList<ValidationIssue> StepProblems(StepForm step)
     {
         var byValue = step.Bindings.Keys.SelectMany(t => BindingProblems(step, t)).ToHashSet();
-        return Issues.Where(i => (i.Where == $"steps.{step.Alias}" || i.Where.StartsWith($"steps.{step.Alias}.")) && !byValue.Contains(i)).ToList();
+        var hinted = step.Bindings.Values.Any(b => NeedsLoop(step, b)); // "Choose what to loop over first" says it next to the value
+        return Issues.Where(i => (i.Where == $"steps.{step.Alias}" || i.Where.StartsWith($"steps.{step.Alias}.")) && !byValue.Contains(i)
+            && !(hinted && i.Message.StartsWith("'item' can only be used", StringComparison.Ordinal))).ToList();
     }
+
+    /// <summary>"Current item" is chosen, but the step runs once: there is no current item yet.</summary>
+    private static bool NeedsLoop(StepForm step, BindingForm binding) =>
+        binding.Mode == BindingMode.FromSource && string.IsNullOrWhiteSpace(step.ForEach)
+        && (binding.Expression == "item" || binding.Expression?.StartsWith("item.", StringComparison.Ordinal) == true);
 
     private static string SectionOf(string where) => where switch
     {
@@ -687,6 +721,12 @@
 
     /// <summary>The draft if there is one, else the live version, else (a deleted endpoint) the last version in the history.</summary>
     private async Task LoadRecipe()
+    {
+        await LoadRecipeCore();
+        StepChoices.LoadAll(_form, LoopsFor, SourcesFor);
+    }
+
+    private async Task LoadRecipeCore()
     {
         await LoadHistory();
         // Live version and draft from the list, not the history: recipes added straight to config/recipes have no history.
@@ -754,6 +794,15 @@
         catch (Exception) { return []; }
     }
 
+    private IReadOnlyList<LoopOption> LoopsFor(StepForm step)
+    {
+        try { return new SourceCatalog().LoopOptions(_form.ToRecipe(), step.Alias, _snapshot!); }
+        catch (Exception) { return []; }
+    }
+
+    /// <summary>The gateway serves a version of this endpoint, so its step names are visible to apps (error details).</summary>
+    private bool IsLive => _liveVersion is not null;
+
     private string RunsAfter(StepForm step)
     {
         try
@@ -815,13 +864,15 @@
     {
         var endpoint = _snapshot!.FindEndpoint(step.Endpoint, out _);
         var fields = endpoint?.ResponseSchema?["properties"] is JsonObject props ? props.Select(p => p.Key).ToList() : [];
+        // A step that runs for each item gives one answer per call: take the field from every call (a list).
+        var body = string.IsNullOrWhiteSpace(step.ForEach) ? $"{step.Alias}.body" : $"{step.Alias}[*].body";
         if (fields.Count == 0)
         {
-            _form.Response.Add(new ResponseField { Name = step.Alias, Expression = $"{step.Alias}.body" });
+            _form.Response.Add(new ResponseField { Name = step.Alias, Expression = body });
             return;
         }
         foreach (var f in fields.Where(f => !_form.Response.Any(r => r.Name == f)))
-            _form.Response.Add(new ResponseField { Name = f, Expression = $"{step.Alias}.body.{f}" });
+            _form.Response.Add(new ResponseField { Name = f, Expression = $"{body}.{f}" });
     }
 
     private void OnEndpointChanged(StepForm step, string? reference)
@@ -842,6 +893,63 @@
             {
                 Mode = BindingMode.FromSource, Expression = suggestion.Expression, Suggested = true, Reason = suggestion.Reason
             };
+    }
+
+    /// <summary>
+    /// A new display name. While nothing uses the step (and apps can't see it yet), its name in expressions follows along
+    /// silently. Otherwise ask first: "Also rename to ordersFromCrm? 3 places use it."
+    /// </summary>
+    private void OnStepNameChanged(StepForm step, string? name)
+    {
+        name = name?.Trim();
+        if (string.IsNullOrEmpty(name)) return; // an empty name would leave the step unnamed on the screen
+        step.DisplayName = name;
+        step.RenameProblem = null;
+        step.PendingAlias = null;
+
+        var wanted = _form.NewAlias(name, except: step);
+        if (wanted == step.Alias) return;
+        if (!IsLive && _form.References(step.Alias) == 0) { RenameNow(step, wanted); return; }
+        step.PendingAlias = wanted;
+    }
+
+    private void RenameNow(StepForm step, string alias)
+    {
+        var old = step.Alias;
+        step.PendingAlias = null;
+        step.RenameProblem = _form.RenameStep(old, alias);
+        _validation = null; // check again with the new name
+    }
+
+    private async Task CopyAlias(StepForm step)
+    {
+        // Only the clipboard API, no script of our own, so a Content-Security-Policy on the admin app doesn't break it.
+        try
+        {
+            await JS.InvokeVoidAsync("navigator.clipboard.writeText", step.Alias);
+            Toasts.Success($"Copied {step.Alias}.");
+        }
+        catch (JSException) { Toasts.Error("Couldn't copy. Select the name and copy it instead."); }
+    }
+
+    /// <summary>
+    /// After the loop changes: values that were only suggested (or empty) are suggested again, so "Current item" appears for a
+    /// matching parameter. Values someone picked stay as they are.
+    /// </summary>
+    private void OnLoopChanged(StepForm step)
+    {
+        foreach (var binding in step.Bindings.Values.Where(b => b.Suggested && b.Expression is not null && (b.Expression == "item" || b.Expression.StartsWith("item."))))
+        {
+            binding.Mode = BindingMode.None; binding.Suggested = false; binding.Expression = null; binding.Reason = null;
+        }
+
+        IReadOnlyList<BindingSuggestion> suggestions;
+        try { suggestions = AutoBinder.Suggest(_form.ToRecipe(), step.Alias, _snapshot!); }
+        catch (Exception ex) when (ex is InvalidOperationException or FormatException) { return; }
+
+        foreach (var s in suggestions)
+            if (step.Bindings.TryGetValue(s.Target, out var current) && (current.Mode == BindingMode.None || current.Suggested))
+                step.Bindings[s.Target] = new BindingForm { Mode = BindingMode.FromSource, Expression = s.Expression, Suggested = true, Reason = s.Reason };
     }
 
     private static string SelectValue(BindingForm b) => b.Mode switch

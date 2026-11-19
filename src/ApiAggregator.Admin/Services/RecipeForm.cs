@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using ApiAggregator.Engine.Authoring;
 using ApiAggregator.Engine.Expressions;
 using ApiAggregator.Engine.Model;
 
@@ -155,17 +156,68 @@ public sealed class RecipeForm
         return candidate;
     }
 
-    /// <summary>Turns "Get customer" into a short unique alias such as "getCustomer".</summary>
-    public string NewAlias(string displayName)
+    /// <summary>Turns "Get customer" into a short unique alias such as "getCustomer" (the rule is the engine's, RecipeRefactor.AliasFor).</summary>
+    public string NewAlias(string displayName, StepForm? except = null) =>
+        RecipeRefactor.AliasFor(displayName, Steps.Where(s => s != except).Select(s => s.Alias));
+
+    /// <summary>How many places use a step's result (0 when the form can't be read as a recipe yet).</summary>
+    public int References(string alias)
     {
-        var words = displayName.Split(' ', StringSplitOptions.RemoveEmptyEntries)
-            .Select(w => new string(w.Where(char.IsLetterOrDigit).ToArray())).Where(w => w.Length > 0).ToArray();
-        var alias = words.Length == 0 ? "step" : words[0].ToLowerInvariant() + string.Concat(words.Skip(1).Select(w => char.ToUpperInvariant(w[0]) + w[1..]));
-        if (!char.IsLetter(alias[0])) alias = "s" + alias;
-        alias = alias.Length > 24 ? alias[..24] : alias;
-        var candidate = alias;
-        for (var n = 2; Steps.Any(s => s.Alias == candidate); n++) candidate = $"{alias}{n}";
-        return candidate;
+        try { return RecipeRefactor.References(ToRecipe(), alias); }
+        catch (Exception ex) when (ex is InvalidOperationException or FormatException) { return 0; }
+    }
+
+    /// <summary>
+    /// Renames a step and every place that uses it. The engine decides whether the new name is allowed and what counts
+    /// as a use (RecipeRefactor.RenameStep); the same rewrite is applied here to the form, so what's on the screen
+    /// (test values, "suggested" tags, picker choices) stays as it is. Returns a plain-English problem, or null.
+    /// </summary>
+    public string? RenameStep(string oldAlias, string newAlias)
+    {
+        newAlias = newAlias.Trim();
+        RenameResult check;
+        try { check = RecipeRefactor.RenameStep(ToRecipe(), oldAlias, newAlias); }
+        catch (Exception ex) when (ex is InvalidOperationException or FormatException) { return $"Fix this first: {ex.Message}"; }
+        if (!check.Renamed) return check.Problem;
+        if (oldAlias == newAlias) return null;
+
+        string Path(string? p) => string.IsNullOrEmpty(p) ? p ?? "" : RecipeRefactor.RewriteRoot(p, oldAlias, newAlias);
+        string? Text(string? t) => string.IsNullOrEmpty(t) ? t : RecipeRefactor.RewriteTemplate(t, oldAlias, newAlias);
+
+        foreach (var step in Steps)
+        {
+            if (step.Alias == oldAlias) step.Alias = newAlias;
+            step.When = Text(step.When);
+            step.ForEach = Text(step.ForEach);
+            if (!string.IsNullOrEmpty(step.ConditionField)) step.ConditionField = Path(step.ConditionField);
+            foreach (var binding in step.Bindings.Values)
+            {
+                if (!string.IsNullOrEmpty(binding.Expression)) binding.Expression = Path(binding.Expression);
+                if (binding.FixedValue is not { } fixedValue || !fixedValue.Contains("{{", StringComparison.Ordinal)) continue;
+                binding.FixedValue = binding.FixedIsJson
+                    ? RecipeRefactor.RewriteTemplate(JsonNode.Parse(fixedValue), oldAlias, newAlias)?.ToJsonString() ?? fixedValue
+                    : Text(fixedValue);
+            }
+        }
+
+        foreach (var field in Response)
+        {
+            if (!string.IsNullOrEmpty(field.Expression)) field.Expression = Path(field.Expression);
+            if (field.Raw is not null) field.Raw = RecipeRefactor.RewriteTemplate(field.Raw, oldAlias, newAlias);
+        }
+        if (RawResponse is not null) RawResponse = RecipeRefactor.RewriteTemplate(RawResponse, oldAlias, newAlias);
+
+        foreach (var combine in Combines)
+            foreach (var source in combine.Sources)
+            {
+                var before = source.From;
+                source.From = Path(source.From);
+                // A list without its own name is called after its step: the "choose per field" rows follow it.
+                if (string.IsNullOrWhiteSpace(source.Name) && before != source.From)
+                    foreach (var owner in combine.Owners.Where(o => o.Source == oldAlias)) owner.Source = newAlias;
+                if (!string.IsNullOrEmpty(source.Via.From)) source.Via.From = Path(source.Via.From);
+            }
+        return null;
     }
 
     private static string? Blank(string? s) => string.IsNullOrWhiteSpace(s) ? null : s.Trim();
@@ -212,6 +264,17 @@ public sealed class StepForm
     public bool CacheEnabled { get; set; }
     public int CacheTtlSeconds { get; set; } = 30;
     public bool ShowAdvanced { get; set; }
+
+    // ---- picker state (screen only; ForEach and When above are what is saved)
+    public LoopMode LoopMode { get; set; }
+    public ConditionMode ConditionMode { get; set; }
+    public string? ConditionField { get; set; }
+    public ConditionOp ConditionOp { get; set; } = ConditionOp.Is;
+    public string? ConditionValue { get; set; }
+
+    /// <summary>A rename waiting for "Also rename…?" (the new display name's alias), or a refusal to show.</summary>
+    public string? PendingAlias { get; set; }
+    public string? RenameProblem { get; set; }
 
     /// <summary>Key = target, e.g. "path.customerId" or "header.X-Customer-Id".</summary>
     public Dictionary<string, BindingForm> Bindings { get; } = new(StringComparer.OrdinalIgnoreCase);

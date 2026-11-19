@@ -1,6 +1,7 @@
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
 using ApiAggregator.Engine.Config;
+using ApiAggregator.Engine.Expressions;
 using ApiAggregator.Engine.Model;
 
 namespace ApiAggregator.Engine.Authoring;
@@ -13,6 +14,9 @@ public sealed record BindingSuggestion(string Target, string Expression, string 
 /// the UI marks them "suggested" and the validator still checks everything.
 ///
 /// Rules, first match wins:
+///   0. In a step that runs for each item: the current item
+///        looping over orders[*].contactId          contactId   &lt;- item
+///        looping over orders[*] (whole orders)     contactId   &lt;- item.contactId
 ///   1. A caller input with the same name           customerId  &lt;- request.query.customerId
 ///   2. A field with the same name in an earlier step  accountNo   &lt;- getCustomer.body.accountNo
 ///   3. "&lt;thing&gt;Id" and an earlier step about &lt;thing&gt;s  X-Customer-Id &lt;- getCustomer.body.id
@@ -40,11 +44,19 @@ public static partial class AutoBinder
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToList();
 
+        var (loopField, itemFields, loopLabel) = Loop(recipe, step, config);
+
         var suggestions = new List<BindingSuggestion>();
         foreach (var target in targets)
         {
             var name = target.Split('.', 2)[1];
             var key = Normalize(name);
+
+            // 0. the current item of a for-each step
+            if (loopField is not null && Normalize(loopField) == key)
+            { suggestions.Add(new(target, "item", $"The current item ({loopLabel})")); continue; }
+            var itemField = itemFields.FirstOrDefault(f => Normalize(f) == key);
+            if (itemField is not null) { suggestions.Add(new(target, $"item.{itemField}", $"From the current item ({loopLabel})")); continue; }
 
             // 1. same-named caller input
             var input = recipe.Inputs.Keys.FirstOrDefault(k => Normalize(k.Split('.', 2)[1]) == key);
@@ -73,6 +85,24 @@ public static partial class AutoBinder
     }
 
     private static string Label(StepDef s) => s.DisplayName ?? s.Alias;
+
+    /// <summary>
+    /// What a for-each step loops over: one field of each item ("contactId" in orders[*].contactId), or whole items
+    /// (orders[*], whose fields are then listed). The label is the loop picker's words, e.g. "each order's contactId".
+    /// </summary>
+    private static (string? Field, IReadOnlyList<string> ItemFields, string Label) Loop(Recipe recipe, StepDef step, ConfigSnapshot config)
+    {
+        if (SourceCatalog.LoopPath(step) is not { } path || path.TransformCalls.Count > 0) return (null, [], "");
+        var segments = path.Segments;
+        if (!segments.Any(s => s.Kind == ValuePath.SegmentKind.Wildcard)) return (null, [], "");
+
+        var option = new SourceCatalog().LoopOptions(recipe, step.Alias, config).FirstOrDefault(o => o.Expression == path.Text);
+        var label = option?.Label.Split(" → ", 2) is [_, var words] ? words : "each item";
+
+        if (segments[^1].Kind == ValuePath.SegmentKind.Property) return (segments[^1].Name, [], label);
+        if (segments[^1].Kind != ValuePath.SegmentKind.Wildcard) return (null, [], "");
+        return (null, TopFields(SourceCatalog.SchemaAt(recipe, path, config)).ToList(), label);
+    }
 
     /// <summary>"X-Customer-Id", "customer_id", "customerId" all become "customerid".</summary>
     public static string Normalize(string s)

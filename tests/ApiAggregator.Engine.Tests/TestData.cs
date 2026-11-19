@@ -46,6 +46,48 @@ internal static class TestData
         Steps = steps.ToList()
     };
 
+    /// <summary>
+    /// A CRM like the sample service F: listContacts (contacts[]), listOrders (orders[] with id, contactId, total)
+    /// and getContactNotes (/contacts/{contactId}/notes).
+    /// </summary>
+    public static ConfigSnapshot CrmSnapshot() => new(
+    [
+        new ApiService
+        {
+            Id = "crm", Name = "CRM", BaseUrl = "http://crm.test",
+            Endpoints =
+            [
+                new ApiEndpoint { Id = "listContacts", Path = "/contacts", ResponseSchema = JsonNode.Parse("""
+                    { "type": "object", "properties": { "contacts": { "type": "array", "items": { "type": "object",
+                      "properties": { "id": { "type": "string" }, "name": { "type": "string" } } } } } }
+                    """) },
+                new ApiEndpoint { Id = "listOrders", Path = "/orders", ResponseSchema = JsonNode.Parse("""
+                    { "type": "object", "properties": { "orders": { "type": "array", "items": { "type": "object",
+                      "properties": { "id": { "type": "string" }, "contactId": { "type": "string" }, "total": { "type": "number" } } } } } }
+                    """) },
+                new ApiEndpoint { Id = "getContactNotes", Path = "/contacts/{contactId}/notes" }
+            ]
+        }
+    ], [], [], "v1");
+
+    /// <summary>Contacts, orders, and notes for each order's contact (the shape of the sample contacts-unique).</summary>
+    public static Recipe CrmRecipe(string? notesForEach = "{{orders.body.orders[*].contactId}}", string notesFrom = "item") => new()
+    {
+        Id = "crm-notes",
+        Route = "contacts/with-orders",
+        RequireAuthentication = false,
+        Steps =
+        [
+            new StepDef { Alias = "crm", DisplayName = "Contacts from CRM", Endpoint = "crm/listContacts" },
+            new StepDef { Alias = "orders", DisplayName = "Orders from CRM", Endpoint = "crm/listOrders" },
+            new StepDef
+            {
+                Alias = "notes", DisplayName = "Notes", Endpoint = "crm/getContactNotes", ForEach = notesForEach,
+                Bind = [new BindingDef { From = notesFrom, To = "path.contactId" }]
+            }
+        ]
+    };
+
     /// <summary>Services A (customers), B (orders), C (recommendations), like the samples.</summary>
     public static ConfigSnapshot Snapshot(params Recipe[] recipes) => SnapshotWithAuth(null, null, recipes);
 

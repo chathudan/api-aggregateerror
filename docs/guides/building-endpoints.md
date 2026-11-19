@@ -265,30 +265,22 @@ What apps should do with each code is in [For app developers](for-app-developers
 
 ## Conditions: only run when…
 
-**Only run when** (`when`) skips a step unless a value is true or equal to something:
+**Only run when** is under a step's **Advanced**. It skips the step unless a value from the caller or an
+earlier step is what you say. Pick it in three parts:
 
-| Condition | Runs when |
+**Only run when** [ value ▾ ] [ **is** / **is not** / **has a value** ▾ ] [ text ]
+
+![The Only run when picker of the order-lines step: Get customer → isPremium, is, true](../images/endpoint-condition-picker.png)
+
+| You pick | Runs when |
 |---|---|
-| `{{a.body.isPremium}}` | `isPremium` is true |
-| `{{a.body.isPremium}} == true` | the same |
-| `{{a.body.status}} == active` | `status` is `active` |
-| `{{a.body.status}} != closed` | `status` is anything but `closed` |
+| `Get customer → isPremium` **has a value** | `isPremium` is there and isn't empty, `false` or `0` |
+| `Get customer → isPremium` **is** `true` | `isPremium` is `true` |
+| `Get customer → status` **is** `active` | `status` is `active` (upper or lower case doesn't matter) |
+| `Get customer → status` **is not** `closed` | `status` is anything but `closed` |
 
-`customer-overview` gets order lines only for premium customers:
-
-```json
-{
-  "alias": "lines",
-  "endpoint": "service-b/getOrderLines",
-  "required": false,
-  "when": "{{a.body.isPremium}} == true",
-  "forEach": "{{b.body.items[0:3].id}}",
-  "maxConcurrency": 3,
-  "bind": [ { "from": "item", "to": "path.orderId" } ]
-}
-```
-
-`C-20001` isn't premium, so the step is skipped. That's not an error:
+A skipped step isn't an error. `customer-overview` gets order lines only for premium customers, and
+`C-20001` isn't premium:
 
 <!-- check: run customer-overview --route id=C-20001 -->
 ```text
@@ -298,19 +290,83 @@ Succeeded c          200      2 ms  calls=1  GET http://localhost:5100/c/recomme
 Skipped   lines      -        0 ms  calls=0    Condition not met.
 ```
 
+**Custom condition…** is for anything the picker can't say, such as comparing two values. You type the
+condition in the recipe's own form, using the step's **name in expressions** (see
+[Renaming a step](#renaming-a-step)):
+
+| Custom condition | Runs when |
+|---|---|
+| `{{a.body.isPremium}}` | `isPremium` has a value (the same as **has a value**) |
+| `{{a.body.isPremium}} == true` | `isPremium` is `true` (the same as **is**) |
+| `{{a.body.status}} != closed` | `status` isn't `closed` (the same as **is not**) |
+
+Saved conditions open in the picker when it can show them, and in **Custom condition…** with their text
+kept otherwise.
+
 ## Run for each item
 
-**Run once for each item in** (`forEach`) calls a step once per item in a list. The same `lines` step
-calls `GET /orders/{orderId}/lines` for each of the first three orders, with `item` as the order id.
-`C-10042` is premium, so it runs: `calls=3`.
+A step can call its service **once for each item in a list** from an earlier step, for example the notes
+of each contact who has an order. Under the step's name, choose **Run this step: Once for each item in a
+list**, then pick the list. The dropdown lists, in plain words, every list in the earlier steps' answers
+and every field inside one:
+
+| You pick | The step runs once for each… |
+|---|---|
+| `Orders from CRM → each order` | order (a whole record) |
+| `Orders from CRM → each order's contactId` | `contactId` of an order |
+
+Then choose **Current item** for the value the service needs. When a value has the same name as the
+looped field, it's filled in for you and marked *suggested*: `contactId` ← **Current item**. When the loop
+is over whole records (**each order**), pick **Current item → contactId** instead. If you choose **Current
+item** before picking a list, the wizard says **Choose what to loop over first**.
+
+### Worked example: notes for each contact with an order
+
+`contacts-unique` ([recipe](../../samples/config/recipes/contacts-unique.json)) has three steps, all on
+the CRM:
+
+1. **Contacts from CRM** calls `GET /contacts`.
+2. **Orders from CRM** calls `GET /orders`. There are 6 orders.
+3. **Notes for each contact with an order** calls `GET /contacts/{contactId}/notes`, with **Run this
+   step: Once for each item in a list** → `Orders from CRM → each order's contactId`, **Call once per
+   unique item** ticked, and `contactId` ← **Current item**.
+
+![The notes step: Run this step once for each item in Orders from CRM → each order's contactId, Call once per unique item ticked, and contactId from Current item](../images/endpoint-loop-picker.png)
+
+The 6 orders belong to 3 contacts, so with **Call once per unique item** the step calls the service
+**3** times, not 6:
+
+<!-- check: run contacts-unique -->
+```text
+Succeeded notes      200      3 ms  calls=3  GET http://localhost:5100/f/contacts/c-101/notes
+```
+
+<!-- check: run contacts-unique partial -->
+```json
+{ "orderCount": 6, "notesCalls": 3 }
+```
+
+In step 4, **Add fields from Notes for each contact with an order** takes each field *from every call*:
+the step's result is a list with one answer per call.
+
+### Good to know
+
+- **Custom expression…** keeps a text box for lists the dropdown doesn't offer. For example,
+  `customer-overview` fetches order lines for **only the first three** orders:
+  `{{b.body.items[0:3].id}}`. Saved loops open in the dropdown when they match an option, and in
+  **Custom expression…** otherwise.
+- At most 4 calls run at the same time (`maxConcurrency` in the recipe; `contacts-unique` uses 3), and at
+  most 100 items per step.
+- Repeated items are called **once**. Untick **Call once per unique item** only if the same call really
+  must be repeated. [Combine lists](combine-lists.md#duplicates-inside-one-list) says more about duplicates.
+
+`customer-overview`'s `lines` step runs for each of the first three orders of a premium customer:
+`calls=3`. Its response uses `"orderLines": "{{lines[*].body}}"`:
 
 <!-- check: run customer-overview --route id=C-10042 -->
 ```text
 Succeeded lines      200      4 ms  calls=3  GET http://localhost:5100/b/orders/O-042-1/lines
 ```
-
-The step's result is a list with one `{ status, headers, body }` per call. The response uses
-`"orderLines": "{{lines[*].body}}"`:
 
 <!-- check: run customer-overview --route id=C-10042 partial -->
 ```json
@@ -327,10 +383,26 @@ The step's result is a list with one `{ status, headers, body }` per call. The r
 }
 ```
 
-- At most `maxConcurrency` calls run at the same time (4 if not set), and at most 100 items per step.
-- Repeated items are called **once**: five orders for the same customer make one customer call. Untick
-  **Call once per unique item** only if the same call really must be repeated.
-  [Combine lists](combine-lists.md#duplicates-inside-one-list) shows this with `contacts-unique`.
+## Renaming a step
+
+Every step has a **name in expressions**, shown small under its name, for example *Name in expressions:
+getOrders*, with a **Copy** button. The pickers use it for you. You only need it to write a **Custom**
+expression or condition.
+
+- While nothing uses the step, its name in expressions follows its display name: "Orders from CRM"
+  becomes `ordersFromCrm`. Nothing is asked.
+- Once something uses it, changing the display name asks **Also rename it to ordersFromCrm in
+  expressions? 3 places in this endpoint use it.** **Rename everywhere** updates every value, condition,
+  list, response field and combined list that uses it. **Keep getOrders** changes only the display name.
+- On a **live** endpoint it always asks, because apps see the name: in error details (`errors[].step`
+  and `_errors[].step`), and, when the endpoint has no response fields, as a field name in the answer.
+  Apps [should act on `code`, not `step`](for-app-developers.md#errors). Nothing changes for apps until
+  you publish.
+- A name that another step already has, or a reserved word (`request`, `item`, `index`, `ctx`,
+  `combine`), is refused with a message saying so.
+
+If an expression uses a name that isn't a step, **Things to fix** suggests the closest one: *'ordersFromCrm'
+isn't a step here. Did you mean 'getOrders' (Orders from CRM)?*
 
 ## Caching
 

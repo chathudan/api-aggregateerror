@@ -4,7 +4,7 @@
     <div id="@_id">@ChildContent</div>
     <div class="inline">
         <button class="button @(Danger ? "danger" : "primary")" disabled="@_busy" @onclick="Confirm">@ConfirmText</button>
-        <button class="link" disabled="@_busy" @onclick="OnCancel">Cancel</button>
+        <button class="link" disabled="@_busy" @onclick="OnCancel">@CancelText</button>
     </div>
 </div>
 
@@ -14,6 +14,7 @@
     [Parameter, EditorRequired] public EventCallback OnConfirm { get; set; }
     [Parameter] public EventCallback OnCancel { get; set; }
     [Parameter] public bool Danger { get; set; }
+    [Parameter] public string CancelText { get; set; } = "Cancel";
 
     private readonly string _id = "confirm-" + Guid.NewGuid().ToString("n")[..8];
     private ElementReference _box;

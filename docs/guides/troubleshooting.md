@@ -90,7 +90,7 @@ warning and doesn't block publishing.
 | '…' (path) is required by … but has no value. | Pick something in **Use value from** |
 | '…' (query / header) is required by … but has no value. | The same |
 | '…' uses request input '…', which isn't declared under Inputs. | Add that input in step 2 |
-| '…' refers to a step named '…' that doesn't exist. | The step was renamed or removed. Pick the value again |
+| '…' isn't a step here. Did you mean '…'? | A Custom expression uses a step's display name, or an old name. The message names the step it most likely means | Use the suggested name, or pick the value again from the list. To rename a step, change its name and choose **Rename everywhere** ([Renaming a step](building-endpoints.md#renaming-a-step)) |
 | A step can't use its own result. | Take the value from an earlier step or an input |
 | Steps depend on each other in a loop: … | Step A uses B and B uses A. Change one value to come from an earlier step or an input |
 | Header '…' can't be set here. Use the service's auth profile instead. | `Authorization`, `Cookie`, `Host` and similar are set by the sign-in |

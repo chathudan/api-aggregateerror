@@ -4,7 +4,7 @@
 
 | Technique | Where |
 |---|---|
-| Independent steps run in parallel; levels come from a plan that's cached per recipe version | `ExecutionPlanner`, `CompositionExecutor` |
+| Independent steps run in parallel; levels come from a plan that's cached per published recipe version (a draft under **Try it** is planned afresh each time, because it keeps its version number while it is edited) | `ExecutionPlanner`, `CompositionExecutor` |
 | Pooled, reused connections (`SocketsHttpHandler`, 5-minute connection lifetime) | `ServiceCollectionExtensions` |
 | `ResponseHeadersRead` and streaming reads with a byte cap | `CompositionExecutor.ReadBodyAsync` |
 | Parsed expressions cached; no reflection, no dynamic code | `ValuePath` |

@@ -47,6 +47,20 @@ public class ExecutorTests
     }
 
     [Fact]
+    public async Task Trying_a_draft_again_after_renaming_a_step_uses_the_new_names()
+    {
+        // A draft keeps its version number while it is edited, so "Try it" must not reuse the plan of the earlier try.
+        var (executor, _) = Create(AbcRecipe(), Healthy());
+        Assert.Equal(200, (await executor.ExecuteAsync(AbcRecipe(), Customer("C-1"), CallerContext.Anonymous(), ExecutionMode.AdminTest, default)).StatusCode);
+
+        var renamed = ApiAggregator.Engine.Authoring.RecipeRefactor.RenameStep(AbcRecipe(), "a", "customer").Recipe!;
+        var result = await executor.ExecuteAsync(renamed, Customer("C-1"), CallerContext.Anonymous(), ExecutionMode.AdminTest, default);
+
+        Assert.Equal(200, result.StatusCode);
+        Assert.Equal(["customer", "b", "c"], result.Trace.Select(t => t.Alias));
+    }
+
+    [Fact]
     public async Task Optional_failure_gives_partial_response()
     {
         var downstream = Healthy().On("c.test/api/recommendations", new { }, HttpStatusCode.InternalServerError);
