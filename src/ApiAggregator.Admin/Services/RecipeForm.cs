@@ -1,4 +1,6 @@
+using System.Text.Json;
 using System.Text.Json.Nodes;
+using ApiAggregator.Engine.Expressions;
 using ApiAggregator.Engine.Model;
 
 namespace ApiAggregator.Admin.Services;
@@ -11,16 +13,28 @@ public sealed class RecipeForm
 {
     public string Id { get; set; } = "";
     public string Name { get; set; } = "";
+
+    // ---- kept as loaded (the store sets them on save and publish), so a round trip changes nothing
+    public int Version { get; set; } = 1;
+    public RecipeStatus Status { get; set; } = RecipeStatus.Draft;
+
     public string Method { get; set; } = "GET";
     public string Route { get; set; } = "";
     public bool RequireAuthentication { get; set; } = true;
     public string? RequiredScope { get; set; }
     public bool CacheEnabled { get; set; }
     public int CacheTtlSeconds { get; set; } = 30;
+    public bool CachePerCaller { get; set; } = true;
     public int TimeoutMs { get; set; } = 10_000;
     public List<InputForm> Inputs { get; } = [];
     public List<StepForm> Steps { get; } = [];
     public List<ResponseField> Response { get; } = [];
+
+    /// <summary>A response that isn't a plain object of fields (a list, a single value): kept exactly as written.</summary>
+    public JsonNode? RawResponse { get; set; }
+
+    /// <summary>The response was written as an empty object, {}, rather than left out.</summary>
+    public bool EmptyResponseObject { get; set; }
 
     /// <summary>Lists merged by key (see CombineForm). Used in the response as combine.&lt;name&gt;.</summary>
     public List<CombineForm> Combines { get; } = [];
@@ -29,31 +43,44 @@ public sealed class RecipeForm
     {
         var form = new RecipeForm
         {
-            Id = r.Id, Name = r.Name, Method = r.Method, Route = r.Route, RequireAuthentication = r.RequireAuthentication,
-            RequiredScope = r.RequiredScope, CacheEnabled = r.Cache.Enabled, CacheTtlSeconds = r.Cache.TtlSeconds, TimeoutMs = r.TimeoutMs
+            Id = r.Id, Name = r.Name, Version = r.Version, Status = r.Status, Method = r.Method, Route = r.Route,
+            RequireAuthentication = r.RequireAuthentication, RequiredScope = r.RequiredScope,
+            CacheEnabled = r.Cache.Enabled, CacheTtlSeconds = r.Cache.TtlSeconds, CachePerCaller = r.Cache.PerCaller, TimeoutMs = r.TimeoutMs
         };
         foreach (var (name, def) in r.Combine) form.Combines.Add(CombineForm.From(name, def));
         foreach (var (key, def) in r.Inputs)
         {
             var parts = key.Split('.', 2);
-            form.Inputs.Add(new InputForm { Source = parts[0], Name = parts[1], Type = def.Type, Required = def.Required, Default = def.Default, Pattern = def.Pattern });
+            form.Inputs.Add(new InputForm
+            {
+                Source = parts[0], Name = parts.Length > 1 ? parts[1] : "", Type = def.Type, Required = def.Required, Default = def.Default, Pattern = def.Pattern,
+                Enum = def.Enum, Min = def.Min, Max = def.Max, MaxLength = def.MaxLength
+            });
         }
         foreach (var s in r.Steps)
         {
             var step = new StepForm
             {
-                Alias = s.Alias, DisplayName = s.DisplayName ?? s.Alias, Endpoint = s.Endpoint, Required = s.Required,
-                When = s.When, ForEach = s.ForEach, Distinct = s.Distinct, CacheEnabled = s.Cache.Enabled, CacheTtlSeconds = s.Cache.TtlSeconds
+                Alias = s.Alias, DisplayName = s.DisplayName ?? s.Alias, NoDisplayName = s.DisplayName is null, Endpoint = s.Endpoint,
+                Required = s.Required, When = s.When, ForEach = s.ForEach, Distinct = s.Distinct, MaxConcurrency = s.MaxConcurrency,
+                TimeoutMs = s.TimeoutMs, CacheEnabled = s.Cache.Enabled, CacheTtlSeconds = s.Cache.TtlSeconds, CachePerCaller = s.Cache.PerCaller
             };
             foreach (var b in s.Bind)
-                step.Bindings[b.To] = b.From is not null
-                    ? new BindingForm { Mode = BindingMode.FromSource, Expression = b.From }
-                    : new BindingForm { Mode = BindingMode.FixedValue, FixedValue = b.Template?.ToString() };
+                step.Bindings[b.To] = BindingForm.From(b);
             form.Steps.Add(step);
         }
-        if (r.Response is JsonObject response)
-            foreach (var (name, value) in response)
-                form.Response.Add(new ResponseField { Name = name, Expression = Unwrap(value?.ToString()) });
+        switch (r.Response)
+        {
+            case JsonObject { Count: 0 }:
+                form.EmptyResponseObject = true;
+                break;
+            case JsonObject response:
+                foreach (var (name, value) in response) form.Response.Add(ResponseField.From(name, value));
+                break;
+            case not null:
+                form.RawResponse = r.Response.DeepClone();
+                break;
+        }
         return form;
     }
 
@@ -61,38 +88,51 @@ public sealed class RecipeForm
     {
         Id = Id.Trim(),
         Name = Name.Trim(),
+        Version = Version,
+        Status = Status,
         Method = Method,
         Route = Route.Trim().Trim('/'),
         RequireAuthentication = RequireAuthentication,
         RequiredScope = string.IsNullOrWhiteSpace(RequiredScope) ? null : RequiredScope.Trim(),
         TimeoutMs = TimeoutMs,
         Combine = ToCombineDictionary(),
-        Cache = new CacheSettings { Enabled = CacheEnabled, TtlSeconds = CacheTtlSeconds },
+        Cache = new CacheSettings { Enabled = CacheEnabled, TtlSeconds = CacheTtlSeconds, PerCaller = CachePerCaller },
         Inputs = Inputs.Where(i => !string.IsNullOrWhiteSpace(i.Name)).ToDictionary(
             i => $"{i.Source}.{i.Name.Trim()}",
-            i => new InputDef { Type = i.Type, Required = i.Required, Default = Blank(i.Default), Pattern = Blank(i.Pattern) },
+            i => new InputDef
+            {
+                Type = i.Type, Required = i.Required, Default = Blank(i.Default), Pattern = Blank(i.Pattern),
+                Enum = i.Enum, Min = i.Min, Max = i.Max, MaxLength = i.MaxLength
+            },
             StringComparer.OrdinalIgnoreCase),
         Steps = Steps.Select(s => new StepDef
         {
             Alias = s.Alias,
-            DisplayName = s.DisplayName,
+            // A step loaded without a display name keeps none until someone gives it one.
+            DisplayName = s.NoDisplayName && s.DisplayName == s.Alias ? null : s.DisplayName,
             Endpoint = s.Endpoint,
             Required = s.Required,
             When = Blank(s.When),
             ForEach = Blank(s.ForEach),
             Distinct = s.Distinct,
-            Cache = new CacheSettings { Enabled = s.CacheEnabled, TtlSeconds = s.CacheTtlSeconds },
+            MaxConcurrency = s.MaxConcurrency,
+            TimeoutMs = s.TimeoutMs,
+            Cache = new CacheSettings { Enabled = s.CacheEnabled, TtlSeconds = s.CacheTtlSeconds, PerCaller = s.CachePerCaller },
             Bind = s.Bindings
                 .Where(kv => kv.Value.Mode != BindingMode.None)
-                .Select(kv => kv.Value.Mode == BindingMode.FromSource
-                    ? new BindingDef { To = kv.Key, From = kv.Value.Expression }
-                    : new BindingDef { To = kv.Key, Template = JsonValue.Create(kv.Value.FixedValue ?? "") })
+                .Select(kv => kv.Value.ToDef(kv.Key))
                 .ToList()
         }).ToList(),
-        Response = Response.Count == 0 ? null : new JsonObject(Response
-            .Where(f => !string.IsNullOrWhiteSpace(f.Name) && !string.IsNullOrWhiteSpace(f.Expression))
-            .Select(f => KeyValuePair.Create(f.Name.Trim(), (JsonNode?)JsonValue.Create($"{{{{{f.Expression}}}}}"))))
+        Response = ToResponse()
     };
+
+    private JsonNode? ToResponse()
+    {
+        if (RawResponse is not null) return RawResponse.DeepClone();
+        var fields = Response.Where(f => !string.IsNullOrWhiteSpace(f.Name) && (f.Raw is not null || !string.IsNullOrWhiteSpace(f.Expression))).ToList();
+        if (fields.Count == 0) return EmptyResponseObject ? new JsonObject() : null;
+        return new JsonObject(fields.Select(f => KeyValuePair.Create(f.Name.Trim(), f.ToNode())));
+    }
 
     private Dictionary<string, CombineDef> ToCombineDictionary()
     {
@@ -129,9 +169,6 @@ public sealed class RecipeForm
     }
 
     private static string? Blank(string? s) => string.IsNullOrWhiteSpace(s) ? null : s.Trim();
-
-    private static string Unwrap(string? template) =>
-        template is { Length: > 4 } t && t.StartsWith("{{") && t.EndsWith("}}") ? t[2..^2].Trim() : template ?? "";
 }
 
 public sealed class InputForm
@@ -142,6 +179,13 @@ public sealed class InputForm
     public bool Required { get; set; }
     public string? Default { get; set; }
     public string? Pattern { get; set; }
+
+    // ---- not shown in the wizard; kept as loaded
+    public string[]? Enum { get; set; }
+    public double? Min { get; set; }
+    public double? Max { get; set; }
+    public int MaxLength { get; set; } = 200;
+
     public string? TestValue { get; set; }
 }
 
@@ -149,6 +193,9 @@ public sealed class StepForm
 {
     public string Alias { get; set; } = "";
     public string DisplayName { get; set; } = "";
+
+    /// <summary>The step was loaded without a display name (the wizard shows its alias instead).</summary>
+    public bool NoDisplayName { get; set; }
     public string Endpoint { get; set; } = "";
     public bool Required { get; set; } = true;
     public string? When { get; set; }
@@ -156,6 +203,12 @@ public sealed class StepForm
 
     /// <summary>Only meaningful with ForEach: call each unique item once.</summary>
     public bool Distinct { get; set; } = true;
+
+    // ---- not shown in the wizard; kept as loaded
+    public int MaxConcurrency { get; set; } = 4;
+    public int? TimeoutMs { get; set; }
+    public bool CachePerCaller { get; set; } = true;
+
     public bool CacheEnabled { get; set; }
     public int CacheTtlSeconds { get; set; } = 30;
     public bool ShowAdvanced { get; set; }
@@ -175,10 +228,49 @@ public sealed class BindingForm
     public string? Reason { get; set; }
     public string? Expression { get; set; }
     public string? FixedValue { get; set; }
+
+    /// <summary>The fixed value is JSON (an object, list, number...), not text: FixedValue holds its JSON.</summary>
+    public bool FixedIsJson { get; set; }
+
+    /// <summary>Sent when the value turns out empty. Not shown in the wizard; kept as loaded.</summary>
+    public string? Default { get; set; }
+
+    public static BindingForm From(BindingDef b) => b switch
+    {
+        { From: not null } => new BindingForm { Mode = BindingMode.FromSource, Expression = b.From, Default = b.Default },
+        { Template: JsonValue v } when v.GetValueKind() == JsonValueKind.String =>
+            new BindingForm { Mode = BindingMode.FixedValue, FixedValue = v.GetValue<string>(), Default = b.Default },
+        _ => new BindingForm { Mode = BindingMode.FixedValue, FixedValue = b.Template?.ToJsonString(), FixedIsJson = b.Template is not null, Default = b.Default }
+    };
+
+    public BindingDef ToDef(string target) => Mode == BindingMode.FromSource
+        ? new BindingDef { To = target, From = Expression, Default = Default }
+        : new BindingDef { To = target, Template = FixedTemplate(target), Default = Default };
+
+    private JsonNode? FixedTemplate(string target)
+    {
+        if (!FixedIsJson) return JsonValue.Create(FixedValue ?? "");
+        try { return JsonNode.Parse(FixedValue ?? "null"); }
+        catch (JsonException) { throw new FormatException($"The value for '{target}' isn't valid JSON. Check the brackets, quotes and commas."); }
+    }
 }
 
 public sealed class ResponseField
 {
     public string Name { get; set; } = "";
     public string Expression { get; set; } = "";
+
+    /// <summary>A value that isn't exactly one "{{ value }}" (text around it, a number, a nested object): kept as written.</summary>
+    public JsonNode? Raw { get; set; }
+
+    public static ResponseField From(string name, JsonNode? value)
+    {
+        // "{{a.body.name}}" is shown as a pick from the list; anything else is kept exactly as it was written.
+        if (value is JsonValue v && v.GetValueKind() == JsonValueKind.String && v.GetValue<string>() is var text
+            && Template.IsSingleExpression(text) && text == $"{{{{{text[2..^2].Trim()}}}}}")
+            return new ResponseField { Name = name, Expression = text[2..^2].Trim() };
+        return new ResponseField { Name = name, Raw = value?.DeepClone() ?? JsonValue.Create((string?)null) };
+    }
+
+    public JsonNode? ToNode() => Raw is not null ? Raw.DeepClone() : JsonValue.Create($"{{{{{Expression.Trim()}}}}}");
 }

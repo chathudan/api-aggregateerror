@@ -69,7 +69,12 @@
             <label>Keep for (seconds) <input type="number" min="1" max="86400" @bind="_form.CacheTtlSeconds" /></label>
         }
     </div>
-    @if (_form.CacheEnabled) { <p class="hint">Each caller gets their own cached copy, so nobody can see another person's data.</p> }
+    @if (_form.CacheEnabled && _form.CachePerCaller) { <p class="hint">Each caller gets their own cached copy, so nobody can see another person's data.</p> }
+    @if (_form.CacheEnabled && !_form.CachePerCaller)
+    {
+        @* Set in the recipe file (the wizard doesn't offer it). Kept as it is, but never hidden. *@
+        <p class="issues warnings"><strong>One cached copy is shared by every caller.</strong> This recipe says <code>perCaller: false</code>. That's only safe for data that is the same for everyone, never for customer or patient data.</p>
+    }
 </section>
 
 @* ------------------------------------------------------------------ 2. Inputs *@
@@ -174,7 +179,7 @@
                                     </select>
                                     @if (binding.Mode == BindingMode.FixedValue)
                                     {
-                                        <input @bind="binding.FixedValue" placeholder="Type the value" aria-label="@($"Fixed value for {parts[1]}")" />
+                                        <input @bind="binding.FixedValue" placeholder="@(binding.FixedIsJson ? "JSON value" : "Type the value")" aria-label="@($"Fixed value for {parts[1]}")" />
                                     }
                                     <FieldIssues Problems="@BindingProblems(step, target)" />
                                 </td>
@@ -258,7 +263,14 @@
     <h3>Response fields</h3>
     <FieldIssues Problems="@ProblemsWhere(w => w == "response")" Warnings="@WarningsWhere(w => w == "response")" />
     <p class="hint">Choose what the caller gets back. With no fields, each step's full response (and each combined list) is returned under its name. Once you add a field, only the fields listed here are returned.</p>
-    @{ var allSources = SourcesFor(null); }
+    @if (_form.RawResponse is not null)
+    {
+        <p class="hint">This endpoint's response is written by hand as <code>@_form.RawResponse.ToJsonString()</code>, so it's kept exactly as it is.
+            <button class="link" @onclick="() => _form.RawResponse = null">Replace it with fields</button></p>
+    }
+    else
+    {
+    var allSources = SourcesFor(null);
     <table class="list">
         <thead><tr><th>Field name</th><th>Value</th><th></th></tr></thead>
         <tbody>
@@ -267,6 +279,14 @@
                 <tr>
                     <td><input @bind="field.Name" aria-label="Field name" /></td>
                     <td>
+                        @if (field.Raw is not null)
+                        {
+                            @* Text around a value, a number or a nested object: kept exactly as written in the recipe. *@
+                            <code>@field.Raw.ToJsonString()</code>
+                            <button class="link" @onclick="() => field.Raw = null">Pick a value instead<span class="visually-hidden"> for @field.Name</span></button>
+                        }
+                        else
+                        {
                         <select @bind="field.Expression" aria-label="@($"Value of {field.Name}")">
                             <option value="">Pick a value…</option>
                             @foreach (var o in allSources) { <option value="@o.Expression">@o.Label</option> }
@@ -275,6 +295,7 @@
                                 <option value="@field.Expression">@field.Expression (not in the field list)</option>
                             }
                         </select>
+                        }
                     </td>
                     <td><button class="link" @onclick="() => _form.Response.Remove(field)">Remove</button></td>
                 </tr>
@@ -287,8 +308,9 @@
             <button class="button" @onclick="() => AddFieldsFrom(step)">Add fields from @step.DisplayName</button>
         }
         <button class="link" @onclick="() => _form.Response.Add(new ResponseField())">Add one field</button>
-        @if (_form.Response.Count > 0) { <button class="link" @onclick="() => _form.Response.Clear()">Clear (return everything)</button> }
+        @if (_form.Response.Count > 0) { <button class="link" @onclick="() => { _form.Response.Clear(); _form.EmptyResponseObject = false; }">Clear (return everything)</button> }
     </div>
+    }
 </section>
 
 @* ------------------------------------------------------------------ 5. Test and publish *@
