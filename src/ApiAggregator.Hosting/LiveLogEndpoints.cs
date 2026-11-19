@@ -8,7 +8,7 @@ using Microsoft.Extensions.Hosting;
 namespace ApiAggregator.Hosting;
 
 /// <summary>
-/// The endpoint behind the admin UI's Logs page, shared by the gateway and the admin API.
+/// The live-log endpoint of the gateway (read by the admin app's Logs page) and of the admin app (/admin/logs, for scripts).
 /// It only serves what the in-memory <see cref="LiveLogBuffer"/> holds: log lines that already exclude
 /// request values and secrets. It is protected by the authorization policy the host passes in.
 /// </summary>
@@ -52,7 +52,7 @@ public static class LiveLogEndpoints
     private static string FriendlyName(string applicationName) => applicationName switch
     {
         "ApiAggregator.Gateway" => "Gateway",
-        "ApiAggregator.Admin.Api" => "Admin API",
+        "ApiAggregator.Admin" => "Admin",
         _ => applicationName
     };
 }

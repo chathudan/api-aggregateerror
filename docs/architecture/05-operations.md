@@ -35,14 +35,19 @@ flowchart LR
     GW1 & GW2 --> KV[(Key Vault)]
     GW1 & GW2 --> PG[(PostgreSQL<br/>config store)]
     GW1 & GW2 -.optional.-> RD[(Redis<br/>shared cache)]
-    ADM[Admin API] --> PG
-    UI[Admin UI] --> ADM
+    SSO[Internal ingress<br/>SSO, staff network] --> ADM[Admin app<br/>pages + /admin/*]
+    ADM --> PG
+    ADM --> KV
     GW1 & GW2 --> SVC[Services A/B/C<br/>private network]
 ```
 
 - **Gateway:** stateless, so scale it horizontally (Azure Container Apps or AKS). Each pod has its
   own memory cache and credential cache.
-- **Admin API / UI:** low traffic, one replica, internal network only, behind SSO.
+- **Admin app** (pages and `/admin/*`, [ADR 0014](../adr/0014-one-admin-app.md)): low traffic, one replica.
+  It changes what the gateway serves, so it **must not share public ingress with the gateway**: give it internal
+  ingress only (a staff network or VPN), with SSO in front, in its own network zone where you can. Never route it
+  through the gateway's Front Door or WAF endpoint. Outside Development it needs OpenID Connect
+  (`Auth:Oidc:*`) and won't start without it.
 - **Config store:** the file store suits development and small single-node installs. For several
   gateway pods, use the PostgreSQL store from the roadmap. Until then, mount the same read-only
   config volume into every pod.

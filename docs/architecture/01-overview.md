@@ -40,8 +40,11 @@ flowchart LR
 
     subgraph Aggregator
         GW[Gateway<br/>ASP.NET Core<br/>/bff/*]
-        ADM[Admin API<br/>/admin/*]
-        UI[Admin UI<br/>Blazor]
+        subgraph ADMIN[Admin app :5300, internal only]
+            UI[Pages<br/>Blazor, cookie sign-in]
+            API[/admin/*<br/>bearer tokens only/]
+            SVC[[AdminService<br/>rules and roles]]
+        end
         ENG[[Engine library<br/>shared by all]]
         CFG[(Config store<br/>files today<br/>PostgreSQL later)]
         SEC[(Secrets<br/>Key Vault)]
@@ -54,11 +57,12 @@ flowchart LR
 
     WEB -- JWT --> GW
     MOB -- JWT --> GW
-    QA --> UI -- JWT --> ADM
+    QA -- cookie --> UI --> SVC
+    SCRIPT[Scripts / CI] -- JWT --> API --> SVC
     GW -.uses.-> ENG
-    ADM -.uses.-> ENG
+    SVC -.uses.-> ENG
     GW -- read published --> CFG
-    ADM -- read/write drafts, publish --> CFG
+    SVC -- read/write drafts, publish --> CFG
     GW --> SEC
     GW --> A & B & C
     WEB & MOB & QA -. sign in .-> IDP
@@ -68,9 +72,9 @@ flowchart LR
 |---|---|---|
 | **Engine** | Recipe model, expression language, planner, validator, executor, downstream auth, caching | `src/ApiAggregator.Engine` (no NuGet dependencies) |
 | **Gateway** | Serves **published** recipes under `/bff/*`; inbound JWT, scopes, rate limiting, resilience | `src/ApiAggregator.Gateway` |
-| **Admin API** | Services, auth profiles, OpenAPI import, drafts, test runs, publish and rollback | `src/ApiAggregator.Admin.Api` |
-| **Admin UI** | The wizard QA and technicians use | `src/ApiAggregator.Admin.UI` |
-| **Hosting** | Shared inbound-JWT setup for the two web hosts | `src/ApiAggregator.Hosting` |
+| **Admin app** | One process ([ADR 0014](../adr/0014-one-admin-app.md)): the pages QA and technicians use (cookie sign-in) and `/admin/*` for scripts (bearer tokens only) | `src/ApiAggregator.Admin` |
+| **Admin use cases** | `AdminService`: services, sign-ins, secrets, OpenAPI import, drafts, Try it, publish, history, roll back, delete. All rules and role checks; no HTTP or Blazor | `src/ApiAggregator.Admin.Application` |
+| **Hosting** | Shared inbound-JWT setup for the gateway and `/admin/*` | `src/ApiAggregator.Hosting` |
 | **CLI** | `aggregator validate` / `aggregator run` for QA and CI | `tools/ApiAggregator.Cli` |
 | **Mock services** | Services A/B/C with Basic, session and OAuth auth, for local work and demos | `samples/MockServices` |
 

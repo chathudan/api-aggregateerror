@@ -23,7 +23,7 @@ Reference: `docs/architecture/02-recipes.md`. Example: `samples/config/recipes/c
 8. **Validate:** `dotnet run --project tools/ApiAggregator.Cli -- validate --config samples/config` (or `--config config`), and fix every message.
 9. **Run:** start `samples/MockServices` (or point at a test environment), export `Secrets__*`, then
    `dotnet run --project tools/ApiAggregator.Cli -- run <id> --route id=... --repeat 2`. Check each step's trace line.
-10. New recipes start as `"status": "draft"` unless the user asks to publish. Publishing normally goes through the admin API, so it's recorded with the publisher's identity.
+10. New recipes start as `"status": "draft"` unless the user asks to publish. Publishing normally goes through the admin app (pages or /admin/*), so it's recorded with the publisher's identity.
 
 ## Common validator messages
 

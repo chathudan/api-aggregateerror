@@ -21,6 +21,10 @@ are already structured and free of values (ADR 0009), so showing them to authori
   correlation id, plus pause and clear. "Try it" links straight to its own correlation id.
 - Turn it off per process with `LiveLogs:Enabled = false`.
 
+> **Note (ADR 0014):** the admin API and UI are now one app. The Logs page reads the admin app's own lines straight
+> from its in-memory buffer, and only the gateway's over HTTP (`/_admin/logs`, with the signed-in person's token,
+> a dev token in Development, or `Gateway:LogsToken`). `/admin/logs` stays for scripts.
+
 ## Consequences
 - Instant feedback while building, and an easy way to follow one app request by its correlation id.
 - It shows **one process**. With several gateway pods, each pod has its own buffer, and the UI sees

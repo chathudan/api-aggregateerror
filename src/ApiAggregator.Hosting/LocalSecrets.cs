@@ -10,7 +10,7 @@ namespace ApiAggregator.Hosting;
 
 /// <summary>
 /// DEVELOPMENT ONLY: secrets typed into the admin UI are kept in secrets.local.json in the config folder
-/// (git-ignored), never in services.json or auth-profiles.json. The gateway and the admin API read
+/// (git-ignored), never in services.json or auth-profiles.json. The gateway and the admin app read
 /// the file directly whenever a secret is needed (not through configuration reload, which lags by up
 /// to a second), so a value saved in the UI works on the very next call, e.g. "Check sign-in".
 /// In every other environment this does nothing: use Azure Key Vault.

@@ -10,6 +10,8 @@
   </PropertyGroup>
   <ItemGroup>
     <PackageVersion Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="10.0.15" />
+    <!-- Admin app only (ADR 0014): OpenID Connect sign-in for the pages. No known advisories when added. -->
+    <PackageVersion Include="Microsoft.AspNetCore.Authentication.OpenIdConnect" Version="10.0.15" />
     <PackageVersion Include="Microsoft.Extensions.Http.Resilience" Version="10.11.0" />
     <!-- 1.6.31: fixes GHSA-7pxr-59rr-hqj2 (high) reported against 1.6.24. -->
     <PackageVersion Include="Microsoft.OpenApi.Readers" Version="1.6.31" />

@@ -28,13 +28,17 @@ service (Basic, session login, OAuth/JWT, API key, pass-through) in any combinat
   can't be bound (`RecipeValidator.BlockedHeaders`).
 - Downstream HttpClients use `UseCookies = false` and `AllowAutoRedirect = false` (`ServiceCollectionExtensions`).
 - **Secrets only as `secret:<name>` references.** Never log, return or cache secret values per user.
-  The admin API may *store* a value only in Development (`secrets.local.json` in the config folder, git-ignored) and never returns one.
+  The admin app may *store* a value only in Development (`secrets.local.json` in the config folder, git-ignored) and never returns one.
 - **Caching is off by default and per caller by default.** Keys are hashed and include the recipe
   and config version. Never cache partial or non-2xx responses.
 - **No scripting in recipes.** The path language and the transform list are fixed (ADR 0002).
 - **No fuzzy matching.** `combine` merges records by exact key only; never by similar names, emails or
   dates of birth (ADR 0011). Identity resolution belongs in the system that owns it.
 - The caller's token is forwarded only by `PassThroughUserTokenStep`.
+- **Admin sign-in has two schemes that never mix** (ADR 0014). Pages: the `aggregator.admin` cookie (dev sign-in only
+  in Development, OIDC otherwise; startup fails outside Development without OIDC), POST forms with an antiforgery
+  token. `/admin/*`: bearer tokens only, so the cookie gets 401. Roles are enforced in `AdminService`, not by hiding
+  buttons. A signed-in person's access token stays in server memory, never in the cookie or the page.
 - Logs never contain request or response values; log ids, statuses and timings.
 - Responses carry `Cache-Control: no-store`.
 - **History is append-only.** Entries are written once and never changed; version numbers are never
@@ -57,8 +61,8 @@ If a change touches any of these, run the `security-review` skill and add or adj
 | `…/Config` | `IConfigStore`, `FileConfigStore` (published / drafts / history), `RecipeHistoryEntry` (ADR 0012), `ConfigSnapshot` |
 | `…/Authoring` | `SourceCatalog` (wizard dropdown options, schema inference), `AutoBinder` (pre-filled values) |
 | `src/ApiAggregator.Gateway` | `Program.cs` (one handler for `/bff/{**path}`), `ApiDocsPage` (Swagger UI at `/bff/docs`); the spec comes from `Engine/Authoring/OpenApiDocumentBuilder` |
-| `src/ApiAggregator.Admin.Api` | `Program.cs` (all admin endpoints), `OpenApiImporter` |
-| `src/ApiAggregator.Admin.UI` | Pages: `Home` (dashboard), `Endpoints`, `EndpointEditor` (wizard: stepper, problems next to fields, run-order lanes, sticky footer), `Services`, `Logs`, `Help`. Shared: `PageShell` (every page: one primary action), `StatusPill` (icon + word, never colour alone), `ConfirmBox`, `ErrorBanner`, `Toasts`/`ToastService`, `FieldIssues`, `StepFlow`, `EmptyState`, `Loading`, `SignInEditor`. Form models in `Services/` (`RecipeForm`, `SignInForm` + `SignInKinds`, `ServiceForms`) |
+| `src/ApiAggregator.Admin.Application` | `AdminService`: every admin use case with its rules and **role checks** (author / publisher), `AdminActor`, `AdminResult`, `OpenApiImporter`. No ASP.NET Core types (ADR 0014) |
+| `src/ApiAggregator.Admin` | The admin app on :5300 (ADR 0014). `Hosting/`: `AdminAuth` (cookie for pages, bearer only for `/admin/*`, dev sign-in, OIDC), `AdminEndpoints` (thin `/admin/*` wrappers over `AdminService`). Pages: `SignIn`, `Home` (dashboard), `Endpoints`, `EndpointEditor` (wizard: stepper, problems next to fields, run-order lanes, sticky footer), `Services`, `Logs`, `Help`. Shared: `PageShell` (every page: one primary action), `StatusPill` (icon + word, never colour alone), `ConfirmBox`, `ErrorBanner`, `Toasts`/`ToastService`, `FieldIssues`, `StepFlow`, `EmptyState`, `Loading`, `SignInEditor`. `Services/`: `CurrentUser` (the signed-in person), `LiveLogClient`, form models (`RecipeForm`, `SignInForm` + `SignInKinds`, `ServiceForms`) |
 | `src/ApiAggregator.Hosting` | `InboundAuth` (JWT setup, scopes, caller context), `LocalSecrets` (Development-only secrets file) |
 | `tools/ApiAggregator.Cli` | `aggregator validate | run` |
 | `samples/MockServices` | Service A (Basic `svc-a/pass-a`), B (session `svc-b/pass-b`), C (OAuth `client-c/secret-c`), D (API key `X-Api-Key: key-d`, spec at `/d/openapi.json`, not in the sample config: use it to try **Add service**); B also has `POST /b/orders/search` (body); I fixed token (`token-i`), J the caller's token, K API key `key-k` + login `svc-k/pass-k`; E Identity, F CRM, G Billing, H Links: people data for **Combine lists** (`PeopleSamples.cs`, explained in `samples/README.md`). All on :5100 |
@@ -71,19 +75,19 @@ If a change touches any of these, run the `security-review` skill and add or adj
 
 ```bash
 dotnet build                                                   # whole solution
-dotnet test                                                    # engine, gateway, admin API and UI tests (must stay green)
+dotnet test                                                    # engine, gateway, admin app, UI and docs tests (must stay green)
 ./scripts/install-playwright.sh                                # once: browsers for the UI tests (skipped without them)
 ./scripts/screenshots.sh                                       # refresh docs/images (dev ports must be free)
 ./scripts/check-docs.sh                                        # run every checked example in docs/ (also part of dotnet test)
 dotnet run --project tools/ApiAggregator.Cli -- validate --config samples/config   # check every recipe and auth profile (also run for config/)
 dotnet run --project tools/ApiAggregator.Cli -- run customer-overview --route id=C-10042 --config samples/config   # needs mocks + Secrets__* env
-./scripts/dev-run.sh                                           # mocks :5100, gateway :5200, admin API :5210, UI :5300 (--real for config/)
+./scripts/dev-run.sh                                           # mocks :5100, gateway :5200, admin app :5300 (--real for config/)
 ./scripts/try-gateway.sh                                       # call the sample endpoints with a dev token
 ```
 
 Target framework: set once in `Directory.Build.props` (`AggregatorTargetFramework`, default `net10.0`).
-Package versions: `Directory.Packages.props` (central management). Only Gateway, Admin.Api,
-Hosting and the tests use packages (the UI tests use Microsoft.Playwright, ADR 0013). Keep runtime packages on the 10.x line while targeting `net10.0`.
+Package versions: `Directory.Packages.props` (central management). Only Gateway, Admin (OpenID Connect, ADR 0014),
+Admin.Application (Microsoft.OpenApi.Readers), Hosting and the tests use packages (the UI tests use Microsoft.Playwright, ADR 0013). Keep runtime packages on the 10.x line while targeting `net10.0`.
 
 ## How to make common changes
 
@@ -95,7 +99,7 @@ Hosting and the tests use packages (the UI tests use Microsoft.Playwright, ADR 0
 | Record a decision | `.claude/skills/write-adr` |
 | Change anything security-relevant | `.claude/skills/security-review` |
 | New validation rule | `RecipeValidator`: plain-English message, plus a test in `PlanningAndValidationTests` |
-| New admin endpoint | `Admin.Api/Program.cs` in the right section; `author` or `publisher` policy; document it in `docs/architecture/04-admin-and-openapi.md` |
+| New admin action | A method on `AdminService` that checks the role first (`NeedsAuthor` / `NeedsPublisher`), a test in `RoleTests`, then a thin wrapper in `Admin/Hosting/AdminEndpoints.cs` with the `api-author` or `api-publisher` policy; document it in `docs/architecture/04-admin-and-openapi.md`. Pages call the service, never the store or engine (`ArchitectureTests`) |
 | New config store (PostgreSQL) | Implement `IConfigStore`; register it before `AddAggregatorEngine` (it uses `TryAdd`) |
 
 ## Conventions

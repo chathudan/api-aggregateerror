@@ -295,7 +295,7 @@ Other common combinations: "Basic login → session + API key" is `ApiKey` plus 
 ## Secrets
 
 Passwords, keys, client secrets and tokens are **never** stored in `auth-profiles.json`. The file holds
-only a reference such as `secret:service-a-password`. The admin API refuses a profile that holds a plain
+only a reference such as `secret:service-a-password`. The admin app refuses a profile that holds a plain
 value.
 
 | Where you are | When you type a secret in the UI | Where the gateway finds it |

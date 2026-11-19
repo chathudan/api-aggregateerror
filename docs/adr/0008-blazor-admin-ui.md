@@ -1,6 +1,6 @@
 # 0008 — Blazor (interactive server) for the admin UI
 
-- Status: Proposed
+- Status: Accepted. Hosting superseded by [ADR 0014](0014-one-admin-app.md)
 - Date: 2026-11-18
 
 ## Context
@@ -16,6 +16,11 @@ Blazor Web App with interactive server rendering. It references `ApiAggregator.E
 - Needs a persistent connection (SignalR). That's fine for an internal tool.
 - Production needs OpenID Connect sign-in for the UI user (roadmap). Today Development uses the
   admin API's dev token.
+
+## Update (ADR 0014)
+Blazor Server stays. The UI no longer calls a separate admin API over HTTP: the pages and `/admin/*` are one app,
+and both call `AdminService` in-process. Pages sign people in with a cookie (development sign-in, or OpenID
+Connect in production), so the dev-token arrangement above is gone.
 
 ## Alternatives considered
 React plus TypeScript (larger skill set across teams, but the validator would be duplicated).

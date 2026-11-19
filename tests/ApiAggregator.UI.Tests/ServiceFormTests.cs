@@ -1,4 +1,4 @@
-using ApiAggregator.Admin.UI.Services;
+using ApiAggregator.Admin.Services;
 
 namespace ApiAggregator.UI.Tests;
 

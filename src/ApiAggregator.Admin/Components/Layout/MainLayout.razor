@@ -1,0 +1,48 @@
+@inherits LayoutComponentBase
+@inject IConfiguration Config
+@inject UiContext Ui
+@inject CurrentUser User
+
+<a class="skip-link" href="#main">Skip to content</a>
+<header class="topbar">
+    <a class="brand" href="/">API Aggregator</a>
+    <nav aria-label="Main">
+        <NavLink href="/" Match="NavLinkMatch.All">Home</NavLink>
+        <NavLink href="/endpoints">Endpoints</NavLink>
+        <NavLink href="/services">Services</NavLink>
+        <NavLink href="/logs">Logs</NavLink>
+        <a href="@DocsUrl" target="_blank" rel="noopener">API docs <span aria-hidden="true">↗</span><span class="visually-hidden"> (opens in a new tab)</span></a>
+        <NavLink href="/help">Help</NavLink>
+    </nav>
+    @if (_sampleData)
+    {
+        <span class="badge sample" title="This admin UI uses the sample configuration in samples/config, with mock services. Nothing here is real data.">Sample data</span>
+    }
+    @if (_me is not null)
+    {
+        <div class="who">
+            <span>@_me.Label · @(_me.IsPublisher ? "Publisher" : _me.IsAuthor ? "Author" : "No role")</span>
+            <form method="post" action="/signout">
+                <AntiforgeryToken />
+                <button class="link" type="submit">Sign out</button>
+            </form>
+        </div>
+    }
+</header>
+<main id="main" class="page" tabindex="-1">
+    @Body
+</main>
+<Toasts />
+
+@code {
+    private bool _sampleData;
+    private AdminActor? _me;
+
+    private string DocsUrl => (Config["Gateway:BaseUrl"] ?? "http://localhost:5200/").TrimEnd('/') + "/bff/docs";
+
+    protected override async Task OnInitializedAsync()
+    {
+        _me = await User.ActorAsync();
+        _sampleData = (await Ui.CapabilitiesAsync()).SampleData;
+    }
+}

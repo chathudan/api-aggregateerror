@@ -12,9 +12,10 @@ decision; write a new ADR that supersedes it. Use `.claude/skills/write-adr` or 
 | [0005](0005-caching-off-and-per-caller-by-default.md) | Caching is opt-in and per caller by default | Accepted |
 | [0006](0006-drafts-test-gate-append-only-history.md) | Drafts apart from published; test before publish; append-only history | Accepted |
 | [0007](0007-file-config-store-first.md) | File config store first, PostgreSQL behind the same interface next | Accepted |
-| [0008](0008-blazor-admin-ui.md) | Blazor (interactive server) for the admin UI | Proposed |
+| [0008](0008-blazor-admin-ui.md) | Blazor (interactive server) for the admin UI | Accepted; hosting superseded by 0014 |
 | [0009](0009-error-contract-and-logging.md) | Downstream error contract (problem details, codes) and structured logging | Accepted |
 | [0010](0010-live-logs-in-admin-ui.md) | Live logs in the admin UI (in-memory buffer, long polling) | Accepted |
 | [0011](0011-combining-records-no-fuzzy-matching.md) | Combining records across services by exact key; no fuzzy matching | Accepted |
 | [0012](0012-history-entries-who-when-and-unpublish.md) | History entries record who and when; versions never reused; unpublish | Accepted |
 | [0013](0013-playwright-for-admin-ui-tests.md) | Playwright for admin UI tests and documentation screenshots (test-only) | Accepted |
+| [0014](0014-one-admin-app.md) | One admin app (UI + API), gateway separate; cookie for pages, bearer only for `/admin/*` | Accepted |

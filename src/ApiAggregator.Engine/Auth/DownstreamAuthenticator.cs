@@ -43,7 +43,7 @@ public sealed class DownstreamAuthenticator(
         if (profile is not null) cache.InvalidateProfile(profile.Id, profile.Steps.Count, reason);
     }
 
-    /// <summary>Plain-English problems with a profile (unknown kind, missing setting). Used by the admin API.</summary>
+    /// <summary>Plain-English problems with a profile (unknown kind, missing setting). Used by the admin app.</summary>
     public IEnumerable<string> Check(AuthProfile profile)
     {
         foreach (var (def, i) in profile.Steps.Select((d, i) => (d, i)))

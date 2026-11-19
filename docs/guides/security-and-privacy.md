@@ -17,15 +17,17 @@ decide. It doesn't give legal advice. The design detail is in
 | One user's session or data reaching another user | No shared cookie jar between calls. Cache entries are kept per user by default |
 | Credentials sent somewhere else by a redirect | Redirects are never followed |
 | App users' tokens reaching services that don't need them | Only the **Use the caller's own token** sign-in passes it on, and only to the services that use it |
-| Secrets leaking from the configuration | Configuration holds secret **names** only. The admin API refuses plain values and never returns one |
+| Secrets leaking from the configuration | Configuration holds secret **names** only. The admin app refuses plain values and never returns one |
 | Scripts or code hidden in endpoints | There's no scripting: a fixed path language and a fixed list of transforms |
 | Matching the wrong person's records together | Lists are combined only on an exact shared id, never on names, emails or dates of birth. The wizard warns if you try |
 | Personal data cached by browsers or proxies | Every response has `Cache-Control: no-store`, `X-Content-Type-Options: nosniff` and `Referrer-Policy: no-referrer` |
 | Overloading services | A per-user rate limit, timeouts, a 5 MB answer limit, at most 100 calls per "run for each" step, and at most 25 steps |
 | Error messages revealing internals | Apps get a code and a short message, never service answers, stack traces, sign-in names or secret names |
 | Unreviewed changes going live | Drafts are never served. Publishing needs the publisher role **and** a passing test of exactly that draft |
-| Untracked changes | Every published version is kept, with who published it and when. History is never changed, and version numbers are never reused |
-| Development shortcuts reaching production | The test-token issuer works only in Development, and the gateway refuses to start if its key is set anywhere else |
+| Untracked changes | Every published version is kept, with who published it (the signed-in person, by id and name) and when. History is never changed, and version numbers are never reused |
+| Someone tricking an admin's browser into making changes (CSRF) | The admin API (`/admin/*`) accepts only bearer tokens, never the pages' sign-in cookie. The cookie is `HttpOnly` and `SameSite=Lax`, sign-in and sign-out need an antiforgery token, and the pages' live connection must come from the admin app itself |
+| An author publishing | Roles are checked inside the admin app's use cases on every action, whether it comes from a page or from `/admin/*` |
+| Development shortcuts reaching production | The test-token issuer and the name-only sign-in page work only in Development. The gateway and admin app refuse to start if the dev key is set anywhere else, and the admin app refuses to start outside Development without OpenID Connect |
 
 ## What is never logged
 
@@ -62,9 +64,9 @@ team** and **legal advisers**, and, where health information is involved, whoeve
 | My Health Record | If any connected system touches it, the *My Health Records Act 2012* and the Australian Digital Health Agency's requirements | Privacy officer, legal |
 | Caching health data | Whether it's allowed at all, and the maximum time | Privacy officer, clinical safety |
 | Data residency | Where gateway replicas, caches and logs may run | Privacy officer, platform team |
-| Log and history retention | How long logs and history (which hold user ids) are kept, who can read them, and any minimum for audit | Privacy officer, compliance |
+| Log and history retention | How long logs and history (which hold user ids and display names) are kept, who can read them, and any minimum for audit | Privacy officer, compliance |
 | Audit store | A tamper-evident log store with agreed retention (an open item) | Security team, compliance |
-| Admin sign-in | OIDC sign-in for the admin UI, with roles from groups (on the [roadmap](../roadmap.md)); until then the UI uses one configured token | Security team |
+| Admin sign-in | Who is given the `aggregator.author` and `aggregator.publisher` roles, whether multi-factor sign-in is required, and whether the 8-hour session suits you. The admin app signs people in with OpenID Connect; the setup is in [Operations](operations.md#deploy-to-azure-container-apps) | Security team |
 | Threat model and penetration test | Sign-off before production | Security team |
 | Service agreements | Whether each service's data may be combined with the others' and passed to apps | Service owners, privacy officer |
 

@@ -23,7 +23,7 @@
 Each of A, D, E, F, G and H has its spec at `/<x>/openapi.json`, with response schemas, so the wizard's
 dropdowns list the fields. `GET /_stats` shows how many times each endpoint was called. The E–H
 services, sign-ins and recipes are in `samples/config/`, and the Development settings of the gateway and
-admin API hold their mock secrets.
+admin app hold their mock secrets.
 
 ## Trying "Combine lists"
 

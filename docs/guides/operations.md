@@ -11,12 +11,11 @@ before the first production deployment.
 | Program | Traffic | Replicas | Exposed to |
 |---|---|---|---|
 | **Gateway** (`ApiAggregator.Gateway`) | Every app call | 2 or more; stateless | Apps, through your edge (Front Door or Application Gateway with WAF) |
-| **Admin API** (`ApiAggregator.Admin.Api`) | Low | 1 | The admin UI only. Internal network |
-| **Admin UI** (`ApiAggregator.Admin.UI`) | Low | 1 | Staff only, behind SSO. Internal network |
+| **Admin app** (`ApiAggregator.Admin`): the pages and `/admin/*` ([ADR 0014](../adr/0014-one-admin-app.md)) | Low | 1 | Staff (pages) and your scripts or CI (`/admin/*`) only. Internal ingress, **never** the gateway's public ingress |
 | Mock services | — | — | **Never deploy.** Development only |
 
 They share the **config store**: today a folder of JSON files, later PostgreSQL ([roadmap](../roadmap.md)).
-The admin API writes it, and the gateway reads it and reloads changes within `ReloadCheckSeconds`.
+The admin app writes it, and the gateway reads it and reloads changes within `ReloadCheckSeconds`.
 
 ## Deploy with Docker
 
@@ -25,8 +24,7 @@ manager, non-root, listening on port 8080.
 
 ```bash
 docker build --build-arg PROJECT=src/ApiAggregator.Gateway/ApiAggregator.Gateway.csproj   -t aggregator-gateway:1.0 .
-docker build --build-arg PROJECT=src/ApiAggregator.Admin.Api/ApiAggregator.Admin.Api.csproj -t aggregator-admin-api:1.0 .
-docker build --build-arg PROJECT=src/ApiAggregator.Admin.UI/ApiAggregator.Admin.UI.csproj   -t aggregator-admin-ui:1.0 .
+docker build --build-arg PROJECT=src/ApiAggregator.Admin/ApiAggregator.Admin.csproj       -t aggregator-admin:1.0 .
 
 docker run -p 8080:8080 \
   -v /srv/aggregator/config:/config:ro \
@@ -35,7 +33,7 @@ docker run -p 8080:8080 \
   aggregator-gateway:1.0 ApiAggregator.Gateway.dll
 ```
 
-The gateway mounts the config **read-only**. Only the admin API writes it.
+The gateway mounts the config **read-only**. Only the admin app writes it.
 `docker compose up --build` runs the development stack (mocks and dev tokens included). **Don't** use
 that file for production.
 
@@ -54,24 +52,34 @@ az containerapp create -g $RG -n aggregator-gateway --environment $ENV \
   --scale-rule-name http --scale-rule-type http --scale-rule-http-concurrency 100 \
   --env-vars Aggregator__Config__Directory=/config Auth__Authority=https://login.example.com/tenant/v2.0 Auth__Audience=api-aggregator
 
-az containerapp create -g $RG -n aggregator-admin-api --environment $ENV \
-  --image $ACR/aggregator-admin-api:1.0 --args "ApiAggregator.Admin.Api.dll" \
-  --target-port 8080 --ingress internal --min-replicas 1 --max-replicas 1
+az containerapp create -g $RG -n aggregator-admin --environment $ENV \
+  --image $ACR/aggregator-admin:1.0 --args "ApiAggregator.Admin.dll" \
+  --target-port 8080 --ingress internal --min-replicas 1 --max-replicas 1 \
+  --env-vars Aggregator__Config__Directory=/config Gateway__BaseUrl=https://<the gateway's internal address>/ \
+             Auth__Authority=https://login.example.com/tenant/v2.0 Auth__Audience=api-aggregator \
+             Auth__Oidc__Authority=https://login.example.com/tenant/v2.0 Auth__Oidc__ClientId=<admin app client id> \
+             Auth__Oidc__ClientSecret=secretref:admin-oidc-client-secret
 ```
 
 Then:
 
 - **Config folder.** Mount an Azure Files share at `/config` in both apps: read-only in the gateway,
-  read-write in the admin API. Volumes are set in the app's YAML (`az containerapp update --yaml`).
+  read-write in the admin app. Volumes are set in the app's YAML (`az containerapp update --yaml`).
   With more than one gateway replica, all of them read the same share. The PostgreSQL store will replace this.
 - **Secrets from Key Vault.** Give each app a managed identity with *Key Vault Secrets User*, then map
   each secret to a setting (see [below](#secrets-and-key-vault)).
-- **Health probes.** Liveness `/health/live` and readiness `/health/ready` on port 8080 (in the YAML).
-- **Ingress.** The gateway behind Front Door or Application Gateway with WAF. Admin API and UI internal only.
-- **Admin UI.** Set `AdminApi__BaseUrl` and `Gateway__BaseUrl` to their internal addresses. Outside
-  Development the UI calls the admin API with one configured token (`AdminApi__Token`, from Key Vault)
-  until the UI signs users in with OIDC ([roadmap](../roadmap.md)). Put it behind SSO, for example
-  Container Apps authentication with Entra ID.
+- **Health probes.** Gateway: liveness `/health/live`, readiness `/health/ready`. Admin app: liveness `/health/live`. Port 8080 (in the YAML).
+- **Ingress.** The gateway behind Front Door or Application Gateway with WAF. The admin app gets **internal
+  ingress only** (`--ingress internal`), reached from the staff network or VPN. It must not share the gateway's
+  public ingress: it can change what the gateway serves.
+- **Admin sign-in (OpenID Connect).** Register the admin app with your identity provider (for example an Entra ID
+  app registration): redirect URI `https://<admin address>/signin-oidc`, two app roles `aggregator.author` and
+  `aggregator.publisher` assigned to people or groups. Set `Auth:Oidc:Authority`, `Auth:Oidc:ClientId` and
+  `Auth:Oidc:ClientSecret` (a Container Apps secret from Key Vault, as above). The app refuses to start outside
+  Development without them. Add the gateway's scope to `Auth:Oidc:Scopes` so the Logs page can read the
+  gateway's logs with the person's token, or set `Gateway:LogsToken`.
+- **Scripts and CI** call `https://<admin address>/admin/*` with a bearer token for `Auth:Audience` that has the
+  `aggregator.author` or `aggregator.publisher` scope. The page cookie never works there.
 
 ## Configuration reference
 
@@ -80,8 +88,8 @@ Settings come from `appsettings.json`, then environment variables (`:` becomes `
 
 | Key | Program | Default | Meaning |
 |---|---|---|---|
-| `Aggregator:Config:Directory` | gateway, admin API | `../../config` | The config folder |
-| `Aggregator:Config:ReloadCheckSeconds` | gateway, admin API | 2 (gateway), 1 (admin API) | How often to check for published changes |
+| `Aggregator:Config:Directory` | gateway, admin app | `../../config` | The config folder |
+| `Aggregator:Config:ReloadCheckSeconds` | gateway, admin app | 2 (gateway), 1 (admin app) | How often to check for published changes |
 | `Aggregator:Engine:MaxResponseBytes` | gateway | 5242880 (5 MB) | Largest downstream answer accepted |
 | `Aggregator:Engine:MaxForEachItems` | gateway | 100 | Most items one "run for each" step may call |
 | `Aggregator:Engine:CacheSizeMb` | gateway | 256 | Memory for the response and step caches |
@@ -89,17 +97,20 @@ Settings come from `appsettings.json`, then environment variables (`:` becomes `
 | `Gateway:OpenApi:Enabled` | gateway | true | Serve `/bff/openapi.json` |
 | `Gateway:OpenApi:IncludeInternalDetails` | gateway | false | Show internal service names in the spec. Keep off in production |
 | `Gateway:ApiDocs:Enabled` | gateway | true in Development, else false | The Swagger UI page at `/bff/docs` |
-| `Auth:Authority` | gateway, admin API | — | Your OpenID Connect issuer |
-| `Auth:Audience` | gateway, admin API | `api-aggregator` | The audience tokens must have |
-| `Auth:DevSigningKey`, `Auth:DevIssuer` | gateway, admin API | — | **Development only.** Startup fails if set anywhere else |
-| `Secrets:<name>` | gateway, admin API | — | The value behind `secret:<name>` |
-| `LiveLogs:Enabled`, `LiveLogs:Capacity` | gateway, admin API | true, 2000 | The in-memory lines behind the **Logs** page |
-| `Admin:RequireTestBeforePublish` | admin API | true | The publish gate. Never turn it off in production |
-| `Admin:AllowedOrigins` | admin API | `http://localhost:5300` | Browser origins allowed to call the admin API |
-| `Admin:OpenApiAllowedHosts` | admin API | (any) | Hosts specs may be imported from. Set it in production |
-| `AdminApi:BaseUrl`, `Gateway:BaseUrl` | admin UI | `http://localhost:5210/`, `http://localhost:5200/` | Where the UI finds them |
-| `AdminApi:Token` | admin UI | — | Token for the admin API outside Development (until OIDC) |
-| `Docs:BaseUrl` | admin UI | this repository's `docs/guides/` on GitHub | Where the Help page's **Full guide** links point. Set it to your own git host or docs site |
+| `Auth:Authority` | gateway, admin app | — | Your identity provider, for bearer tokens (apps, and scripts calling `/admin/*`) |
+| `Auth:Audience` | gateway, admin app | `api-aggregator` | The audience tokens must have |
+| `Auth:DevSigningKey`, `Auth:DevIssuer` | gateway, admin app | — | **Development only.** Startup fails if set anywhere else |
+| `Auth:Oidc:Authority`, `Auth:Oidc:ClientId` | admin app | — | Sign-in for the pages. **Required outside Development** (startup fails without them) |
+| `Auth:Oidc:ClientSecret` | admin app | — | From Key Vault or user secrets, never in `appsettings.json` |
+| `Auth:Oidc:RoleClaim` | admin app | `roles` | The claim holding `aggregator.author` / `aggregator.publisher` |
+| `Auth:Oidc:Scopes` | admin app | — | Extra scopes to ask for, for example the gateway's, so Logs can read its lines |
+| `Secrets:<name>` | gateway, admin app | — | The value behind `secret:<name>` |
+| `LiveLogs:Enabled`, `LiveLogs:Capacity` | gateway, admin app | true, 2000 | The in-memory lines behind the **Logs** page |
+| `Admin:RequireTestBeforePublish` | admin app | true | The publish gate. Never turn it off in production |
+| `Admin:OpenApiAllowedHosts` | admin app | (any) | Hosts specs may be imported from. Set it in production |
+| `Gateway:BaseUrl` | admin app | `http://localhost:5200/` | Where the Logs page reads the gateway's lines, and the API docs links |
+| `Gateway:LogsToken` | admin app | — | A token with the author scope for reading the gateway's logs, when the person's own token can't be used. From Key Vault |
+| `Docs:BaseUrl` | admin app | this repository's `docs/guides/` on GitHub | Where the Help page's **Full guide** links point. Set it to your own git host or docs site |
 
 ## Health checks
 
@@ -202,7 +213,7 @@ The admin UI never saves secrets outside Development. It shows the name to add. 
 
 1. Get the new value from the service owner. Many services allow two valid values while you switch.
 2. Add it as a new **version** of the same Key Vault secret. The name stays, so nothing in the config changes.
-3. Restart the gateway and admin API replicas (or create a new Container Apps revision), so they read the new value.
+3. Restart the gateway and admin app replicas (or create a new Container Apps revision), so they read the new value.
 4. On **Services**, choose **Check sign-in** for that service. For Basic, API key and fixed token, run
    **Try it** on an endpoint that uses it.
 5. Ask the owner to retire the old value. Watch for `DownstreamAuthFailed` (event 1200).
@@ -215,5 +226,5 @@ Sessions and tokens the gateway already holds stay in memory until they expire. 
 1. Back up the config folder.
 2. Run `dotnet run --project tools/ApiAggregator.Cli -- validate --config <a copy of the config>` with the
    new version. Exit code 1 means an endpoint no longer validates: fix it first.
-3. Deploy the admin API, then the gateway (rolling), then the UI.
+3. Deploy the admin app, then the gateway (rolling).
 4. Check `/health/ready` on each replica, and watch the logs for 15 minutes.

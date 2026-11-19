@@ -26,21 +26,24 @@ dotnet test        # optional: everything should pass
 ./scripts/dev-run.sh
 ```
 
-This starts four programs. Leave the terminal open, because **Ctrl+C** stops them all.
+This starts three programs. Leave the terminal open, because **Ctrl+C** stops them all.
 
 | Program | Address | What it is |
 |---|---|---|
 | Mock services | http://localhost:5100 | Pretend backend APIs (customers, orders, billing...) with invented data |
 | Gateway | http://localhost:5200 | What apps call: `/bff/...` |
-| Admin API | http://localhost:5210 | What the admin UI talks to |
-| Admin UI | http://localhost:5300 | Where you build and publish endpoints |
+| Admin app | http://localhost:5300 | Where you build and publish endpoints (and `/admin/*` for scripts) |
 
 The sample data lives in [`samples/config/`](../../samples/config/). The admin UI shows a
 **Sample data** badge while it uses it. Nothing you do there touches real systems.
 
 ## 3. Look around the admin UI (3 minutes)
 
-Open http://localhost:5300.
+Open http://localhost:5300. On your own computer the sign-in asks only for a name and a role: pick
+**Publisher** to try everything, or **Author** to see what someone who can't publish sees. In production you
+sign in with your organisation's account instead.
+
+![The development sign-in: a name and a role](../images/signin.png)
 
 ![The home page: services and their sign-in status, endpoints, recent warnings](../images/home.png)
 
@@ -164,4 +167,4 @@ Both `secrets.local.json` files are ignored by git and used only in development.
 - Running it for real: [Operations](operations.md).
 - Something not working? [Troubleshooting](troubleshooting.md).
 
-Running with Docker instead: `docker compose up --build` starts the same four programs on the same ports.
+Running with Docker instead: `docker compose up --build` starts the same three programs on the same ports.

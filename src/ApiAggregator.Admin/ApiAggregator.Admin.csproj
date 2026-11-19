@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+  <!--
+    The admin app (ADR 0014): the Blazor pages for technicians and the /admin/* HTTP API for scripts, in one process.
+    Both go through AdminService (ApiAggregator.Admin.Application). Pages sign people in with a cookie (development
+    sign-in or OpenID Connect); /admin/* accepts bearer tokens only.
+  -->
+  <PropertyGroup>
+    <RootNamespace>ApiAggregator.Admin</RootNamespace>
+    <UserSecretsId>api-aggregator-admin</UserSecretsId>
+  </PropertyGroup>
+  <ItemGroup>
+    <!-- Production sign-in for the pages (ADR 0014). Off unless Auth:Oidc:Authority is set. -->
+    <PackageReference Include="Microsoft.AspNetCore.Authentication.OpenIdConnect" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="../ApiAggregator.Admin.Application/ApiAggregator.Admin.Application.csproj" />
+    <ProjectReference Include="../ApiAggregator.Hosting/ApiAggregator.Hosting.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="ApiAggregator.Admin.Tests" />
+  </ItemGroup>
+</Project>

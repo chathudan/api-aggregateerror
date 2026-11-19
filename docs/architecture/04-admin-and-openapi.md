@@ -1,8 +1,27 @@
-# 04 — Admin UI, lifecycle and OpenAPI import
+# 04 — Admin app, lifecycle and OpenAPI import
+
+## One app: pages and `/admin/*`
+
+The admin app (`src/ApiAggregator.Admin`, port 5300, [ADR 0014](../adr/0014-one-admin-app.md)) serves the Blazor
+pages technicians use and the `/admin/*` HTTP API for scripts and CI. Both call `AdminService`
+(`src/ApiAggregator.Admin.Application`), which holds every rule and role check, so a page and a script get exactly
+the same answer. Pages sign in with a cookie (development sign-in, or OpenID Connect); `/admin/*` takes bearer
+tokens only ([03](03-auth-and-security.md#admin-sign-in-and-csrf)).
+
+```mermaid
+flowchart LR
+    P[Pages] -- signed-in person --> S[[AdminService]]
+    A[/admin/* endpoints/] -- token's subject and scopes --> S
+    S --> E[Engine: validator, executor, sign-ins]
+    S --> C[(Config store)]
+```
+
+Rule, checked by `ArchitectureTests`: pages and components use `AdminService`, never the store or the engine,
+and `AdminService` uses no HTTP or Blazor types.
 
 ## In-app help
 
-The admin UI has a **Help** page (`/help`) written for technicians: what to ask a service owner,
+The admin app has a **Help** page (`/help`) written for technicians: what to ask a service owner,
 which sign-in to pick, how secrets are handled, building and publishing, a troubleshooting table of
 every common message, and the error codes apps receive. Each screen links to the matching section, and each
 section links to its full guide in `docs/guides/` (**Full guide**, an address built from `Docs:BaseUrl`), so the
@@ -10,11 +29,14 @@ examples there, which `check-docs.sh` keeps true, are one click away.
 
 ## Who does what
 
-| Person | Can | Scope in token |
+| Person | Can | Role (page sign-in role claim, or token scope) |
 |---|---|---|
 | Developer / admin | Register services, set up auth profiles and secret references | `aggregator.author` (profiles and services) |
 | QA / technician | Build aggregated endpoints in the wizard, run "Try it", save drafts | `aggregator.author` |
-| Approver | Publish and roll back | `aggregator.publisher` |
+| Approver | Publish, roll back and delete endpoints | `aggregator.publisher` (includes author) |
+
+In Development, `/signin` asks for a name and a role. In production the role comes from the identity provider
+(app roles named `aggregator.author` and `aggregator.publisher`; the claim is set by `Auth:Oidc:RoleClaim`).
 
 Technicians **never see credentials**. They pick services that are already set up.
 
@@ -37,7 +59,7 @@ stateDiagram-v2
 
 - Drafts live in `config/drafts/` and are **never served**. The live version keeps serving while a
   draft is edited.
-- **Publish requires a passing test of the exact draft.** The admin API hashes the recipe content,
+- **Publish requires a passing test of the exact draft.** `AdminService` hashes the recipe content,
   so any change after the test means running it again. You can turn this off with
   `Admin:RequireTestBeforePublish = false`, but don't do that in production.
 - Publishing writes `config/recipes/<id>.json` and a history entry `config/history/<id>.v<n>.json`
@@ -52,8 +74,8 @@ stateDiagram-v2
   `not_found`). The history stays, and the endpoint is listed as deleted until it's rolled back or
   published again.
 - **Discard changes** removes the draft only.
-- **Who** is the caller's `sub` claim. The UI outside Development uses one configured token, so treat
-  `by` as advisory until the UI signs users in (roadmap).
+- **Who** is the signed-in person: `by` is their `sub` claim, `byName` their display name (ADR 0014). Calls to
+  `/admin/*` record the token's subject.
 
 ## History panel (endpoint editor)
 
@@ -86,7 +108,7 @@ show up before anyone builds an endpoint.
 
 **Secrets typed in the UI**
 - *Development:* saved to `config/secrets.local.json`, which git ignores. The auth profile only
-  stores `secret:<service>-<field>`. The gateway and admin API read the file directly whenever it
+  stores `secret:<service>-<field>`. The gateway and admin app read the file directly whenever it
   has changed (`LocalSecretsResolver`), so a value works on the very next call, including **Check sign-in**.
 - *Other environments:* the UI never sends the value. It shows the secret **name** to add in Key
   Vault, and `PUT /admin/secrets/{name}` is refused.
@@ -140,6 +162,10 @@ route is `docs` or `openapi.json` would be hidden by these two fixed addresses, 
 
 ## Admin API reference
 
+Served by the admin app on the same port as the pages. **Bearer tokens only**: the page cookie is never accepted
+here (401). Roles are checked by the endpoint policy and again by `AdminService` (403). Error bodies are
+`{ "title": "plain English", ...details }`.
+
 | Method and path | Role | Purpose |
 |---|---|---|
 | `GET /admin/services`, `PUT /admin/services/{id}` | author | List and save services |
@@ -152,7 +178,7 @@ route is `docs` or `openapi.json` would be hidden by these two fixed addresses, 
 | `GET /admin/auth-kinds` | author | Available auth kinds and their required settings |
 | `GET /admin/auth-profiles`, `PUT /admin/auth-profiles/{id}` | author | Profiles (plain-text secrets are rejected) |
 | `POST /admin/schema/infer` | author | Sample response → schema |
-| `GET /admin/logs?after=&wait=` | author | Recent admin API log lines (long poll). The gateway has the same at `/_admin/logs` |
+| `GET /admin/logs?after=&wait=` | author | Recent admin app log lines (long poll). The gateway has the same at `/_admin/logs`. The Logs page reads the admin app's lines in-process |
 | `GET /admin/recipes`, `GET/PUT /admin/recipes/{id}` | author | List (including `deleted` endpoints that still have history), read and save drafts |
 | `DELETE /admin/recipes/{id}/draft` | author | Discard changes. The live version keeps serving |
 | `DELETE /admin/recipes/{id}` | **publisher** | Delete the endpoint: unpublish and discard the draft. History is kept |

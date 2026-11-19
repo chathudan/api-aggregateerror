@@ -8,7 +8,7 @@ namespace ApiAggregator.UI.Tests;
 [Collection(UiCollection.Name)]
 public class PageTests(StackFixture stack)
 {
-    private static readonly string[] Pages = ["/", "/endpoints", "/endpoints/new", "/endpoints/customer-overview", "/services", "/logs", "/help"];
+    private static readonly string[] Pages = ["/", "/endpoints", "/endpoints/new", "/endpoints/customer-overview", "/services", "/logs", "/help", "/signin"];
 
     private static readonly HashSet<string> Interactive = ["textbox", "searchbox", "combobox", "checkbox", "radio", "button", "link", "spinbutton", "menuitem"];
 
@@ -99,6 +99,25 @@ public class PageTests(StackFixture stack)
         await Save(logs, "logs", fullPage: false);
 
         await Save(await stack.OpenAsync("/help"), "help", fullPage: false);
+
+        var signIn = await stack.NewAnonymousPageAsync();
+        await StackFixture.GotoAsync(signIn, "/signin");
+        await Save(signIn, "signin", fullPage: false);
+    }
+
+    [UiFact]
+    public async Task The_top_bar_shows_who_is_signed_in_and_signing_out_ends_it()
+    {
+        var page = await stack.OpenAsync("/endpoints");
+        await Expect(page.Locator(".topbar .who")).ToContainTextAsync($"{StackFixture.TesterName} · Publisher");
+
+        await page.GetByRole(AriaRole.Button, new() { Name = "Sign out" }).ClickAsync();
+        await page.WaitForURLAsync(url => url.Contains("/signin"));
+        await Expect(page.GetByRole(AriaRole.Status)).ToContainTextAsync("You've signed out");
+
+        // The cookie is gone: pages send you back to sign in.
+        await StackFixture.GotoAsync(page, "/services");
+        Assert.Contains("/signin", page.Url);
     }
 
     // ------------------------------------------------------------------ saving

@@ -9,10 +9,13 @@
 - Caching on/off per recipe and per step, per caller by default, hashed keys, bounded memory
 - Gateway: dynamic `/bff/*` routing, JWT and scopes, rate limiting, resilience (idempotent retries),
   security headers, health checks, generated OpenAPI for aggregated endpoints
-- Admin API: services, auth profiles (plain-text secrets rejected), OpenAPI import (preview and select),
+- Admin app (ADR 0014): one process for the pages and `/admin/*`, both over `AdminService` (all rules and role
+  checks); services, auth profiles (plain-text secrets rejected), OpenAPI import (preview and select),
   schema inference, drafts, validate, test, publish gate, history, rollback
+- Admin sign-in: development sign-in (name + role), OpenID Connect for production (code flow, PKCE, app roles);
+  `/admin/*` bearer-only; history records the person (id and name)
 - Admin UI (Blazor): Add service (from OpenAPI or by hand) with sign-in cards and Check sign-in; add endpoints by hand with a sample response; five-step wizard with an endpoint picker, pre-filled ("suggested") values, one-click response fields and live validation
-- Live logs page in the admin UI (gateway and admin API, filter by correlation id)
+- Live logs page in the admin UI (gateway and admin app, filter by correlation id)
 - Duplicate handling: `distinct`, de-duplicated forEach calls, `combine` by exact key (ADR 0011)
 - Guides by audience (`docs/README.md`, `docs/guides/`) with screenshots; every example is checked against the mocks by `scripts/check-docs.sh` and `dotnet test`
 - Admin UI tests in a real browser (Playwright, ADR 0013)
@@ -24,7 +27,7 @@
 |---|---|
 | PostgreSQL `IConfigStore` (+ `LISTEN/NOTIFY` reload) | Several gateway pods; durable drafts and a durable publish gate |
 | Key Vault `ISecretResolver` (or the Key Vault configuration provider) with managed identity | Production secrets |
-| OIDC sign-in for the admin UI (Entra ID or your IdP); roles from groups | Changes recorded against real people |
+| Register the admin app with your identity provider and assign the author and publisher app roles ([operations](guides/operations.md#deploy-to-azure-container-apps)) | The admin app won't start in production without it |
 | OpenTelemetry traces and metrics (span per step, cache hit ratio, sign-in count) | Operability |
 | Audit log sink with retention (tamper-evident) | Compliance |
 | Privacy and security review (see [03](architecture/03-auth-and-security.md)), pen test | Health and personal data |

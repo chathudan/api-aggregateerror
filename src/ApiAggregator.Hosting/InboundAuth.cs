@@ -14,7 +14,7 @@ using Microsoft.IdentityModel.Tokens;
 namespace ApiAggregator.Hosting;
 
 /// <summary>
-/// Inbound (caller -> gateway / admin API) authentication. Shared by both hosts.
+/// Inbound bearer-token (JWT) authentication for the gateway and the admin app's /admin/* API. Shared by both hosts.
 ///   Production:  Auth:Authority + Auth:Audience (any OpenID Connect provider, e.g. Entra ID).
 ///   Development: Auth:DevSigningKey enables locally signed tokens from /dev/token.
 /// </summary>

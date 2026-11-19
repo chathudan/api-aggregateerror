@@ -39,10 +39,12 @@ entries, a unique (id, version).
 ## Consequences
 - The history is an audit trail of publish, roll back and delete, each with an actor and a time. It
   still grows forever; pruning would need its own decision.
-- The actor is only as good as the token. The admin UI outside Development calls the API with one
-  configured token (`AdminApi:Token`), so every entry carries that token's subject until the UI signs
-  users in with OpenID Connect (roadmap). Treat `by` as advisory until then.
-- **Privacy:** history files now hold a user id. They live next to the config, contain no request
+- The actor is only as good as the sign-in. Since [ADR 0014](0014-one-admin-app.md) the pages sign people in
+  (development sign-in, or OpenID Connect in production), so UI actions record the real person: `by` is their
+  `sub`, and `byName` their display name when the sign-in gives one. The earlier caveat (one shared
+  `AdminApi:Token`, so `by` was advisory) no longer applies to UI actions. Calls to `/admin/*` record their
+  token's subject, and a shared service token there still names the token, not a person.
+- **Privacy:** history files now hold a user id, and since ADR 0014 a display name as well. They live next to the config, contain no request
   data, and are never logged or served by the gateway. Whether actor ids need a retention period, or
   must be kept for a minimum time, is **for review by qualified people**. This ADR doesn't set either.
 - Deleting a service is blocked while a published recipe uses it, so a delete can't break live

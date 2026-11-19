@@ -17,7 +17,7 @@ every error body. When an app reports a problem, ask for it.
 
 After a **Try it** run, **See logs for this test** does the same for the test.
 
-![Logs: live lines from the gateway and admin API, filtered by level and correlation id](../images/logs.png)
+![Logs: live lines from the gateway and the admin app, filtered by level and correlation id](../images/logs.png)
 
 Logs never contain customer data, passwords or keys: only ids, codes and timings. To see the actual
 values a step sent, use **Try it**, which shows each call's address (query values masked), or the command

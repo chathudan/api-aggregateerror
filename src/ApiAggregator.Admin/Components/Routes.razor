@@ -1,0 +1,15 @@
+@* Every page needs a signed-in person (cookie), except /signin. Roles are checked by AdminService on every action. *@
+<Router AppAssembly="typeof(Program).Assembly">
+    <Found Context="routeData">
+        <AuthorizeRouteView RouteData="routeData" DefaultLayout="typeof(Layout.MainLayout)">
+            <NotAuthorized>
+                <RedirectToSignIn />
+            </NotAuthorized>
+        </AuthorizeRouteView>
+    </Found>
+    <NotFound>
+        <LayoutView Layout="typeof(Layout.MainLayout)">
+            <p>There's nothing at this address. <a href="/">Back to the home page</a></p>
+        </LayoutView>
+    </NotFound>
+</Router>

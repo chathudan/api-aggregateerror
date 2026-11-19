@@ -22,6 +22,9 @@ Use **Microsoft.Playwright** (NuGet, test-only) in a new project `tests/ApiAggre
 - `scripts/screenshots.sh` writes `docs/images/*.png` on the usual ports. Plain test runs never write
   into the repository.
 
+> **Note (ADR 0014):** since the merge, the fixture starts three processes (mocks, gateway, admin app) and signs in
+> once through the development sign-in.
+
 ## Consequences
 - The UI's main paths are tested end to end. A UI change that breaks a journey fails the build where
   browsers are installed (recommended in CI).

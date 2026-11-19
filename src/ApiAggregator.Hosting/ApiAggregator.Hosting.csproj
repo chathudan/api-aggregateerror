@@ -1,5 +1,5 @@
 <Project Sdk="Microsoft.NET.Sdk">
-  <!-- Small shared code for the two web hosts (gateway, admin API): inbound JWT validation and caller context. -->
+  <!-- Small shared code for the two web hosts (gateway, admin app): inbound JWT validation and caller context. -->
   <PropertyGroup>
     <RootNamespace>ApiAggregator.Hosting</RootNamespace>
   </PropertyGroup>

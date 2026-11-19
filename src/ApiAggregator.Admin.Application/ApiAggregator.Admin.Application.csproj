@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    The admin use cases (ADR 0014): services, sign-ins, secrets, OpenAPI import, drafts, test, publish, history.
+    Every business rule and role check lives here. It knows nothing about Blazor or HTTP endpoints: no HttpContext,
+    no IResult. Pages call AdminService directly; /admin/* are thin wrappers over it. An architecture test checks
+    that this assembly references no Microsoft.AspNetCore assembly.
+  -->
+  <PropertyGroup>
+    <RootNamespace>ApiAggregator.Admin.Application</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <!-- For IHttpClientFactory, IConfiguration and logging (Microsoft.Extensions.*), like the engine. -->
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    <PackageReference Include="Microsoft.OpenApi.Readers" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="../ApiAggregator.Engine/ApiAggregator.Engine.csproj" />
+  </ItemGroup>
+</Project>

@@ -25,8 +25,8 @@ Needs the .NET 10 SDK on macOS or Linux (or Docker: `docker compose up --build`)
 
 ```bash
 dotnet build
-./scripts/dev-run.sh          # mocks :5100, gateway :5200, admin API :5210, admin UI :5300 (sample data)
-open http://localhost:5300    # the admin UI
+./scripts/dev-run.sh          # mocks :5100, gateway :5200, admin app :5300 (sample data)
+open http://localhost:5300    # the admin UI: sign in with any name, pick author or publisher
 ./scripts/try-gateway.sh      # in another terminal: call the sample endpoints
 ```
 
@@ -60,5 +60,5 @@ dotnet run --project tools/ApiAggregator.Cli -- validate --config samples/config
 ## Status
 
 Development-ready. Before production, work through the "Next" list in the [roadmap](docs/roadmap.md):
-PostgreSQL config store, Key Vault, OIDC sign-in for the admin UI, telemetry, and a security and privacy
+PostgreSQL config store, Key Vault, telemetry, and a security and privacy
 review for health or personal data.

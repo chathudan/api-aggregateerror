@@ -1,0 +1,52 @@
+@page "/signin"
+@layout Layout.PlainLayout
+@attribute [AllowAnonymous]
+@attribute [ExcludeFromInteractiveRouting]
+@inject IWebHostEnvironment Env
+@inject IConfiguration Config
+
+@* A plain HTML page (no interactive connection), so the form posts with an antiforgery token.
+   Development: a name and a role, no password. Otherwise: the organisation's sign-in (OpenID Connect). *@
+
+<PageTitle>Sign in · API Aggregator</PageTitle>
+
+<div class="signin">
+    <h1>Sign in</h1>
+    @if (SignedOut) { <p class="banner info" role="status">You've signed out.</p> }
+    @if (!string.IsNullOrEmpty(Error)) { <p class="banner error" role="alert">@Error</p> }
+
+    @if (UsesOidc)
+    {
+        <p>Sign in with your organisation's account. What you can do depends on your role: authors build and test endpoints, publishers also make them live.</p>
+        <p><a class="button primary" href="/signin/oidc?returnUrl=@Uri.EscapeDataString(Back)">Sign in</a></p>
+    }
+    else if (Env.IsDevelopment())
+    {
+        <p class="hint">This sign-in exists only on a developer machine. There's no password: enter any name and pick the role you want to try.</p>
+        <form method="post" action="/signin/dev" class="card">
+            <AntiforgeryToken />
+            <input type="hidden" name="returnUrl" value="@Back" />
+            <label>Your name <input name="name" autocomplete="name" maxlength="60" required autofocus placeholder="Dana Tester" /></label>
+            <fieldset>
+                <legend>Role</legend>
+                <label class="check"><input type="radio" name="role" value="author" checked /> Author: add services, build and test endpoints</label>
+                <label class="check"><input type="radio" name="role" value="publisher" /> Publisher: also publish, roll back and delete endpoints</label>
+            </fieldset>
+            <button class="button primary" type="submit">Sign in</button>
+        </form>
+    }
+    else
+    {
+        <p>Sign-in isn't set up here. Ask an administrator to set Auth:Oidc.</p>
+    }
+</div>
+
+@code {
+    [SupplyParameterFromQuery] public string? ReturnUrl { get; set; }
+    [SupplyParameterFromQuery(Name = "error")] public string? Error { get; set; }
+    [SupplyParameterFromQuery(Name = "signedOut")] public string? SignedOutFlag { get; set; }
+
+    private bool SignedOut => SignedOutFlag == "1";
+    private bool UsesOidc => !string.IsNullOrWhiteSpace(Config["Auth:Oidc:Authority"]);
+    private string Back => ApiAggregator.Admin.Hosting.AdminAuth.SafeReturnUrl(ReturnUrl);
+}

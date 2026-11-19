@@ -10,10 +10,11 @@ flowchart LR
     GW --> C[Service C]
 ```
 
-1. **Inbound (caller → gateway / admin API).** A JWT validated by ASP.NET Core JWT bearer against
+1. **Inbound (caller → gateway, or a script → `/admin/*`).** A JWT validated by ASP.NET Core JWT bearer against
    your OpenID Connect provider (`Auth:Authority`, `Auth:Audience`). Each recipe can require a
-   **scope**, for example `customer.read`. Admin API roles are scopes: `aggregator.author` and
-   `aggregator.publisher`. In Development only, `Auth:DevSigningKey` enables a local token issuer at
+   **scope**, for example `customer.read`. Admin roles are `aggregator.author` and `aggregator.publisher`,
+   as scopes or role claims. People using the admin **pages** sign in separately, see
+   [Admin sign-in](#admin-sign-in-and-csrf). In Development only, `Auth:DevSigningKey` enables a local token issuer at
    `/dev/token`. Startup **fails** if that key is set in any other environment.
 2. **Downstream (gateway → service).** Each service has an **auth profile**. The caller's token is
    **not** forwarded unless the profile explicitly says so.
@@ -54,7 +55,7 @@ demand.
 **Secrets.** Settings whose value starts with `secret:` are resolved at run time through
 `ISecretResolver`. Development reads `Secrets:<name>` from configuration (user-secrets or
 environment variables). Production should use Azure Key Vault (the Key Vault configuration provider
-or a Key Vault `ISecretResolver`). When a profile is saved, the admin API **rejects** a profile that
+or a Key Vault `ISecretResolver`). When a profile is saved, the admin app **rejects** a profile that
 puts a password, secret, token or key value in plain text.
 
 ## Built-in protections
@@ -74,17 +75,35 @@ puts a password, secret, token or key value in plain text.
 | Leaking internals in errors | Callers get a code and a safe message ("Service X answered 404"); internal detail only in logs and admin traces; never downstream bodies or stack traces | `CompositionExecutor`, ADR 0009 |
 | Identifiers or tokens in logs | Default HttpClient logging removed; our own logs carry ids, codes and timings only; the request log uses the recipe id, not the raw path | `EngineLog`, gateway request log |
 | Browser/proxy caching of personal data | `Cache-Control: no-store`, `nosniff`, `no-referrer`; no `Server` header | Gateway |
-| Unreviewed changes going live | Drafts are separate; publish needs `aggregator.publisher` **and** a passing test of the exact draft | Admin API |
+| Unreviewed changes going live | Drafts are separate; publish needs `aggregator.publisher` **and** a passing test of the exact draft. Checked inside `AdminService`, so pages and `/admin/*` follow the same rule | `AdminService` |
+| Cross-site request forgery on the admin app | `/admin/*` accepts bearer tokens only, never the page cookie; the cookie is `HttpOnly`, `SameSite=Lax`, `Secure`; sign-in and sign-out need an antiforgery token; the Blazor connection must come from the app's own origin | `AdminAuth` |
 | SSRF via OpenAPI import | Admin-only; http(s) only; no redirects; optional host allow-list `Admin:OpenApiAllowedHosts` | `OpenApiImporter` |
 | Code injection through recipes | No scripting: a fixed path language and a fixed transform list | `ValuePath`, `Transforms` |
 
 ## Audit
 
 The gateway writes one structured log line per composition: recipe, version, caller `sub`, status,
-duration, each step's outcome and the correlation ID. It **never** logs values. The admin API logs
+duration, each step's outcome and the correlation ID. It **never** logs values. The admin app logs
 who published and who rolled back. Each published version is stored in `config/history/`.
 **Open item:** ship these logs to a tamper-evident store with a retention period agreed with your
 compliance team.
+
+## Admin sign-in and CSRF
+
+The admin app ([ADR 0014](../adr/0014-one-admin-app.md)) has two schemes that never mix:
+
+| | Pages | `/admin/*` |
+|---|---|---|
+| Credential | Cookie `aggregator.admin`: `HttpOnly`, `SameSite=Lax`, `Secure` outside Development, 8 hours sliding | Bearer token (JWT) only |
+| Who issues it | **Development:** `/signin`, a name and a role (author or publisher), no password. Only mapped in Development. **Production:** OpenID Connect, authorization code flow with PKCE (`Auth:Oidc:Authority`, `ClientId`, `ClientSecret` from Key Vault or user secrets; `RoleClaim`, default `roles`; `Scopes`) | Your identity provider, or `/dev/token` in Development |
+| CSRF | Sign-in and sign-out are POST forms with an antiforgery token. The Blazor connection (`/_blazor`) is refused when its `Origin` header isn't this app. `SameSite=Lax` keeps the cookie off cross-site posts, frames and WebSocket requests | The policies name only the bearer scheme, so the cookie is never read: a request with only the cookie gets **401** |
+
+- Outside Development the admin app **refuses to start** without `Auth:Oidc:Authority` and `ClientId`.
+- Roles are checked inside `AdminService` on every action. Pages hide what you can't do, but don't decide.
+- The person's OIDC access token is kept in server memory only, keyed by a random session id (never in the
+  cookie or the page), and is dropped on sign-out. It's used for Try it against "caller's own token" services
+  and to read the gateway's live logs.
+- History records `by` (the person's `sub`) and `byName` (their display name, when the sign-in gives one).
 
 ## Health and personal data (needs specialist review)
 
@@ -98,7 +117,7 @@ Design choices that help:
 - Cache keys are hashed.
 - Logs record which recipe ran and who called it, never the values.
 - Admin traces mask query values.
-- History records **who** changed an endpoint as an id (`sub`), never a name or email, and holds no request data.
+- History records **who** changed an endpoint as an id (`sub`) and, since ADR 0014, the display name from their sign-in (the `name` claim; check your provider doesn't put an email there), and holds no request data.
 - Use identifiers in headers or bodies rather than query strings where you can.
 
 **Not decided here — review with qualified people:**
@@ -110,7 +129,7 @@ Design choices that help:
   health data, and set a maximum TTL.
 - **Data residency:** where gateway instances and caches run.
 - **Retention** of logs and history, and who can read them. Since ADR 0012, each history entry records
-  the publisher's user id (`sub`) and a time, and history is never pruned or changed. Decide how long
+  the publisher's user id (`sub`) and a time, and since ADR 0014 their display name; history is never pruned or changed. Decide how long
   actor ids are kept, and whether a minimum retention applies for audit.
 - **Penetration test and threat model sign-off** before production.
 

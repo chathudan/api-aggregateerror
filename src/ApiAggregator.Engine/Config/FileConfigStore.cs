@@ -132,7 +132,7 @@ public sealed class FileConfigStore : IConfigStore
         System.IO.Directory.CreateDirectory(HistoryDir);
         var entry = new RecipeHistoryEntry
         {
-            Id = recipe.Id, Version = recipe.Version, At = change.At, By = change.By, RestoredFrom = change.RestoredFrom,
+            Id = recipe.Id, Version = recipe.Version, At = change.At, By = change.By, ByName = change.ByName, RestoredFrom = change.RestoredFrom,
             Action = change.RestoredFrom is null ? HistoryAction.Published : HistoryAction.RolledBack, Recipe = recipe
         };
         // History first and write-once: if this version is already there, nothing goes live.
@@ -157,7 +157,7 @@ public sealed class FileConfigStore : IConfigStore
             await WriteOnceAsync(published, JsonSerializer.Serialize(kept, AggregatorJson.Options), ct);
         }
 
-        var entry = new RecipeHistoryEntry { Id = id, Version = recipe.Version, Action = HistoryAction.Unpublished, At = change.At, By = change.By };
+        var entry = new RecipeHistoryEntry { Id = id, Version = recipe.Version, Action = HistoryAction.Unpublished, At = change.At, By = change.By, ByName = change.ByName };
         await WriteOnceAsync(SafePath(HistoryDir, $"{id}.v{recipe.Version}.unpublished"), JsonSerializer.Serialize(entry, AggregatorJson.Options), ct);
         File.Delete(live); // the gateway's next config check sees one recipe fewer and stops serving it
         _lastCheckUtc = DateTime.MinValue;

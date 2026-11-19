@@ -14,8 +14,9 @@ public sealed class UiCollection : ICollectionFixture<StackFixture>
 }
 
 /// <summary>
-/// The whole product, running for real: mocks, gateway, admin API and admin UI (the built apps, each its own process,
-/// Development settings) on free ports, over a temporary copy of samples/config. Plus one headless Chromium.
+/// The whole product, running for real: mocks, gateway and the admin app (the built apps, each its own process,
+/// Development settings) on free ports, over a temporary copy of samples/config. Plus one headless Chromium, signed in
+/// once through the development sign-in (as a publisher), so every page opens signed in.
 /// Started once for all UI tests. Does nothing when the browsers aren't installed (the tests are skipped then).
 /// </summary>
 public sealed class StackFixture : IAsyncLifetime
@@ -28,7 +29,6 @@ public sealed class StackFixture : IAsyncLifetime
     public string LogDir => Path.Combine(ConfigDir, "_logs");
     public int MockPort { get; private set; }
     public string GatewayUrl { get; private set; } = "";
-    public string AdminApiUrl { get; private set; } = "";
     public string UiUrl { get; private set; } = "";
     public IBrowser Browser { get; private set; } = default!;
 
@@ -38,26 +38,40 @@ public sealed class StackFixture : IAsyncLifetime
 
         // Screenshots for the guides use the usual ports (5100...), so the addresses in them match what readers see.
         var standard = Environment.GetEnvironmentVariable("UI_TESTS_STANDARD_PORTS") == "1";
-        var (mock, gateway, admin, ui) = standard ? (5100, 5200, 5210, 5300) : (FreePort(), FreePort(), FreePort(), FreePort());
+        var (mock, gateway, ui) = standard ? (5100, 5200, 5300) : (FreePort(), FreePort(), FreePort());
         MockPort = mock;
         CopySampleConfig();
         GatewayUrl = $"http://localhost:{gateway}";
-        AdminApiUrl = $"http://localhost:{admin}";
         UiUrl = $"http://localhost:{ui}";
 
         Start("MockServices", "samples/MockServices", mock, []);
         Start("ApiAggregator.Gateway", "src/ApiAggregator.Gateway", gateway, []);
-        Start("ApiAggregator.Admin.Api", "src/ApiAggregator.Admin.Api", admin, []);
-        Start("ApiAggregator.Admin.UI", "src/ApiAggregator.Admin.UI", ui, new()
-        {
-            ["AdminApi__BaseUrl"] = AdminApiUrl + "/",
-            ["Gateway__BaseUrl"] = GatewayUrl + "/"
-        });
+        Start("ApiAggregator.Admin", "src/ApiAggregator.Admin", ui, new() { ["Gateway__BaseUrl"] = GatewayUrl + "/" });
 
-        await WaitUntilUp($"http://localhost:{mock}/_stats", $"{GatewayUrl}/health/live", $"{AdminApiUrl}/dev/token", UiUrl);
+        await WaitUntilUp($"http://localhost:{mock}/_stats", $"{GatewayUrl}/health/live", $"{UiUrl}/signin");
 
         _playwright = await Playwright.CreateAsync();
         Browser = await _playwright.Chromium.LaunchAsync(new() { Headless = true });
+        _signedIn = await SignInOnceAsync();
+    }
+
+    /// <summary>The name the tests sign in with; the top bar shows it.</summary>
+    public const string TesterName = "QA Tester";
+
+    private string? _signedIn; // browser storage (the sign-in cookie) after signing in once
+
+    /// <summary>Signs in through the real development sign-in page, as a publisher, and keeps the cookie.</summary>
+    private async Task<string> SignInOnceAsync()
+    {
+        var page = await NewAnonymousPageAsync();
+        await page.GotoAsync("/signin");
+        await page.GetByLabel("Your name").FillAsync(TesterName);
+        await page.GetByLabel("Publisher").CheckAsync();
+        await page.GetByRole(AriaRole.Button, new() { Name = "Sign in" }).ClickAsync();
+        await page.WaitForURLAsync(url => !url.Contains("/signin"));
+        var state = await page.Context.StorageStateAsync();
+        await page.Context.CloseAsync();
+        return state;
     }
 
     public async Task DisposeAsync()
@@ -71,10 +85,15 @@ public sealed class StackFixture : IAsyncLifetime
         try { Directory.Delete(ConfigDir, recursive: true); } catch (IOException) { /* best effort */ }
     }
 
-    /// <summary>A new page at laptop size, in its own browser context (no shared state between tests).</summary>
-    public async Task<IPage> NewPageAsync()
+    /// <summary>A new page at laptop size, signed in, in its own browser context (no other shared state between tests).</summary>
+    public Task<IPage> NewPageAsync() => NewPageAsync(_signedIn);
+
+    /// <summary>A new page that isn't signed in, for the sign-in page itself.</summary>
+    public Task<IPage> NewAnonymousPageAsync() => NewPageAsync(null);
+
+    private async Task<IPage> NewPageAsync(string? storageState)
     {
-        var context = await Browser.NewContextAsync(new() { ViewportSize = new() { Width = 1280, Height = 800 }, BaseURL = UiUrl });
+        var context = await Browser.NewContextAsync(new() { ViewportSize = new() { Width = 1280, Height = 800 }, BaseURL = UiUrl, StorageState = storageState });
         var page = await context.NewPageAsync();
         page.SetDefaultTimeout(15_000);
         return page;
