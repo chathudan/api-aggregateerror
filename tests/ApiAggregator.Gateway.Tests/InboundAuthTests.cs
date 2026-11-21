@@ -64,6 +64,24 @@ public class InboundAuthTests(GatewayApp app) : IClassFixture<GatewayApp>
         Assert.Equal("people.read", body["requiredScope"]!.GetValue<string>());
     }
 
+    [Fact]
+    public async Task A_server_token_with_the_permission_in_roles_gets_the_response()
+    {
+        // Entra ID gives a server calling with client credentials its permissions in "roles", with no "scp".
+        var response = await Send(TestAuth.Token("", subject: "partner-server", roles: ["people.read"]));
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task A_server_token_with_other_roles_gives_403_insufficient_scope()
+    {
+        var response = await Send(TestAuth.Token("", subject: "partner-server", roles: ["orders.read", "people.write"]));
+
+        var body = await Problems.AssertProblem(response, 403, "insufficient_scope");
+        Assert.Equal("people.read", body["requiredScope"]!.GetValue<string>());
+    }
+
     private Task<HttpResponseMessage> Send(string token)
     {
         var client = app.CreateClient();

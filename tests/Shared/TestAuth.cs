@@ -32,10 +32,16 @@ public static class TestAuth
             };
         });
 
-    /// <summary>A signed token. Pass <paramref name="signingKey"/> or <paramref name="expires"/> to make an invalid one.</summary>
-    public static string Token(string scope, string subject = "test-user", string? signingKey = null, DateTime? expires = null)
+    /// <summary>
+    /// A signed token. Pass <paramref name="signingKey"/> or <paramref name="expires"/> to make an invalid one. An empty
+    /// <paramref name="scope"/> leaves the claim out; <paramref name="roles"/> adds a "roles" claim like Entra ID's.
+    /// </summary>
+    public static string Token(string scope, string subject = "test-user", string? signingKey = null, DateTime? expires = null, string[]? roles = null)
     {
         var expiry = expires ?? DateTime.UtcNow.AddMinutes(10);
+        var claims = new Dictionary<string, object> { ["sub"] = subject };
+        if (scope.Length > 0) claims["scope"] = scope;
+        if (roles is not null) claims["roles"] = roles;
         return new JsonWebTokenHandler().CreateToken(new SecurityTokenDescriptor
         {
             Issuer = Issuer,
@@ -43,7 +49,7 @@ public static class TestAuth
             NotBefore = expiry.AddHours(-1),
             IssuedAt = expiry.AddHours(-1),
             Expires = expiry,
-            Claims = new Dictionary<string, object> { ["sub"] = subject, ["scope"] = scope },
+            Claims = claims,
             SigningCredentials = new SigningCredentials(SigningKey(signingKey ?? Key), SecurityAlgorithms.HmacSha256)
         });
     }

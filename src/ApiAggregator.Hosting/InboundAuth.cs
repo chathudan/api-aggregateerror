@@ -64,9 +64,13 @@ public static class InboundAuth
             SigningCredentials = new SigningCredentials(new SymmetricSecurityKey(Encoding.UTF8.GetBytes(auth["DevSigningKey"]!)), SecurityAlgorithms.HmacSha256)
         });
 
-    /// <summary>Supports both "scope" (space separated) and "scp" claims.</summary>
+    /// <summary>
+    /// Supports "scope" (space separated), "scp", and "roles": a server calling with its own token (client credentials)
+    /// gets its permissions in "roles" from Entra ID, not "scp". Roles in a token are granted for this API by an
+    /// administrator, so they count the same as scopes.
+    /// </summary>
     public static bool HasScope(ClaimsPrincipal user, string required) =>
-        user.FindAll("scope").Concat(user.FindAll("scp"))
+        user.FindAll("scope").Concat(user.FindAll("scp")).Concat(user.FindAll("roles"))
             .SelectMany(c => c.Value.Split(' ', StringSplitOptions.RemoveEmptyEntries))
             .Contains(required, StringComparer.Ordinal);
 

@@ -12,7 +12,9 @@ flowchart LR
 
 1. **Inbound (caller → gateway, or a script → `/admin/*`).** A JWT validated by ASP.NET Core JWT bearer against
    your OpenID Connect provider (`Auth:Authority`, `Auth:Audience`). Each recipe can require a
-   **scope**, for example `customer.read`. Admin roles are `aggregator.author`, `aggregator.publisher` and the
+   **scope**, for example `customer.read`, found in the token's `scope` (space separated), `scp` or `roles` claim.
+   `roles` is where Entra ID puts a server's permissions when it calls with its own token (client credentials); an
+   administrator grants them for this API, so they count the same as scopes. Admin roles are `aggregator.author`, `aggregator.publisher` and the
    separate `aggregator.admin` (browser access settings, [ADR 0015](../adr/0015-cors-for-the-gateway.md)), as scopes
    or role claims. People using the admin **pages** sign in separately, see
    [Admin sign-in](#admin-sign-in-and-csrf). In Development only, `Auth:DevSigningKey` enables a local token issuer at
