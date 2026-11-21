@@ -30,7 +30,7 @@
   },
   {
     "id": "service-c-oauth",
-    "name": "Service C - OAuth client credentials (JWT)",
+    "name": "Service C (recommendations) sign-in",
     "steps": [
       {
         "kind": "OAuthClientCredentials",
