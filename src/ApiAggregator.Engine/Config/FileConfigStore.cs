@@ -1,3 +1,4 @@
+using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using ApiAggregator.Engine.BrowserAccess;
@@ -35,6 +36,12 @@ public sealed class FileConfigStore : IConfigStore
     private readonly TimeSpan _checkInterval;
     private readonly ILogger<FileConfigStore> _logger;
     private readonly SemaphoreSlim _gate = new(1, 1);
+
+    /// <summary>
+    /// How files are written: the usual options, but with characters like ' and é written as they are, not as \u0027,
+    /// so files people read and diff stay plain. Only for files: HTTP responses keep the stricter default escaping.
+    /// </summary>
+    private static readonly JsonSerializerOptions FileJson = new(AggregatorJson.Options) { Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping };
 
     private ConfigSnapshot? _snapshot;
     private DateTime _lastCheckUtc;
@@ -96,7 +103,7 @@ public sealed class FileConfigStore : IConfigStore
         {
             var list = await ReadListAsync<ApiService>(ServicesFile, ct);
             if (list.RemoveAll(s => string.Equals(s.Id, id, StringComparison.OrdinalIgnoreCase)) == 0) return false;
-            await WriteAtomicAsync(ServicesFile, JsonSerializer.Serialize(list.OrderBy(s => s.Id), AggregatorJson.Options), ct);
+            await WriteAtomicAsync(ServicesFile, JsonSerializer.Serialize(list.OrderBy(s => s.Id), FileJson), ct);
             _lastCheckUtc = DateTime.MinValue;
             return true;
         }
@@ -121,7 +128,7 @@ public sealed class FileConfigStore : IConfigStore
     public async Task SaveDraftAsync(Recipe draft, CancellationToken ct = default)
     {
         System.IO.Directory.CreateDirectory(DraftsDir);
-        await WriteAtomicAsync(SafePath(DraftsDir, draft.Id), JsonSerializer.Serialize(draft, AggregatorJson.Options), ct);
+        await WriteAtomicAsync(SafePath(DraftsDir, draft.Id), JsonSerializer.Serialize(draft, FileJson), ct);
     }
 
     public Task<bool> DeleteDraftAsync(string id, CancellationToken ct = default)
@@ -141,8 +148,8 @@ public sealed class FileConfigStore : IConfigStore
             Action = change.RestoredFrom is null ? HistoryAction.Published : HistoryAction.RolledBack, Recipe = recipe
         };
         // History first and write-once: if this version is already there, nothing goes live.
-        await WriteOnceAsync(SafePath(HistoryDir, $"{recipe.Id}.v{recipe.Version}"), JsonSerializer.Serialize(entry, AggregatorJson.Options), ct);
-        await WriteAtomicAsync(SafePath(RecipesDir, recipe.Id), JsonSerializer.Serialize(recipe, AggregatorJson.Options), ct);
+        await WriteOnceAsync(SafePath(HistoryDir, $"{recipe.Id}.v{recipe.Version}"), JsonSerializer.Serialize(entry, FileJson), ct);
+        await WriteAtomicAsync(SafePath(RecipesDir, recipe.Id), JsonSerializer.Serialize(recipe, FileJson), ct);
         _lastCheckUtc = DateTime.MinValue; // pick the change up on the next call
     }
 
@@ -159,11 +166,11 @@ public sealed class FileConfigStore : IConfigStore
         if (!File.Exists(published))
         {
             var kept = new RecipeHistoryEntry { Id = id, Version = recipe.Version, Action = HistoryAction.Published, Recipe = recipe };
-            await WriteOnceAsync(published, JsonSerializer.Serialize(kept, AggregatorJson.Options), ct);
+            await WriteOnceAsync(published, JsonSerializer.Serialize(kept, FileJson), ct);
         }
 
         var entry = new RecipeHistoryEntry { Id = id, Version = recipe.Version, Action = HistoryAction.Unpublished, At = change.At, By = change.By, ByName = change.ByName };
-        await WriteOnceAsync(SafePath(HistoryDir, $"{id}.v{recipe.Version}.unpublished"), JsonSerializer.Serialize(entry, AggregatorJson.Options), ct);
+        await WriteOnceAsync(SafePath(HistoryDir, $"{id}.v{recipe.Version}.unpublished"), JsonSerializer.Serialize(entry, FileJson), ct);
         File.Delete(live); // the gateway's next config check sees one recipe fewer and stops serving it
         _lastCheckUtc = DateTime.MinValue;
         return true;
@@ -200,8 +207,8 @@ public sealed class FileConfigStore : IConfigStore
         {
             System.IO.Directory.CreateDirectory(CorsHistoryDir);
             // History first and write-once, as for recipes: if this number is taken, nothing changes.
-            await WriteOnceAsync(Path.Combine(CorsHistoryDir, $"{change.Number}.json"), JsonSerializer.Serialize(change, AggregatorJson.Options), ct);
-            await WriteAtomicAsync(CorsFile, JsonSerializer.Serialize(new BrowserAccessFile { Origins = origins.ToList() }, AggregatorJson.Options), ct);
+            await WriteOnceAsync(Path.Combine(CorsHistoryDir, $"{change.Number}.json"), JsonSerializer.Serialize(change, FileJson), ct);
+            await WriteAtomicAsync(CorsFile, JsonSerializer.Serialize(new BrowserAccessFile { Origins = origins.ToList() }, FileJson), ct);
             _lastCheckUtc = DateTime.MinValue;
         }
         finally { _gate.Release(); }
@@ -293,7 +300,7 @@ public sealed class FileConfigStore : IConfigStore
             var list = await ReadListAsync<T>(file, ct);
             list.RemoveAll(x => string.Equals(id(x), id(item), StringComparison.OrdinalIgnoreCase));
             list.Add(item);
-            await WriteAtomicAsync(file, JsonSerializer.Serialize(list.OrderBy(id), AggregatorJson.Options), ct);
+            await WriteAtomicAsync(file, JsonSerializer.Serialize(list.OrderBy(id), FileJson), ct);
             _lastCheckUtc = DateTime.MinValue;
         }
         finally { _gate.Release(); }
@@ -304,7 +311,7 @@ public sealed class FileConfigStore : IConfigStore
     {
         if (File.Exists(path)) throw new HistoryConflictException($"Version history already has {Path.GetFileName(path)}.");
         var temp = path + "." + Guid.NewGuid().ToString("n") + ".tmp";
-        await File.WriteAllTextAsync(temp, content, ct);
+        await File.WriteAllTextAsync(temp, WithFinalNewline(content), ct);
         try { File.Move(temp, path, overwrite: false); }
         catch (IOException) when (File.Exists(path))
         {
@@ -317,7 +324,10 @@ public sealed class FileConfigStore : IConfigStore
     private static async Task WriteAtomicAsync(string path, string content, CancellationToken ct)
     {
         var temp = path + ".tmp";
-        await File.WriteAllTextAsync(temp, content, ct);
+        await File.WriteAllTextAsync(temp, WithFinalNewline(content), ct);
         File.Move(temp, path, overwrite: true);
     }
+
+    /// <summary>Files end with a newline, like the hand-written ones, so saving one doesn't show up as a change on its last line.</summary>
+    private static string WithFinalNewline(string content) => content.EndsWith('\n') ? content : content + "\n";
 }

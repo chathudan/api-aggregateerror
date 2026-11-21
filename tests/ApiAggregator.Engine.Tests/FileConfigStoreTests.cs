@@ -22,6 +22,18 @@ public sealed class FileConfigStoreTests : IDisposable
     private static Recipe Recipe(int version, string name = "Orders") => new() { Id = "orders", Name = name, Route = "orders", Version = version, Status = RecipeStatus.Published };
 
     [Fact]
+    public async Task Saved_files_keep_apostrophes_as_typed_and_end_with_a_newline()
+    {
+        await Store().SaveDraftAsync(Recipe(1, "The caller's orders <latest>"));
+
+        var text = await File.ReadAllTextAsync(Path.Combine(_dir, "drafts", "orders.json"));
+        Assert.Contains("The caller's orders <latest>", text);
+        Assert.DoesNotContain("\\u0027", text);
+        Assert.EndsWith("\n", text);
+        Assert.Equal("The caller's orders <latest>", (await Store().GetDraftAsync("orders"))!.Name); // reads back the same
+    }
+
+    [Fact]
     public async Task Publishing_the_same_version_twice_is_refused_and_the_first_entry_is_kept()
     {
         var store = Store();

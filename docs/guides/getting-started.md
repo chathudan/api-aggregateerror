@@ -95,7 +95,7 @@ values from A's answer. [Building endpoints](building-endpoints.md) explains how
 **Without curl:** choose **API docs** in the admin UI, pick an endpoint, then **Try it out** and
 **Execute**. In development you're already signed in.
 
-`./scripts/try-gateway.sh` calls all the sample endpoints in one go.
+`./scripts/try-gateway.sh` calls all the sample endpoints in one go and says **OK** or **FAIL** for each, which is a quick check before a demo.
 
 ## 5. The same thing from the command line (1 minute)
 
