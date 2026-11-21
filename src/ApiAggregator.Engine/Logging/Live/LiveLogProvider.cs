@@ -1,10 +1,13 @@
+using System.Diagnostics;
+using System.Runtime.CompilerServices;
 using Microsoft.Extensions.Logging;
 
 namespace ApiAggregator.Engine.Logging.Live;
 
 /// <summary>
 /// A logger provider that copies log lines into the <see cref="LiveLogBuffer"/> for the admin Logs page.
-/// It adds nothing beyond the formatted message and a few ids (correlation, recipe, step, service, error code).
+/// It adds nothing beyond the formatted message, a few ids (correlation, recipe, step, service, error code, page) and,
+/// for an exception, where in our code it happened.
 /// </summary>
 public sealed class LiveLogProvider(LiveLogBuffer buffer, LiveLogOptions options) : ILoggerProvider, ISupportExternalScope
 {
@@ -53,7 +56,9 @@ public sealed class LiveLogProvider(LiveLogBuffer buffer, LiveLogOptions options
                 Step: ids.Step,
                 ServiceId: ids.ServiceId,
                 ErrorCode: ids.ErrorCode,
-                Exception: Describe(exception, _ours)));
+                Exception: Describe(exception, _ours),
+                Page: ids.Page,
+                Location: Locate(exception)));
         }
 
         /// <summary>
@@ -69,10 +74,52 @@ public sealed class LiveLogProvider(LiveLogBuffer buffer, LiveLogOptions options
         }
     }
 
+    private const int MaxFrames = 3;
+
+    /// <summary>
+    /// Where an exception happened in our own code: up to three frames of ApiAggregator types, innermost first, as
+    /// "EndpointEditor.BuildRenderTree (EndpointEditor.razor:200)". Frames are method and file names only, so this is
+    /// safe even for framework exceptions, whose messages are left out. Line numbers need the .pdb (there in Debug
+    /// and in a default Release build). Null when no frame is ours.
+    /// </summary>
+    internal static string? Locate(Exception? exception)
+    {
+        var frames = new List<string>();
+        for (var ex = exception; ex is not null && frames.Count == 0; ex = ex.InnerException)
+        {
+            foreach (var frame in new StackTrace(ex, fNeedFileInfo: true).GetFrames())
+            {
+                if (frame.GetMethod() is not { DeclaringType: { } declaring } method) continue;
+                var type = OuterType(declaring);
+                if (type.Namespace?.StartsWith("ApiAggregator", StringComparison.Ordinal) != true) continue;
+
+                var file = frame.GetFileName() is { } path ? $" ({Path.GetFileName(path)}:{frame.GetFileLineNumber()})" : "";
+                // An async method runs as MoveNext of a made-up type named after it: <SaveDraft>d__12.
+                var name = method.Name == "MoveNext" && declaring.Name.StartsWith('<') ? MethodName(declaring.Name) : MethodName(method.Name);
+                var line = $"{type.Name}.{name}{file}";
+                if (!frames.Contains(line)) frames.Add(line);
+                if (frames.Count == MaxFrames) break;
+            }
+        }
+        return frames.Count == 0 ? null : string.Join(" ← ", frames);
+    }
+
+    /// <summary>Lambdas and async methods live in compiler-made nested types (&lt;&gt;c, &lt;Run&gt;d__5): name the type that holds them.</summary>
+    private static Type OuterType(Type type)
+    {
+        while (type.DeclaringType is { } outer && (type.Name.StartsWith('<') || type.IsDefined(typeof(CompilerGeneratedAttribute), false)))
+            type = outer;
+        return type;
+    }
+
+    /// <summary>"&lt;BuildRenderTree&gt;b__0_5" → "BuildRenderTree".</summary>
+    private static string MethodName(string name) =>
+        name.StartsWith('<') && name.IndexOf('>') is > 1 and var end ? name[1..end] : name;
+
     /// <summary>Picks the few known id fields out of structured state and scopes. The first value found wins (the line's own beats the scope's).</summary>
     private sealed class Ids
     {
-        public string? CorrelationId, RecipeId, Step, ServiceId, ErrorCode;
+        public string? CorrelationId, RecipeId, Step, ServiceId, ErrorCode, Page;
 
         public void Collect(IEnumerable<KeyValuePair<string, object?>> fields)
         {
@@ -85,6 +132,7 @@ public sealed class LiveLogProvider(LiveLogBuffer buffer, LiveLogOptions options
                 else if (key.Equals("Step", StringComparison.OrdinalIgnoreCase)) Step ??= text;
                 else if (key.Equals("ServiceId", StringComparison.OrdinalIgnoreCase)) ServiceId ??= text;
                 else if (key.Equals("ErrorCode", StringComparison.OrdinalIgnoreCase)) ErrorCode ??= text;
+                else if (key.Equals("Page", StringComparison.OrdinalIgnoreCase)) Page ??= text;
             }
         }
     }

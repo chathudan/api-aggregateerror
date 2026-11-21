@@ -63,6 +63,7 @@
                         <td class="log-message">
                             @e.Message
                             @if (!string.IsNullOrEmpty(e.ErrorCode)) { <span class="tag error">@e.ErrorCode</span> }
+                            @if (e.Exception is not null && e.Page is not null) { <span class="muted"> on @e.Page</span> }
                         </td>
                         <td>
                             @if (!string.IsNullOrEmpty(e.CorrelationId))
@@ -82,7 +83,9 @@
                                     @if (e.ServiceId is not null) { <dt>Service</dt><dd>@e.ServiceId</dd> }
                                     @if (e.ErrorCode is not null) { <dt>Error code</dt><dd>@e.ErrorCode</dd> }
                                     @if (e.CorrelationId is not null) { <dt>Correlation id</dt><dd>@e.CorrelationId</dd> }
+                                    @if (e.Page is not null) { <dt>Page</dt><dd>@e.Page</dd> }
                                     @if (e.Exception is not null) { <dt>Exception</dt><dd>@e.Exception</dd> }
+                                    @if (e.Location is not null) { <dt>Code location</dt><dd><code>@e.Location</code></dd> }
                                 </dl>
                             </td>
                         </tr>

@@ -192,4 +192,69 @@ public class LiveLogTests
 
         Assert.Equal("InvalidOperationException", Assert.Single(buffer.Read(0)).Exception);
     }
+
+    [Fact]
+    public void Provider_says_where_in_our_code_an_exception_happened_without_its_message()
+    {
+        var (factory, buffer) = Create();
+
+        var thrown = Caught(() => ReadPastTheEnd(["only"]));
+        // A framework category: its message is left out, but the frames are method and file names only.
+        factory.CreateLogger("Microsoft.AspNetCore.Components.Server.Circuits.CircuitHost").LogError(thrown, "Unhandled exception in circuit");
+
+        var entry = Assert.Single(buffer.Read(0));
+        Assert.Equal("IndexOutOfRangeException", entry.Exception);
+        Assert.StartsWith("LiveLogTests.ReadPastTheEnd (LiveLogTests.cs:", entry.Location);
+        Assert.Contains("LiveLogTests.Provider_says_where_in_our_code_an_exception_happened_without_its_message", entry.Location);
+        Assert.DoesNotContain("outside the bounds", entry.Location);
+    }
+
+    [Fact]
+    public async Task An_async_method_is_named_in_the_code_location()
+    {
+        var thrown = await Assert.ThrowsAsync<InvalidOperationException>(FailLaterAsync);
+
+        Assert.StartsWith("LiveLogTests.FailLaterAsync", LiveLogProvider.Locate(thrown));
+    }
+
+    [Fact]
+    public void Only_our_own_frames_are_named_in_the_code_location()
+    {
+        var thrown = Caught(() => int.Parse("x"));
+
+        // The frames are int.Parse's and this test's: only this test's are ours.
+        // int.Parse's own frames are skipped; the lambda that called it is named after the method that holds it.
+        Assert.StartsWith("LiveLogTests.Only_our_own_frames_are_named_in_the_code_location (LiveLogTests.cs:", LiveLogProvider.Locate(thrown));
+        Assert.DoesNotContain("Int32", LiveLogProvider.Locate(thrown));
+        Assert.Null(LiveLogProvider.Locate(new InvalidOperationException("never thrown, so no frames")));
+    }
+
+    [Fact]
+    public void Provider_captures_the_admin_page_from_the_scope()
+    {
+        var (factory, buffer) = Create();
+        var logger = factory.CreateLogger("Microsoft.AspNetCore.Components.Server.Circuits.CircuitHost");
+
+        using (logger.BeginScope(new LogScope(("Page", "/endpoints/customer-summary"), ("RecipeId", "customer-summary"))))
+            logger.LogError("Unhandled exception in circuit");
+
+        var entry = Assert.Single(buffer.Read(0));
+        Assert.Equal("/endpoints/customer-summary", entry.Page);
+        Assert.Equal("customer-summary", entry.RecipeId);
+    }
+
+    private static Exception Caught(Func<object> action)
+    {
+        try { action(); }
+        catch (Exception ex) { return ex; }
+        throw new InvalidOperationException("Expected an exception.");
+    }
+
+    private static string ReadPastTheEnd(string[] items) => items[items.Length];
+
+    private static async Task FailLaterAsync()
+    {
+        await Task.Yield();
+        throw new InvalidOperationException("later");
+    }
 }

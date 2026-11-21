@@ -25,6 +25,12 @@ are already structured and free of values (ADR 0009), so showing them to authori
 > from its in-memory buffer, and only the gateway's over HTTP (`/_admin/logs`, with the signed-in person's token,
 > a dev token in Development, or `Gateway:LogsToken`). `/admin/logs` stays for scripts.
 
+> **Note (2026-11-21):** an exception line also keeps a **code location**: up to three of our own stack frames as
+> method and file:line, with no message for framework exceptions and nothing else from the trace. Frames hold code
+> names only, never values. Admin app lines also keep the **page** (path only, no query) and the endpoint open in the
+> editor. Without them, an admin page error showed only "IndexOutOfRangeException". Step successes (1100) are now
+> Information, so each downstream call's endpoint, status and time are on the Logs page.
+
 ## Consequences
 - Instant feedback while building, and an easy way to follow one app request by its correlation id.
 - It shows **one process**. With several gateway pods, each pod has its own buffer, and the UI sees

@@ -66,6 +66,8 @@ builder.Services.AddRazorComponents().AddInteractiveServerComponents();
 builder.Services.AddScoped<CurrentUser>();
 builder.Services.AddScoped<ToastService>();
 builder.Services.AddScoped<UiContext>();
+// Log lines (and errors) of a page say which page and which endpoint was open.
+builder.Services.AddScoped<Microsoft.AspNetCore.Components.Server.Circuits.CircuitHandler, PageLogScope>();
 // The Logs page reads the gateway's live logs over HTTP ("Gateway:BaseUrl"); this app's own come from memory.
 builder.Services.AddHttpClient<LiveLogClient>().RemoveAllLoggers();
 

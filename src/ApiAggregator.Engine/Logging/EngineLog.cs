@@ -31,7 +31,8 @@ internal static partial class EngineLog
 
     // ---- steps
 
-    [LoggerMessage(EventId = 1100, Level = LogLevel.Debug,
+    // Information, so the Logs page shows which service endpoint each step called, its HTTP status and time.
+    [LoggerMessage(EventId = 1100, Level = LogLevel.Information,
         Message = "Step {Step} succeeded: service {ServiceId}, endpoint {EndpointId}, HTTP {HttpStatus}, {DurationMs} ms, {Calls} call(s), fromCache {FromCache}")]
     public static partial void StepSucceeded(this ILogger logger, string step, string serviceId, string endpointId, int? httpStatus, long durationMs, int calls, bool fromCache);
 

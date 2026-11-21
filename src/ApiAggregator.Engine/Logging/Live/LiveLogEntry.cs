@@ -8,6 +8,8 @@ namespace ApiAggregator.Engine.Logging.Live;
 /// <param name="Level">Debug, Information, Warning, Error or Critical.</param>
 /// <param name="Category">The logger name without the "ApiAggregator." prefix, e.g. "Engine.Execution.CompositionExecutor".</param>
 /// <param name="Exception">The exception TYPE and message only (never a stack trace), cut to 500 characters.</param>
+/// <param name="Page">Admin app only: the page in use, path only (no query), e.g. "/endpoints/customer-summary".</param>
+/// <param name="Location">For an exception: where in our code it happened, as method and file:line only (no values).</param>
 public sealed record LiveLogEntry(
     long Seq,
     DateTimeOffset Timestamp,
@@ -21,4 +23,6 @@ public sealed record LiveLogEntry(
     string? Step = null,
     string? ServiceId = null,
     string? ErrorCode = null,
-    string? Exception = null);
+    string? Exception = null,
+    string? Page = null,
+    string? Location = null);

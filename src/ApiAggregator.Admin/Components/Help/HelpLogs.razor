@@ -1,10 +1,11 @@
 @* Help → Live logs. Mirrors docs/guides/troubleshooting.md#find-one-request. *@
 <p>The <strong>Logs</strong> page shows what the gateway and this admin app have just done, newest first. It updates by itself.</p>
 <ul>
-    <li><strong>Gateway</strong> lines are calls from apps: which endpoint was called, how long it took, and which service step failed and why.</li>
+    <li><strong>Gateway</strong> lines are calls from apps: which endpoint was called, how long it took, and for each step the service endpoint it called, its HTTP status and why it failed.</li>
     <li><strong>Admin</strong> lines are what you do here: <em>Try it</em> runs, sign-in checks, imports and publishing.</li>
 </ul>
 <p><strong>Find one request.</strong> When an app reports an error it includes a <code>correlationId</code>. Paste it into the search box, or click the short id in any row to show only that request. After a <em>Try it</em> run, use "See logs for this test". Click a row to see all its details, such as the step, the service and the error code.</p>
+<p><strong>When this app shows an error.</strong> Its line says which page and endpoint were open, and where in the code it went wrong (<em>Code location</em>). Send those to a developer.</p>
 <p><strong>Narrow things down.</strong> Use the level filter to show only warnings and errors, or only errors. Press <strong>Pause</strong> to read in peace: new lines keep arriving behind the scenes and the page tells you how many are waiting. <strong>Clear</strong> only empties this page, not the gateway's memory.</p>
 <p><strong>Good to know.</strong></p>
 <ul>

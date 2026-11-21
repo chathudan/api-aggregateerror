@@ -13,7 +13,8 @@ every error body. When an app reports a problem, ask for it.
 1. Open **Logs** in the admin UI.
 2. Paste the id into the search box, or click the short id on any row. Only that request's lines remain:
    the call, each step that failed, and why.
-3. Click a line to see its details: the step, the service, the error code and the internal reason.
+3. Click a line to see its details: the step, the service, the error code and the internal reason. Each
+   step's line names the service endpoint it called, its HTTP status and how long it took.
 
 After a **Try it** run, **See logs for this test** does the same for the test.
 
@@ -27,6 +28,10 @@ line, which also shows the internal reason:
 ```text
 Failed    prefs      -        9 ms  calls=0    The gateway couldn't sign in to Service J (preferences). [auth_failed] — This service needs the caller's token, but the request has none.
 ```
+
+**When the admin app itself fails** (the page stops responding or shows an error bar), its error line says
+which page was open, which endpoint was being edited and the code location, for example
+`EndpointEditor.BuildRenderTree (EndpointEditor.razor:200)`. Send those to a developer.
 
 The Logs page keeps the most recent 2,000 lines per program, on this machine only. In production use
 your central log store, searching for the same `CorrelationId` ([Operations](operations.md#logs-and-alerts)).

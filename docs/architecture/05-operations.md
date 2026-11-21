@@ -94,7 +94,7 @@ on the console outside Development, ready for Azure Monitor, Seq, Elastic or Lok
 | 1001 CompositionCompleted | Information | It finished with 200 | Status, DurationMs, Steps, FromCache, Partial |
 | 1002 CompositionFailed | Warning | 4xx/5xx result | Status, ErrorCode, RootCauses |
 | 1003 InputRejected | Information | 400 | ErrorCount (no values) |
-| 1100 / 1101 / 1102 | Debug / **Warning** / Debug | Step succeeded / **failed** / skipped | Step, ServiceId, EndpointId, ErrorCode, HttpStatus, DurationMs, Detail |
+| 1100 / 1101 / 1102 | Information / **Warning** / Debug | Step succeeded / **failed** / skipped | Step, ServiceId, EndpointId, ErrorCode, HttpStatus, DurationMs, Calls, Detail |
 | 1200 DownstreamAuthFailed | Warning | Sign-in to a service failed | ProfileId, ServiceId, Reason |
 | 1201 / 1202 | Information | Credential obtained / invalidated | CacheKey or ProfileId, ExpiresAt or Reason |
 | 1300 ResponseCacheHit | Debug | Served from cache | Level, RecipeOrStep |
@@ -110,7 +110,10 @@ API as they happen, with filters for source, level, text and correlation id
 ([ADR 0010](../adr/0010-live-logs-in-admin-ui.md)). Each process keeps its last 2,000 lines in
 memory (`LiveLogs:Capacity`) and serves them at `/_admin/logs` (gateway) and `/admin/logs` (admin
 API) to callers with the `aggregator.author` scope. Set `LiveLogs:Enabled = false` to turn it off.
-It shows one process only, so keep a central log store for production.
+It shows one process only, so keep a central log store for production. A line with an exception also has a
+**code location**: up to three of our own frames as method and file:line (`LiveLogProvider.Locate`), never the
+message of a framework exception. Admin app lines name the **page** in use, path only, and the endpoint open in the
+editor (`PageLogScope`).
 
 **Suggested alerts:** a rise in `StepFailed` grouped by ServiceId and ErrorCode; any
 `DownstreamAuthFailed`, since expired credentials or rotated secrets are the usual cause;
