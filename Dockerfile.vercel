@@ -1,8 +1,10 @@
-# The public sample demo: gateway + mock services + the sample config in one container. Vercel builds this file
-# instead of ./Dockerfile when it's present. Set the Vercel project's PORT to 8080.
+# The public sample demo: gateway + admin app + mock services + the sample config in one container, behind Caddy on
+# one port. Vercel builds this file instead of ./Dockerfile when it's present. Set the Vercel project's PORT to 8080.
 #
-# SAMPLE DATA ONLY. The gateway runs in Development: /dev/token gives anyone a test token, and the API docs page
-# signs itself in. Never point this image at real services or real data. The admin app isn't included.
+# SAMPLE DATA ONLY. Everything runs in Development: /dev/token gives anyone a test token and anyone can sign in to the
+# admin app as publisher or admin. Never point this image at real services or real data.
+# Changes made in the admin app live only in this container: they're lost when Vercel stops it (about 5 minutes
+# without traffic) or on a redeploy. Keep lasting changes in git (samples/config).
 #
 # Try it locally:
 #   docker build -f Dockerfile.vercel -t aggregator-demo . && docker run -p 8080:8080 aggregator-demo
@@ -12,16 +14,25 @@ WORKDIR /repo
 COPY . .
 # Separate folders: each app has its own appsettings.json.
 RUN dotnet publish src/ApiAggregator.Gateway/ApiAggregator.Gateway.csproj -c Release -o /app/gateway /p:UseAppHost=false \
+ && dotnet publish src/ApiAggregator.Admin/ApiAggregator.Admin.csproj -c Release -o /app/admin /p:UseAppHost=false \
  && dotnet publish samples/MockServices/MockServices.csproj -c Release -o /app/mocks /p:UseAppHost=false
 
-# Not the chiseled image: the start script needs a shell to run two processes.
+FROM caddy:2.8 AS caddy
+
+# Not the chiseled image: the start script needs a shell to run several processes.
 FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS runtime
 WORKDIR /app
 COPY --from=build /app .
-COPY --chown=app:app samples/config /config
+COPY --from=caddy /usr/bin/caddy /usr/local/bin/caddy
+COPY deploy/vercel/Caddyfile /app/Caddyfile
 COPY --chmod=755 deploy/vercel/start.sh /app/start.sh
+# The admin app saves here; the gateway picks changes up within a couple of seconds.
+COPY --chown=app:app samples/config /config
+# Gateway__BaseUrl: where browsers reach the gateway from the admin app's links (API docs), and where its Logs page
+# reads the gateway's lines. Change it to your Vercel address, or set it in the Vercel project's environment variables.
 ENV ASPNETCORE_ENVIRONMENT=Development \
-    Aggregator__Config__Directory=/config
+    Aggregator__Config__Directory=/config \
+    Gateway__BaseUrl=https://api-aggregateerror-rust.vercel.app/
 USER app
 EXPOSE 8080
 ENTRYPOINT ["/app/start.sh"]

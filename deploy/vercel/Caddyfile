@@ -1,0 +1,16 @@
+# One public port for the Vercel demo: the gateway's paths go to the gateway, everything else to the admin app.
+{
+	admin off
+	auto_https off
+	persist_config off
+}
+
+:{$PORT:8080} {
+	@gateway path /bff /bff/* /dev/token /health/* /_admin/*
+	handle @gateway {
+		reverse_proxy 127.0.0.1:5200
+	}
+	handle {
+		reverse_proxy 127.0.0.1:5300
+	}
+}

@@ -91,18 +91,27 @@ Then:
 
 ## Public sample demo on Vercel
 
-A demo anyone can call, with the **sample data only**: the gateway, the mock services and `samples/config` in one
-container (`Dockerfile.vercel`, started by `deploy/vercel/start.sh`). Vercel builds `Dockerfile.vercel` instead of
-`Dockerfile` when both exist.
+A demo anyone can use, with the **sample data only**: the gateway, the admin app, the mock services and
+`samples/config` in one container (`Dockerfile.vercel`, started by `deploy/vercel/start.sh`), behind Caddy on one port
+(`deploy/vercel/Caddyfile`: `/bff`, `/dev/token`, `/health` and `/_admin/logs` go to the gateway, everything else to
+the admin app). Vercel builds `Dockerfile.vercel` instead of `Dockerfile` when both exist.
 
-> **Not for real services or real data.** The gateway runs in Development: `/dev/token` gives anyone a token and the
-> signing key is in this repository. That's acceptable here only because every record is made up. The admin app
-> isn't included; change the sample config on a developer machine, commit, and redeploy.
+> **Not for real services or real data.** Everything runs in Development: `/dev/token` gives anyone a token, the
+> signing key is in this repository, and anyone can sign in to the admin app as publisher or admin. That's
+> acceptable here only because every record is made up.
+>
+> **Admin changes don't last.** They're saved inside the container, so they're gone when Vercel stops it (about 5
+> minutes without traffic) or on a redeploy, and a second instance has its own copy. The admin page may also
+> reconnect now and then (Vercel limits how long a connection stays open). For lasting changes, edit on a developer
+> machine, commit `samples/config`, and push.
 
 1. In Vercel, **Add New → Project**, import the repository. Keep the root directory as the repository root.
 2. Under **Settings → Environment Variables**, add `PORT` = `8080` (the gateway listens there; Vercel routes to
    `PORT`, 80 by default).
-3. Deploy. Then open `https://<your project>.vercel.app/bff/docs`: it signs itself in, so **Execute** works.
+3. If your address isn't `api-aggregateerror-rust.vercel.app`, add `Gateway__BaseUrl` = `https://<your project>.vercel.app/`
+   too (the admin app's API docs links and Logs page use it).
+4. Deploy. The admin app is at `https://<your project>.vercel.app/` (sign in with any name and a role), the API docs
+   at `/bff/docs` (it signs itself in, so **Execute** works).
 
 To call it from a script or Postman, get a token first:
 `https://<your project>.vercel.app/dev/token?sub=tester&scope=customer.read%20people.read%20profile.read`.

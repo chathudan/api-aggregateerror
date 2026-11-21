@@ -74,7 +74,7 @@ If a change touches any of these, run the `security-review` skill and add or adj
 | `docs/` | `README.md` (index by audience), `guides/` (getting started, services, endpoints, combine lists, testing, app developers, troubleshooting, operations, security, glossary, FAQ), `architecture/` and `adr/` (the design record), `images/` (screenshots) |
 | `tests/ApiAggregator.Docs.Tests` | Runs every `<!-- check: ... -->` example in `docs/` and compares the output (`scripts/check-docs.sh`) |
 | `config/` | Your own configuration (real mode: `dev-run.sh --real`). Starts empty |
-| `Dockerfile.vercel`, `deploy/vercel/` | The public **sample-data** demo (gateway + mocks + `samples/config` in one container, Development mode, so `/dev/token` is open). Never for real services or data |
+| `Dockerfile.vercel`, `deploy/vercel/` | The public **sample-data** demo (gateway + admin app + mocks + `samples/config` in one container behind Caddy, Development mode, so `/dev/token` and the admin sign-in are open; admin changes don't survive a restart). Never for real services or data |
 
 ## Commands
 
