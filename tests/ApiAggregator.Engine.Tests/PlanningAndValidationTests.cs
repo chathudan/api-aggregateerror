@@ -85,4 +85,36 @@ public class PlanningAndValidationTests
         var recipe = Recipe(Step("a", "a/doesNotExist", true, ("request.route.id", "path.customerId")));
         Assert.Contains(RecipeValidator.Validate(recipe, Snapshot()).Issues, i => i.Message.Contains("was not found"));
     }
+    // ---------------------------------------------------------------- for-each: the looped field and the value it fills
+
+    private static IReadOnlyList<string> LoopWarnings(Recipe recipe) =>
+        RecipeValidator.Validate(recipe, CrmSnapshot()).Warnings.Where(w => w.Where == "steps.notes").Select(w => w.Message).ToList();
+
+    [Fact]
+    public void Sending_each_orders_id_as_contactId_warns_and_names_the_right_field()
+    {
+        var recipe = CrmRecipe(notesForEach: "{{orders.body.orders[*].id}}");
+
+        Assert.True(RecipeValidator.Validate(recipe, CrmSnapshot()).IsValid); // a warning, not a problem
+        Assert.Equal(["Notes sends each order's id as contactId. Did you mean each order's contactId? Pick it under Run this step."], LoopWarnings(recipe));
+    }
+
+    [Fact]
+    public void Sending_each_orders_contactId_as_contactId_does_not_warn() =>
+        Assert.Empty(LoopWarnings(CrmRecipe(notesForEach: "{{orders.body.orders[*].contactId}}")));
+
+    [Fact]
+    public void Sending_each_orders_id_as_orderId_does_not_warn_because_orders_have_no_orderId()
+    {
+        var recipe = CrmRecipe(notesForEach: "{{orders.body.orders[*].id}}");
+        recipe.Steps[2].Bind.Clear();
+        recipe.Steps[2].Bind.Add(new BindingDef { From = "orders.body.orders[0].contactId", To = "path.contactId" });
+        recipe.Steps[2].Bind.Add(new BindingDef { From = "item", To = "query.orderId" });
+
+        Assert.Empty(LoopWarnings(recipe));
+    }
+
+    [Fact]
+    public void A_loop_over_whole_orders_does_not_warn() =>
+        Assert.Empty(LoopWarnings(CrmRecipe(notesForEach: "{{orders.body.orders[*]}}", notesFrom: "item.contactId")));
 }

@@ -116,10 +116,16 @@ public sealed class SourceCatalog
     {
         if (path.TransformCalls.Count > 0) return null; // a transform changes the shape
         var step = recipe.Steps.FirstOrDefault(s => s.Alias == path.Root);
-        if (step is null || path.FirstProperty != "body") return null;
+        if (step is null) return null;
+
+        // A step that runs for each item holds one answer per call: notes[*].body.x is the x of every call.
+        var segments = path.Segments.ToList();
+        var forEach = !string.IsNullOrWhiteSpace(step.ForEach) && segments.Count >= 2
+            && segments[0].Kind == ValuePath.SegmentKind.Wildcard && segments[1] is { Kind: ValuePath.SegmentKind.Property, Name: "body" };
+        if (!forEach && path.FirstProperty != "body") return null;
 
         var schema = config.FindEndpoint(step.Endpoint, out _)?.ResponseSchema;
-        foreach (var segment in path.Segments.Skip(1))
+        foreach (var segment in segments.Skip(forEach ? 2 : 1))
         {
             if (schema is not JsonObject s) return null;
             schema = segment.Kind == ValuePath.SegmentKind.Property

@@ -304,6 +304,7 @@
     else
     {
     var allSources = SourcesFor(null);
+    var forShapes = TryRecipe();
     <table class="list">
         <thead><tr><th>Field name</th><th>Value</th><th></th></tr></thead>
         <tbody>
@@ -320,14 +321,37 @@
                         }
                         else
                         {
-                        <select @bind="field.Expression" aria-label="@($"Value of {field.Name}")">
+                        @* The value is picked from the list; for a list, "How many" or "Without repeats" is picked next to it. *@
+                        var shaped = ResponseShapes.Split(field.Expression);
+                        // "Without repeats" picked, but no field yet: shown as picked until a field is chosen.
+                        if (shaped is { Shape: ResponseShape.All } && field.PendingShape is { } pending) { shaped = shaped with { Shape = pending }; }
+                        var picked = shaped?.Value ?? field.Expression;
+                        <div class="inline tight">
+                        <select value="@picked" aria-label="@($"Value of {field.Name}")" @onchange="e => PickResponseValue(field, e.Value?.ToString())">
                             <option value="">Pick a value…</option>
                             @foreach (var o in allSources) { <option value="@o.Expression">@o.Label</option> }
-                            @if (!string.IsNullOrEmpty(field.Expression) && !allSources.Any(o => o.Expression == field.Expression))
+                            @if (!string.IsNullOrEmpty(picked) && !allSources.Any(o => o.Expression == picked))
                             {
-                                <option value="@field.Expression">@field.Expression (not in the field list)</option>
+                                <option value="@picked">@picked (not in the field list)</option>
                             }
                         </select>
+                        @if (shaped is not null && forShapes is not null && ResponseShapes.IsList(forShapes, shaped.Value, _snapshot!))
+                        {
+                            <select value="@shaped.Shape" aria-label="@($"What {field.Name} returns of the list")" @onchange="e => PickResponseShape(field, shaped, e.Value?.ToString())">
+                                @foreach (var (shape, label) in ResponseShapes.Choices) { <option value="@shape">@label</option> }
+                            </select>
+                            @if (ResponseShapes.NeedsField(shaped.Shape))
+                            {
+                                <span class="hint">by</span>
+                                <FieldPicker Value="@shaped.By" Fields="ResponseShapes.ItemFields(forShapes, shaped.Value, _snapshot!)" Placeholder="Pick the field that identifies a record…"
+                                             ValueChanged="by => { field.Expression = ResponseShapes.Compose(shaped with { By = by }); if (ResponseShapes.IsPlainField(by)) field.PendingShape = null; return Task.CompletedTask; }" />
+                            }
+                        }
+                        </div>
+                        @if (shaped is not null && ResponseShapes.NeedsField(shaped.Shape) && !ResponseShapes.IsPlainField(shaped.By))
+                        {
+                            <p class="hint">Pick the field that tells records apart, such as an id. Records with the same value count once.</p>
+                        }
                         }
                     </td>
                     <td><button class="link" @onclick="() => _form.Response.Remove(field)">Remove</button></td>
@@ -550,7 +574,7 @@
     }
     else
     {
-        <span class="hint">A publisher makes it live.</span>
+        <span class="hint">You're signed in as an author: you can save and try it. A publisher makes it live.</span>
     }
 </div>
 
@@ -956,6 +980,28 @@
         foreach (var s in suggestions)
             if (step.Bindings.TryGetValue(s.Target, out var current) && (current.Mode == BindingMode.None || current.Suggested))
                 step.Bindings[s.Target] = new BindingForm { Mode = BindingMode.FromSource, Expression = s.Expression, Suggested = true, Reason = s.Reason };
+    }
+
+    /// <summary>A new value for a response field keeps its shape ("How many"...) when the new value is a list too.</summary>
+    private void PickResponseValue(ResponseField field, string? value)
+    {
+        var old = ResponseShapes.Split(field.Expression);
+        var keep = old is not null && !string.IsNullOrEmpty(value) && TryRecipe() is { } recipe && ResponseShapes.IsList(recipe, value, _snapshot!);
+        field.Expression = keep ? ResponseShapes.Compose(old! with { Value = value! }) : value ?? "";
+    }
+
+    /// <summary>"Without repeats" starts with the item's id field (or its first field), which is usually what tells records apart.</summary>
+    private void PickResponseShape(ResponseField field, ShapedValue current, string? shape)
+    {
+        var picked = Enum.TryParse<ResponseShape>(shape, out var s) ? s : ResponseShape.All;
+        var by = current.By;
+        if (ResponseShapes.NeedsField(picked) && !ResponseShapes.IsPlainField(by) && TryRecipe() is { } recipe)
+        {
+            var fields = ResponseShapes.ItemFields(recipe, current.Value, _snapshot!);
+            by = fields.FirstOrDefault(f => f.Equals("id", StringComparison.OrdinalIgnoreCase)) ?? fields.FirstOrDefault();
+        }
+        field.Expression = ResponseShapes.Compose(current with { Shape = picked, By = by });
+        field.PendingShape = ResponseShapes.NeedsField(picked) && !ResponseShapes.IsPlainField(by) ? picked : null;
     }
 
     private static string SelectValue(BindingForm b) => b.Mode switch

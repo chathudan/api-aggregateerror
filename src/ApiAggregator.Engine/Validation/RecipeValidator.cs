@@ -94,6 +94,9 @@ public static partial class RecipeValidator
             if (step.ForEach is not null && !step.ForEach.Trim().StartsWith("{{")) Add(at, "For-each must be an expression such as {{b.body.items[*].id}}.");
         }
 
+        // ---- for-each steps that send the looped field under another field's name
+        foreach (var step in recipe.Steps) CheckLoopField(step, recipe, config, Warn);
+
         // ---- combined lists
         CheckCombines(recipe, aliases, Add, Warn);
 
@@ -181,6 +184,42 @@ public static partial class RecipeValidator
             return $"'{name}' isn't a step here. Pick the value again from the list.";
         var shown = string.IsNullOrWhiteSpace(step.DisplayName) || step.DisplayName == step.Alias ? "" : $" ({step.DisplayName})";
         return $"'{name}' isn't a step here. Did you mean '{step.Alias}'{shown}?";
+    }
+
+    /// <summary>
+    /// Warns when a step loops over one field of each item but sends it under the name of ANOTHER field of the same item:
+    /// looping over each order's id and sending it as contactId, while each order also has a contactId. Easy to pick by
+    /// mistake, and the calls then quietly return nothing. Stays quiet for id → orderId (the item has no orderId).
+    /// </summary>
+    private static void CheckLoopField(StepDef step, Recipe recipe, ConfigSnapshot config, Action<string, string> warn)
+    {
+        if (SourceCatalog.LoopPath(step) is not { } loop || loop.TransformCalls.Count > 0) return;
+        if (loop.Segments is not [.., { Kind: ValuePath.SegmentKind.Wildcard }, { Kind: ValuePath.SegmentKind.Property, Name: { } looped }]) return;
+        if (!loop.Text.EndsWith("." + looped, StringComparison.Ordinal)) return;
+
+        var itemPath = loop.Text[..^(looped.Length + 1)];
+        ValuePath item;
+        try { item = ValuePath.Parse(itemPath); }
+        catch (FormatException) { return; }
+        if (SourceCatalog.SchemaAt(recipe, item, config)?["properties"] is not JsonObject itemFields) return;
+
+        var options = new SourceCatalog().LoopOptions(recipe, step.Alias, config);
+        string Words(string expression, string fallback) =>
+            options.FirstOrDefault(o => o.Expression == expression)?.Label.Split(" → ", 2) is [_, var words] ? words : fallback;
+
+        foreach (var binding in step.Bind.Where(b => b.From?.Trim() == "item"))
+        {
+            var parts = binding.To.Split('.', 2);
+            if (parts.Length != 2) continue;
+            var name = AutoBinder.Normalize(parts[1]);
+            if (name == AutoBinder.Normalize(looped)) continue;
+            var better = itemFields.Select(f => f.Key).FirstOrDefault(f => AutoBinder.Normalize(f) == name);
+            if (better is null) continue;
+
+            warn($"steps.{step.Alias}",
+                $"{step.DisplayName ?? step.Alias} sends {Words(loop.Text, $"each {looped}")} as {parts[1]}. " +
+                $"Did you mean {Words($"{itemPath}.{better}", better)}? Pick it under Run this step.");
+        }
     }
 
     // ------------------------------------------------------------------ combined lists

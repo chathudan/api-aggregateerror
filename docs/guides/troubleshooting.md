@@ -90,6 +90,7 @@ warning and doesn't block publishing.
 | '…' (path) is required by … but has no value. | Pick something in **Use value from** |
 | '…' (query / header) is required by … but has no value. | The same |
 | '…' uses request input '…', which isn't declared under Inputs. | Add that input in step 2 |
+| *(Check before publishing)* … sends each order's id as contactId. Did you mean each order's contactId? | The step runs once for each item, but the list you picked gives a different field than the value needs. The calls work but usually find nothing | Under **Run this step**, pick the list the message names. If it really is right, publish anyway: it's only a warning |
 | '…' isn't a step here. Did you mean '…'? | A Custom expression uses a step's display name, or an old name. The message names the step it most likely means | Use the suggested name, or pick the value again from the list. To rename a step, change its name and choose **Rename everywhere** ([Renaming a step](building-endpoints.md#renaming-a-step)) |
 | A step can't use its own result. | Take the value from an earlier step or an input |
 | Steps depend on each other in a loop: … | Step A uses B and B uses A. Change one value to come from an earlier step or an input |
@@ -137,7 +138,7 @@ warning and doesn't block publishing.
 | Run a successful test of this exact draft before publishing. | Something changed after the last passing test, or it didn't pass | **Try it** again, then **Publish** |
 | Fix the problems before publishing. | There are items under **Things to fix** | Fix them |
 | Publish needs a passing Try it of exactly these settings (when you point at **Publish**) | Not tested since the last change | **Try it** first |
-| A publisher makes it live. (instead of a **Publish** button) | You don't have the publisher role (`aggregator.publisher`) | Ask an approver to publish it |
+| You're signed in as an author: you can save and try it. A publisher makes it live. (instead of a **Publish** button) | You don't have the publisher role (`aggregator.publisher`). The top bar shows your role | Ask a publisher to publish it. On a developer machine, sign out and sign in again with **Role: Publisher** |
 | Someone else published this endpoint at the same moment. Reload the page, check the history, and try again. | Two people published together | Reload and check **History** |
 | Version … can't go live as it is, because the services it uses have changed. … | Roll back to a version that uses something since removed | Open it, fix the problems, test and publish |
 | Try it is **partial** (200 with `_errors`) | An optional step failed | Fine for apps; publishing still needs a test that isn't partial, so use a record where every step works |

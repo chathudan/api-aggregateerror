@@ -326,6 +326,9 @@ public sealed class ResponseField
     /// <summary>A value that isn't exactly one "{{ value }}" (text around it, a number, a nested object): kept as written.</summary>
     public JsonNode? Raw { get; set; }
 
+    /// <summary>Screen only: "Without repeats" was chosen but no field is picked yet (nothing is saved until one is).</summary>
+    public ResponseShape? PendingShape { get; set; }
+
     public static ResponseField From(string name, JsonNode? value)
     {
         // "{{a.body.name}}" is shown as a pick from the list; anything else is kept exactly as it was written.

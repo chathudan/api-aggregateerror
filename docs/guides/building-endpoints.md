@@ -318,7 +318,9 @@ and every field inside one:
 Then choose **Current item** for the value the service needs. When a value has the same name as the
 looped field, it's filled in for you and marked *suggested*: `contactId` ← **Current item**. When the loop
 is over whole records (**each order**), pick **Current item → contactId** instead. If you choose **Current
-item** before picking a list, the wizard says **Choose what to loop over first**.
+item** before picking a list, the wizard says **Choose what to loop over first**. If the list gives a different field
+than the value needs (each order's `id` sent as `contactId`, while orders also have a `contactId`), **Check before
+publishing** says so and names the field you probably meant.
 
 ### Worked example: notes for each contact with an order
 
@@ -446,6 +448,28 @@ Rename or remove them as you like. A response field can hold a fixed value, one 
 (`"{{b.body.items | count}}"`), or a nested object of these.
 
 If you add no fields, the answer has each step's whole body under the step's name.
+
+### How many, and without repeats
+
+When a field's value is a list, a second choice appears next to it:
+
+| You pick | The field holds | Written in the recipe as |
+|---|---|---|
+| **All of it** | the whole list | `{{crm.body.contacts}}` |
+| **How many** | the number of items | `{{crm.body.contacts \| count}}` |
+| **Without repeats**, by `id` | the list, each `id` once (the first one wins) | `{{crm.body.contacts \| distinct('id')}}` |
+| **How many, without repeats**, by `id` | the number of different `id`s | `{{crm.body.contacts \| distinct('id') \| count}}` |
+
+`contacts-unique` uses all of them. The CRM has 8 contact rows, but only 7 different contacts:
+
+<!-- check: run contacts-unique partial -->
+```json
+{ "contactRows": 8, "uniqueContacts": 7, "orderCount": 6, "notesCalls": 3 }
+```
+
+"Without repeats" removes rows that are the same record twice. It doesn't merge two different records about the
+same person: that's what [Combine lists](combine-lists.md) is for, and it never guesses. A saved value with other
+transforms is shown as written.
 
 To merge lists of the same kind of record from several services, use **Combine lists**: see
 [Combine lists](combine-lists.md).

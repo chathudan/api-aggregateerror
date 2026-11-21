@@ -58,7 +58,8 @@ Publishing needs:
 
 - the **publisher** role (`aggregator.publisher`). Authors can build and test, but not publish;
 - a passing **Try it** of **exactly** this draft. Change anything after testing, and you test again.
-  Point at the disabled button to see why. Without the publisher role you see "A publisher makes it live." instead.
+  Point at the disabled button to see why. Without the publisher role you see "You're signed in as an author: you can save and try it. A publisher
+  makes it live." instead. On a developer machine, sign out and sign in again with **Role: Publisher**.
 
 Apps can call the new version within about 2 seconds. Nothing is restarted or redeployed. Editing a
 published endpoint creates a new draft, and the live version keeps serving until you publish again.
