@@ -1,0 +1,27 @@
+# The public sample demo: gateway + mock services + the sample config in one container. Vercel builds this file
+# instead of ./Dockerfile when it's present. Set the Vercel project's PORT to 8080.
+#
+# SAMPLE DATA ONLY. The gateway runs in Development: /dev/token gives anyone a test token, and the API docs page
+# signs itself in. Never point this image at real services or real data. The admin app isn't included.
+#
+# Try it locally:
+#   docker build -f Dockerfile.vercel -t aggregator-demo . && docker run -p 8080:8080 aggregator-demo
+
+FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
+WORKDIR /repo
+COPY . .
+# Separate folders: each app has its own appsettings.json.
+RUN dotnet publish src/ApiAggregator.Gateway/ApiAggregator.Gateway.csproj -c Release -o /app/gateway /p:UseAppHost=false \
+ && dotnet publish samples/MockServices/MockServices.csproj -c Release -o /app/mocks /p:UseAppHost=false
+
+# Not the chiseled image: the start script needs a shell to run two processes.
+FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS runtime
+WORKDIR /app
+COPY --from=build /app .
+COPY --chown=app:app samples/config /config
+COPY --chmod=755 deploy/vercel/start.sh /app/start.sh
+ENV ASPNETCORE_ENVIRONMENT=Development \
+    Aggregator__Config__Directory=/config
+USER app
+EXPOSE 8080
+ENTRYPOINT ["/app/start.sh"]

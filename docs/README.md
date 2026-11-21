@@ -31,7 +31,7 @@ You call the gateway from a web or mobile app.
 
 You deploy, configure, monitor and secure it.
 
-- [Operations](guides/operations.md): Docker and Azure Container Apps, connecting your identity provider
+- [Operations](guides/operations.md): Docker and Azure Container Apps, a public sample demo on Vercel, connecting your identity provider
   (Entra ID, Okta, Keycloak, Auth0), the configuration reference,
   health checks, logs and alerts, scaling, backups, Key Vault and secret rotation
 - [Security and privacy](guides/security-and-privacy.md): what's protected, what's never logged, and what

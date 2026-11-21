@@ -89,6 +89,28 @@ Then:
   entry again (a mismatch can only narrow access). Set `AllowedOriginPatterns` in production, so admins can only
   add your own domains. Invalid values stop the app at startup with a message naming the setting.
 
+## Public sample demo on Vercel
+
+A demo anyone can call, with the **sample data only**: the gateway, the mock services and `samples/config` in one
+container (`Dockerfile.vercel`, started by `deploy/vercel/start.sh`). Vercel builds `Dockerfile.vercel` instead of
+`Dockerfile` when both exist.
+
+> **Not for real services or real data.** The gateway runs in Development: `/dev/token` gives anyone a token and the
+> signing key is in this repository. That's acceptable here only because every record is made up. The admin app
+> isn't included; change the sample config on a developer machine, commit, and redeploy.
+
+1. In Vercel, **Add New → Project**, import the repository. Keep the root directory as the repository root.
+2. Under **Settings → Environment Variables**, add `PORT` = `8080` (the gateway listens there; Vercel routes to
+   `PORT`, 80 by default).
+3. Deploy. Then open `https://<your project>.vercel.app/bff/docs`: it signs itself in, so **Execute** works.
+
+To call it from a script or Postman, get a token first:
+`https://<your project>.vercel.app/dev/token?sub=tester&scope=customer.read%20people.read%20profile.read`.
+`GATEWAY=https://<your project>.vercel.app ./scripts/try-gateway.sh` checks every sample endpoint. Health checks
+are `/health/live` and `/health/ready`.
+
+To try the same image locally: `docker build -f Dockerfile.vercel -t aggregator-demo . && docker run -p 8080:8080 aggregator-demo`.
+
 ## Connect the gateway to your identity provider
 
 Apps call `/bff/*` with an access token from your identity provider (IdP). The gateway trusts **one** IdP for all
