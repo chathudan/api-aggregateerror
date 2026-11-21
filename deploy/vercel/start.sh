@@ -6,9 +6,10 @@
 set -e
 
 (cd /app/mocks && ASPNETCORE_URLS=http://127.0.0.1:5100 exec dotnet MockServices.dll) &
-(cd /app/gateway && ASPNETCORE_URLS=http://127.0.0.1:5200 exec dotnet ApiAggregator.Gateway.dll) &
-# The admin app reads X-Forwarded-Proto from Caddy, so behind Vercel's HTTPS it knows it's on https://. It only
-# listens on 127.0.0.1, so nothing but Caddy can send it that header.
+# Both apps read X-Forwarded-Proto from Caddy, so behind Vercel's HTTPS they know they're on https:// (the gateway
+# writes its address into the OpenAPI document; the admin app checks the Blazor connection's origin against its own).
+# They only listen on 127.0.0.1, so nothing but Caddy can send them that header.
+(cd /app/gateway && ASPNETCORE_URLS=http://127.0.0.1:5200 ASPNETCORE_FORWARDEDHEADERS_ENABLED=true exec dotnet ApiAggregator.Gateway.dll) &
 (cd /app/admin && ASPNETCORE_URLS=http://127.0.0.1:5300 ASPNETCORE_FORWARDEDHEADERS_ENABLED=true exec dotnet ApiAggregator.Admin.dll) &
 
 exec caddy run --config /app/Caddyfile --adapter caddyfile
