@@ -122,7 +122,7 @@ checks the role whatever the UI shows. Entries from before ADR 0012 show "Not re
 | **Enter by hand** | Name and base address, then sign-in. Add endpoints afterwards with **Add endpoint**: method, path (path values such as `{orderId}` are detected), extra query or header values, and optionally a **sample response** so the wizard can offer its fields |
 
 **Sign-in** is picked from cards in plain words: username and password, log in first and reuse the
-session, OAuth client (JWT), API key, fixed token, the caller's own token, or none. **Combine with
+session, identity provider (OAuth client credentials), API key, fixed token, the caller's own token, or none. **Combine with
 another sign-in step** chains several. **Check sign-in** logs in or gets a token once, so problems
 show up before anyone builds an endpoint.
 

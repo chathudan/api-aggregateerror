@@ -71,7 +71,15 @@ works and call it.
 
 1. Choose **API docs** in the top bar (or **Try in API docs** next to an endpoint).
 2. Pick the endpoint, then **Try it out**, fill in the values and choose **Execute**.
-3. In development you're already signed in. Anywhere else choose **Authorize** and paste a token.
+3. In development you're already signed in: the page says so at the top. Anywhere else choose **Authorize** and
+   paste a token from your identity provider (ask your identity admin how testers get one).
+
+If the page says nothing about being signed in on a developer machine, sign in by hand: open
+`http://localhost:5200/dev/token?sub=qa-user&scope=customer.read%20people.read%20profile.read`, copy the
+`access_token` value, choose **Authorize**, paste it on its own (without `Bearer `), then **Authorize** and
+**Close**. Those three scopes cover every sample endpoint. A 401 from the gateway means the token is missing
+or expired; a 403 `insufficient_scope` means it lacks the endpoint's scope. A 502 naming a service is the
+gateway's own sign-in to that service, not your token.
 
 Drafts aren't listed; test them with **Try it** in the wizard. A new endpoint appears within a couple of
 seconds. Refresh if you don't see it. The page is on in development and off elsewhere unless an admin

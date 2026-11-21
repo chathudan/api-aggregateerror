@@ -3,7 +3,8 @@
 <ol>
     <li>Choose <strong>API docs</strong> in the top bar (or <strong>Try in API docs</strong> next to one endpoint). It opens in a new tab.</li>
     <li>Choose an endpoint, then <strong>Try it out</strong>, fill in the values and choose <strong>Execute</strong>. You'll see the real answer, the status and how long it took.</li>
-    <li>On a development machine you're already signed in. Anywhere else choose <strong>Authorize</strong> and paste a token.</li>
+    <li>On a development machine you're already signed in: the page says so at the top. Anywhere else choose <strong>Authorize</strong> and paste a token from your identity provider.</li>
 </ol>
+<p><strong>Not signed in on a developer machine?</strong> Open <code>http://localhost:5200/dev/token?sub=qa-user&amp;scope=customer.read%20people.read%20profile.read</code>, copy the <code>access_token</code> value, choose <strong>Authorize</strong>, paste it on its own (without <code>Bearer </code>), then <strong>Authorize</strong> and <strong>Close</strong>. A 401 means the token is missing or expired; a 403 <code>insufficient_scope</code> means it lacks the endpoint's scope; a 502 naming a service is the gateway's own sign-in to that service, not your token.</p>
 <p>A newly published endpoint shows up by itself within a couple of seconds; refresh the page if you don't see it. Drafts are <em>not</em> listed. To test a draft, use <strong>Try it</strong> in the wizard.</p>
 <p>Using Postman or Insomnia, or generating code for an app? Use <strong>OpenAPI spec</strong> on the same page to get <code>openapi.json</code> and import it.</p>

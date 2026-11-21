@@ -85,7 +85,7 @@ Pick the card that matches what the owner told you:
 | "No auth, it's internal" | No sign-in | (no profile) | Nothing |
 | "Basic auth" | Username and password | `Basic` | Username, password |
 | "Call /login first, then use the cookie" or "the login returns a token" | Log in first, then reuse the session | `SessionLogin` | Login address, username, password, and where the token is in the answer (if any) |
-| "OAuth 2.0 client credentials", "Entra ID app registration" | OAuth client (JWT token) | `OAuthClientCredentials` | Token address, client id, client secret, scope |
+| "OAuth 2.0 client credentials", "Entra ID app registration", "get a token from our identity provider" | Identity provider (OAuth client) | `OAuthClientCredentials` | Token address, client id, client secret, scope |
 | "Send an API key", "subscription key" | API key | `ApiKey` | Key name, value, header or query |
 | "Here's a long-lived token" | Fixed token | `StaticBearer` | The token |
 | "We accept your users' own tokens" | Use the caller's own token | `PassThroughUserToken` | Nothing, but only when the owner confirms it |
@@ -172,6 +172,21 @@ Succeeded a          200     37 ms  calls=1  GET http://localhost:5100/a/custome
 Succeeded b          200     19 ms  calls=1  GET http://localhost:5100/b/orders?account=…&status=…&page=…
 Succeeded c          200      7 ms  calls=1  GET http://localhost:5100/c/recommendations?segment=…
 ```
+
+#### Common identity providers
+
+The owner, or whoever runs your identity provider, gives you a client id and secret for the gateway (an "app
+registration" or "client"). The token address and what to put in **Scope** depend on the provider:
+
+| Provider | Token address | Scope or audience |
+|---|---|---|
+| Microsoft Entra ID | `https://login.microsoftonline.com/<tenant id>/oauth2/v2.0/token` | **Scope** `api://<the service's app id>/.default` |
+| Okta | `https://<your Okta domain>/oauth2/default/v1/token` (or your authorization server's id instead of `default`) | **Scope**: the scope the service's owner defined, e.g. `orders.read` |
+| Keycloak | `https://<host>/realms/<realm>/protocol/openid-connect/token` | **Scope** only if the service asks for one |
+| Auth0 | `https://<your Auth0 domain>/oauth/token` | **Audience** (under advanced settings): the service's API identifier. Required |
+
+The secret is stored as a `secret:` reference like every other secret; it's never shown again. After saving,
+**Check sign-in** gets a token once, so a wrong address, id or secret shows up straight away.
 
 ### API key: Service E (identity)
 
@@ -291,6 +306,13 @@ Service K wants an API key **and** a token from its login. Steps run in order an
 
 Other common combinations: "Basic login → session + API key" is `ApiKey` plus `SessionLogin` with
 `loginUsesBasic: "true"`. "Login → JWT → Bearer" is `SessionLogin` with `tokenPath`.
+
+### One address, two sign-ins
+
+Sign-in belongs to a service, and every endpoint of a service uses it. If one address really has two
+sign-ins, for example `/orders/*` with an identity provider and `/admin/*` with an API key, it's two APIs
+sharing an address: add it as **two services with the same base URL**, each with its own sign-in and its own
+endpoints. Each shows on the Services page with its own sign-in status.
 
 ### Taking a sign-in away, or one that doesn't exist
 

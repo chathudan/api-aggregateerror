@@ -33,13 +33,14 @@
         <tr><td>"It's open on the internal network" / "no auth"</td><td>No sign-in</td><td>Nothing</td><td>Service H (links)</td></tr>
         <tr><td>"Basic auth" / "username and password on every request"</td><td>Username and password</td><td>Username, password</td><td>Service A (customers): <code>svc-a</code></td></tr>
         <tr><td>"Call /login first, then use the session cookie" or "the login returns a token"</td><td>Log in first, then reuse the session</td><td>Login address, username, password. If the login answer contains a token, where it is (for example <code>token</code> or <code>data.accessToken</code>)</td><td>Service B (orders): a session cookie</td></tr>
-        <tr><td>"OAuth 2.0 client credentials" / "get a JWT from the token endpoint" / "Entra ID app registration"</td><td>OAuth client (JWT token)</td><td>Token address, client id, client secret, scope (if they give one)</td><td>Service C (recommendations): <code>client-c</code></td></tr>
+        <tr><td>"OAuth 2.0 client credentials" / "get a token from our identity provider" / "Entra ID app registration"</td><td>Identity provider (OAuth client)</td><td>Token address, client id, client secret, scope (if they give one)</td><td>Service C (recommendations): <code>client-c</code></td></tr>
         <tr><td>"Send an API key" / "subscription key" / "X-Api-Key header"</td><td>API key</td><td>Key name (for example <code>X-Api-Key</code>), key value, header or query</td><td>Services E and G; Service D to practise <strong>Add service</strong></td></tr>
         <tr><td>"Here's a long-lived token for you"</td><td>Fixed token</td><td>The token</td><td>Service I (loyalty)</td></tr>
         <tr><td>"We accept your users' own sign-in tokens"</td><td>Use the caller's own token</td><td>Nothing. Only use this when the owner confirms it</td><td>Service J (preferences)</td></tr>
     </tbody>
 </table>
 <p><strong>Two things at once?</strong> For example an API key <em>and</em> a login: pick the first card, then choose <strong>Combine with another sign-in step</strong> for the second. Service K (appointments) in the sample data does this: an API key, then a login that returns a token.</p>
+<p><strong>One address, two sign-ins?</strong> For example <code>/orders</code> with an identity provider and <code>/admin</code> with an API key: add it as two services with the same base URL, each with its own sign-in.</p>
 <p><strong>Taking a sign-in away</strong> from a service that published endpoints call shows which ones first: without credentials, the service answers 401 to every call.</p>
 <p>Not sure? Ask the owner for an example request (for example a curl command or Postman collection). The headers it sends tell you which card it is.</p>
 </section>

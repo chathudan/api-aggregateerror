@@ -31,7 +31,7 @@ public static class SignInKinds
             new("tokenHeader", "Send the token in header", "Authorization", Required: false, Advanced: true),
             new("ttlSeconds", "Reuse the session for (seconds)", "900", Required: false, Advanced: true)
         ]),
-        new("OAuthClientCredentials", "OAuth client (JWT token)", "The gateway gets an access token with a client id and secret, and refreshes it before it expires.",
+        new("OAuthClientCredentials", "Identity provider (OAuth client)", "The gateway gets an access token from your identity provider (Entra ID, Okta, Keycloak, Auth0…) with a client id and secret, and refreshes it before it expires.",
         [
             new("tokenUrl", "Token address", "https://login.example/oauth2/token"),
             new("clientId", "Client id"),
