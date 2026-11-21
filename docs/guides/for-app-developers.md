@@ -55,6 +55,23 @@ In development, get a test token with any scopes:
 curl -s "http://localhost:5200/dev/token?sub=test-user&scope=customer.read%20people.read"
 ```
 
+### Using the token your app already has
+
+Users of an app that already signs in with your identity provider don't sign in again. The app asks the IdP for
+one more **access token, for the gateway**, usually without the user noticing, and sends that:
+
+- **For the gateway's audience.** A token the app got for its own backend, for Microsoft Graph, or an ID token, is
+  refused with **401**. With Entra ID and MSAL, ask for the gateway's scopes, for example
+  `acquireTokenSilent({ scopes: ["api://api-aggregator/people.read"], account })` (MSAL.js) or
+  `AcquireTokenSilent(new[] { "api://api-aggregator/people.read" }, account)` (MSAL.NET).
+- **With the endpoint's scope.** Missing it gives **403 `insufficient_scope`** naming the scope (`requiredScope`).
+  The IdP must grant it to your app first.
+- **A server with no user** uses its own token (client credentials), e.g. `AcquireTokenForClient(new[] {
+  "api://api-aggregator/.default" })`. Entra puts its permissions in `roles`; the gateway accepts them like scopes.
+
+The exact `api://…` names, and how the gateway is registered, come from the platform team
+([Operations](operations.md#connect-the-gateway-to-your-identity-provider)).
+
 Some endpoints pass **your user's token** on to a backend that trusts the same identity provider, so the
 answer is about the signed-in user. `my-preferences` does this. The token was made for `dev-user`:
 

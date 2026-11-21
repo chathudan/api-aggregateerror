@@ -89,6 +89,65 @@ Then:
   entry again (a mismatch can only narrow access). Set `AllowedOriginPatterns` in production, so admins can only
   add your own domains. Invalid values stop the app at startup with a message naming the setting.
 
+## Connect the gateway to your identity provider
+
+Apps call `/bff/*` with an access token from your identity provider (IdP). The gateway trusts **one** IdP for all
+endpoints, set with two settings (on the admin app too, for scripts calling `/admin/*`):
+
+| Setting | What it is |
+|---|---|
+| `Auth:Authority` | The IdP's issuer address. The gateway reads its signing keys from `<Authority>/.well-known/openid-configuration` |
+| `Auth:Audience` | The value tokens must have in `aud`: the gateway's own identifier in the IdP |
+
+Each endpoint then says which permission it needs (**Required scope** in the wizard, e.g. `people.read`). The gateway
+finds it in the token's `scope`, `scp` or `roles` claim.
+
+### Microsoft Entra ID
+
+1. **App registrations → New registration**: "API Aggregator gateway". No redirect URI.
+2. In its **Manifest**, set `"accessTokenAcceptedVersion": 2`, so tokens use the v2 issuer below.
+3. **Expose an API**: set the Application ID URI (e.g. `api://api-aggregator`), then **Add a scope** for each
+   endpoint permission: `people.read`, `customer.read`, `profile.read`. These are for apps acting for a signed-in user.
+4. **App roles → Create app role** with the same names and **Allowed member types: Applications**. These are for
+   servers calling with their own token (client credentials); Entra puts them in `roles`.
+5. For each app that will call the gateway: **API permissions → Add a permission → My APIs →** the gateway. Pick
+   **Delegated** permissions (the scopes) for apps with users, **Application** permissions (the roles) for servers,
+   then **Grant admin consent**.
+6. Set the gateway:
+   - `Auth__Authority=https://login.microsoftonline.com/<tenant id>/v2.0`
+   - `Auth__Audience=<the gateway registration's Application (client) ID>` (with v2 tokens, `aud` is this id,
+     not the `api://` URI)
+
+### Okta, Keycloak and Auth0
+
+| IdP | `Auth:Authority` | `Auth:Audience` | Where the permissions go |
+|---|---|---|---|
+| Okta | `https://<your Okta domain>/oauth2/default` (or your authorization server's id) | The authorization server's **Audience** (`api://default` unless changed) | **Scopes** on the authorization server, allowed for each app by an access policy |
+| Keycloak | `https://<host>/realms/<realm>` | A client id for the gateway. Add an **audience mapper** to the apps' client scopes so it's in `aud` (by default `aud` is `account`) | **Client scopes** named like the permissions, assigned to the apps |
+| Auth0 | `https://<your Auth0 domain>/` (with the slash) | The API's **Identifier** | The API's **Permissions**, granted to each app (machine-to-machine apps under **Machine to Machine Applications**) |
+
+### When a token is refused
+
+| The app gets | Check in the token | Usually |
+|---|---|---|
+| 401 `unauthenticated` | `iss` equals `Auth:Authority`'s issuer; `aud` equals `Auth:Audience`; `exp` hasn't passed | The app sent a token meant for another audience (its own backend, or Microsoft Graph), or an ID token instead of an access token |
+| 403 `insufficient_scope` | The endpoint's scope is in `scp`, `scope` or `roles` | The permission wasn't granted or consented, or the app didn't ask for it |
+
+To look inside a token, decode its middle part on your own machine: `echo '<token>' | cut -d. -f2 | base64 -d`
+(add `=` at the end until it decodes). Don't paste real tokens into websites: they give access until they expire.
+
+### Try it on a developer machine
+
+In Development the local token issuer replaces the IdP, so a real token is refused. To test with your IdP, turn the
+local issuer off and set the IdP:
+
+```bash
+Auth__DevSigningKey= Auth__Authority=<authority> Auth__Audience=<audience> ./scripts/dev-run.sh
+```
+
+`/dev/token` and the automatic sign-in on the API docs page don't work in this mode; use **Authorize** with a token
+from your IdP.
+
 ## Configuration reference
 
 Settings come from `appsettings.json`, then environment variables (`:` becomes `__`, for example
