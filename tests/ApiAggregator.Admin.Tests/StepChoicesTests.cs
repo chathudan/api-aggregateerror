@@ -33,6 +33,26 @@ public class StepChoicesTests
         return form;
     }
 
+    /// <summary>
+    /// The case from the bug report: "Orders from CRM" kept the alias getOrders, and the loop says ordersFromCrm.
+    /// Written here, not read from samples/config/drafts: dev-run.sh edits those drafts as people use the app.
+    /// </summary>
+    private static Recipe RenamedStepNotFollowed() => new()
+    {
+        Id = "unique-customers-2", Route = "customer/unique2", RequireAuthentication = false,
+        Steps =
+        [
+            new StepDef { Alias = "listContacts", DisplayName = "Contacts from CRM", Endpoint = "service-f-crm/listContacts" },
+            new StepDef { Alias = "getOrders", DisplayName = "Orders from CRM", Endpoint = "service-f-crm/listOrders" },
+            new StepDef
+            {
+                Alias = "notesForOneContact", DisplayName = "Notes for each contact with an order", Endpoint = "service-f-crm/getContactNotes",
+                ForEach = "{{ordersFromCrm.body.orders[*].contactId}}",
+                Bind = [new BindingDef { From = "item", To = "path.contactId" }]
+            }
+        ]
+    };
+
     private static StepForm Step(RecipeForm form, string alias) => form.Steps.Single(s => s.Alias == alias);
 
     // ---------------------------------------------------------------- run this step
@@ -63,7 +83,7 @@ public class StepChoicesTests
 
     [Fact]
     public void A_loop_over_a_step_that_doesnt_exist_opens_as_custom() =>
-        Assert.Equal(LoopMode.Custom, Step(Open(Sample("drafts/unique-customers-2.json")), "notesForOneContact").LoopMode);
+        Assert.Equal(LoopMode.Custom, Step(Open(RenamedStepNotFollowed()), "notesForOneContact").LoopMode);
 
     [Theory]
     [InlineData(null, LoopMode.Once)]
@@ -204,9 +224,9 @@ public class StepChoicesTests
     }
 
     [Fact]
-    public void The_broken_sample_draft_says_which_step_was_meant() =>
+    public void A_loop_over_an_old_step_name_says_which_step_was_meant() =>
         Assert.Contains("'ordersFromCrm' isn't a step here. Did you mean 'getOrders' (Orders from CRM)?",
-            RecipeValidator.Validate(Sample("drafts/unique-customers-2.json"), Samples()).Issues.Select(i => i.Message));
+            RecipeValidator.Validate(RenamedStepNotFollowed(), Samples()).Issues.Select(i => i.Message));
 
     private static string RepoRoot()
     {

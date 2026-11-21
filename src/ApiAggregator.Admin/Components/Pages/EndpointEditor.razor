@@ -11,8 +11,14 @@
 @inject UiContext Ui
 @inject IJSRuntime JS
 
-@if (_snapshot is null)
+@{
+    // Every render checks the form afresh (once per render, not once per field). Clearing it here, at the start of the
+    // render, rather than after it, means a render can never show the problems of an earlier state of the form.
+    _validation = null;
+}
+@if (_snapshot is null || !_loaded)
 {
+    @* Until the endpoint is loaded: otherwise an empty form would flash up, with problems that aren't real. *@
     <PageShell Title="Endpoint" Crumbs="Crumbs"><Loading /></PageShell>
     return;
 }
@@ -563,7 +569,8 @@
     private string? _pendingLeave;        // where the user wanted to go with unsaved changes
     private bool _leaving;
     private bool _everSaved, _saveTried;   // for a new endpoint: saved at least once / a save was tried
-    private ValidationResult? _validation; // worked out once per render, not once per field
+    private ValidationResult? _validation; // worked out once per render, not once per field (cleared at the start of each render)
+    private bool _loaded;                  // the endpoint (if any) is loaded: before that only "Loading" is shown
     private bool _picking;
     private string _search = "";
     private readonly Dictionary<int, string> _extraTarget = new();
@@ -593,9 +600,8 @@
         if (!IsNew) await LoadRecipe();
         for (var i = 1; i <= 20; i++) _extraTarget[i] = "";
         MarkSaved();
+        _loaded = true;
     }
-
-    protected override void OnAfterRender(bool firstRender) => _validation = null; // re-check after the next change
 
     // ------------------------------------------------------------------ unsaved changes, test state
 
