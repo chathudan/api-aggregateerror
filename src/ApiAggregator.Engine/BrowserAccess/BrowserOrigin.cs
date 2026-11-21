@@ -25,7 +25,7 @@ public sealed class BrowserAccessFile
     public List<BrowserOrigin> Origins { get; init; } = [];
 }
 
-public enum BrowserAccessAction { Added, Removed }
+public enum BrowserAccessAction { Added, Removed, Changed }
 
 /// <summary>
 /// One change to the admin-managed origins. Like recipe history (ADR 0012): written once, never changed, and
@@ -40,6 +40,10 @@ public sealed class BrowserAccessHistoryEntry
     public DateTimeOffset At { get; init; }
     public string? By { get; init; }
     public string? ByName { get; init; }
+
+    /// <summary>For <see cref="BrowserAccessAction.Changed"/>: the origin and note before the change.</summary>
+    public string? PreviousOrigin { get; init; }
+    public string? PreviousNote { get; init; }
 }
 
 /// <summary>

@@ -260,7 +260,7 @@ only if that origin is on the gateway's **browser access** list. Otherwise the b
 won't let your page read the answer, and the console says *blocked by CORS policy*. Apps on phones and
 servers aren't affected.
 
-- **Ask for your origin to be added.** Someone with the admin role adds it in the admin app
+- **Ask for your origin to be added.** Someone with the admin role adds (or edits) it in the admin app
   (**Settings → Browser access (CORS)**), or operations add it to the gateway's settings. An origin is the
   scheme, host and port only: `https://portal.example.com`, no path and no slash at the end. In development,
   `http://localhost:3000` and `http://localhost:5173` are already allowed.

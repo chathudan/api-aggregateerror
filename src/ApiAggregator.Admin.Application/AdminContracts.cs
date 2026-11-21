@@ -115,5 +115,8 @@ public sealed record BrowserAccessView(
     bool CanChange);
 
 public sealed record AddOriginRequest(string? Origin, string? Note);
+
+/// <summary>Edit an origin added here: <c>Origin</c> as it is on the list now, <c>NewOrigin</c> and <c>Note</c> as they should be.</summary>
+public sealed record ChangeOriginRequest(string? Origin, string? NewOrigin, string? Note);
 public sealed record OriginTestRequest(string? Origin);
 public sealed record OriginRemoved(string Origin);

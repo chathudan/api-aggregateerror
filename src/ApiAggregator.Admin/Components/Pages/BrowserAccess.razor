@@ -5,7 +5,7 @@
 @inject ToastService Toasts
 
 @* Settings → Browser access (CORS, ADR 0015): which websites may call the gateway's /bff/* from a browser.
-   Everyone with a role can look and test; only the admin role can add or remove. AdminService checks that. *@
+   Everyone with a role can look and test; only the admin role can add, edit or remove. AdminService checks that. *@
 
 <PageTitle>Browser access (CORS) · API Aggregator</PageTitle>
 
@@ -75,10 +75,28 @@ else
                             <td>
                                 @if (_view.CanChange && o.Source == OriginSource.Admin)
                                 {
-                                    <button class="link" @onclick="() => _confirmRemove = o.Origin">Remove</button>
+                                    <button class="link" @onclick="() => StartEditing(o.Origin, o.Note)">Edit<span class="visually-hidden"> @o.Origin</span></button>
+                                    <button class="link" @onclick="() => _confirmRemove = o.Origin">Remove<span class="visually-hidden"> @o.Origin</span></button>
                                 }
                             </td>
                         </tr>
+                        @if (_editing == o.Origin)
+                        {
+                            <tr><td colspan="5">
+                                <div class="panel" aria-label="@($"Edit {o.Origin}")">
+                                    <div class="grid">
+                                        <label>Origin <input @bind="_editOrigin" maxlength="280" aria-describedby="edit-issues" /></label>
+                                        <label>Note <span class="muted">(optional)</span> <input @bind="_editNote" maxlength="200" /></label>
+                                    </div>
+                                    <p class="hint">Changing the address takes access away from <code>@o.Origin</code> and gives it to the new one, within a few seconds. The change is kept in the history.</p>
+                                    <div id="edit-issues"><FieldIssues Problems="_editProblems" /></div>
+                                    <div class="inline">
+                                        <button class="button" disabled="@_busy" @onclick="() => SaveEdit(o.Origin)">@(_busy ? "Saving…" : "Save changes")</button>
+                                        <button class="link" disabled="@_busy" @onclick="() => { _editing = null; _editProblems = []; }">Cancel</button>
+                                    </div>
+                                </div>
+                            </td></tr>
+                        }
                         @if (_confirmRemove == o.Origin)
                         {
                             <tr><td colspan="5">
@@ -109,7 +127,7 @@ else
         }
         @if (!_view.CanChange)
         {
-            <p class="hint">Only people with the admin role can add or remove origins. You can look and test.</p>
+            <p class="hint">Only people with the admin role can add, edit or remove origins. You can look and test.</p>
         }
         else
         {
@@ -153,7 +171,7 @@ else
         }
         else if (_history.Count == 0)
         {
-            <p class="muted">No changes made here yet. Every origin added or removed is kept here.</p>
+            <p class="muted">No changes made here yet. Every origin added, changed or removed is kept here.</p>
         }
         else
         {
@@ -164,7 +182,16 @@ else
                     {
                         <tr>
                             <td>@h.Number</td>
-                            <td>@(h.Action == BrowserAccessAction.Added ? "Added" : "Removed") <code>@h.Origin</code>@(h.Note is null ? "" : $" ({h.Note})")</td>
+                            <td>
+                                @if (h.Action == BrowserAccessAction.Changed)
+                                {
+                                    <span>Changed <code>@h.PreviousOrigin</code>@(h.PreviousNote is null ? "" : $" ({h.PreviousNote})") to <code>@h.Origin</code>@(h.Note is null ? "" : $" ({h.Note})")</span>
+                                }
+                                else
+                                {
+                                    <span>@(h.Action == BrowserAccessAction.Added ? "Added" : "Removed") <code>@h.Origin</code>@(h.Note is null ? "" : $" ({h.Note})")</span>
+                                }
+                            </td>
                             <td>@When(h.At)</td>
                             <td>@Who(h.By, h.ByName)</td>
                         </tr>
@@ -189,6 +216,11 @@ else
     private string? _newNote;
     private IReadOnlyList<ValidationIssue> _addProblems = [];
     private string? _confirmRemove;
+
+    private string? _editing;
+    private string? _editOrigin;
+    private string? _editNote;
+    private IReadOnlyList<ValidationIssue> _editProblems = [];
 
     private string? _testOrigin;
     private OriginTest? _testResult;
@@ -228,6 +260,36 @@ else
             _adding = false;
             _addProblems = [];
             Toasts.Success($"Added {result.Value!.Origin}. The gateway allows it within a few seconds.");
+            await Reload();
+        }
+        finally { _busy = false; }
+    }
+
+    private void StartEditing(string origin, string? note)
+    {
+        _editing = origin;
+        _editOrigin = origin;
+        _editNote = note;
+        _editProblems = [];
+        _confirmRemove = null;
+    }
+
+    private async Task SaveEdit(string origin)
+    {
+        _busy = true;
+        try
+        {
+            var result = await Admin.ChangeBrowserOriginAsync(_me, new ChangeOriginRequest(origin, _editOrigin, _editNote));
+            if (!result.Ok)
+            {
+                _editProblems = [new ValidationIssue("origin", result.Failure!.Message)];
+                return;
+            }
+            _editing = null;
+            _editProblems = [];
+            Toasts.Success(result.Value!.Origin == origin
+                ? $"Saved {origin}."
+                : $"Changed {origin} to {result.Value.Origin}. The gateway uses it within a few seconds.");
             await Reload();
         }
         finally { _busy = false; }

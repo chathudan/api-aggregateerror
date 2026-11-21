@@ -38,6 +38,8 @@ internal static class AdminEndpoints
         cors.MapPost("/test", async (OriginTestRequest body, AdminService s, HttpContext h, CancellationToken ct) => (await s.TestOriginAsync(Me(h), body, ct)).ToHttp());
         cors.MapPost("/origins", async (AddOriginRequest body, AdminService s, HttpContext h, CancellationToken ct) => (await s.AddBrowserOriginAsync(Me(h), body, ct)).ToHttp())
             .RequireAuthorization(AdminAuth.ApiAdmin);
+        cors.MapPut("/origins", async (ChangeOriginRequest body, AdminService s, HttpContext h, CancellationToken ct) => (await s.ChangeBrowserOriginAsync(Me(h), body, ct)).ToHttp())
+            .RequireAuthorization(AdminAuth.ApiAdmin);
         cors.MapDelete("/origins", async (string? origin, AdminService s, HttpContext h, CancellationToken ct) => (await s.RemoveBrowserOriginAsync(Me(h), origin, ct)).ToHttp())
             .RequireAuthorization(AdminAuth.ApiAdmin);
 

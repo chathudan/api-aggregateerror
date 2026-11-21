@@ -82,6 +82,66 @@ public sealed class BrowserAccessTests(AdminApp app) : IClassFixture<AdminApp>
     }
 
     [Fact]
+    public async Task An_admin_edits_an_origin_and_the_history_records_what_it_was()
+    {
+        Assert.True((await Service.AddBrowserOriginAsync(Admin, new AddOriginRequest("https://typo.example.test", "Portal"))).Ok);
+
+        var changed = await Service.ChangeBrowserOriginAsync(Admin, new ChangeOriginRequest("https://typo.example.test", " https://Fixed.Example.test ", "Patient portal"));
+
+        Assert.True(changed.Ok, changed.Failure?.Message);
+        Assert.Equal("https://fixed.example.test", changed.Value!.Origin); // checked and written like a new one
+        var origins = (await Service.GetBrowserAccessAsync(Admin)).Value!.Origins;
+        Assert.DoesNotContain(origins, o => o.Origin == "https://typo.example.test");
+        Assert.Equal("Patient portal", Assert.Single(origins, o => o.Origin == "https://fixed.example.test").Note);
+        Assert.False((await Service.TestOriginAsync(Author, new OriginTestRequest("https://typo.example.test"))).Value!.Allowed);
+
+        var entry = (await Service.GetBrowserAccessHistoryAsync(Author)).Value!.First(h => h.Origin == "https://fixed.example.test");
+        Assert.Equal(BrowserAccessAction.Changed, entry.Action);
+        Assert.Equal(("https://typo.example.test", "Portal"), (entry.PreviousOrigin, entry.PreviousNote));
+        Assert.Equal("admin-1", entry.By);
+
+        // Saving it unchanged records nothing.
+        var before = (await Service.GetBrowserAccessHistoryAsync(Author)).Value!.Count;
+        Assert.True((await Service.ChangeBrowserOriginAsync(Admin, new ChangeOriginRequest("https://fixed.example.test", "https://fixed.example.test", "Patient portal"))).Ok);
+        Assert.Equal(before, (await Service.GetBrowserAccessHistoryAsync(Author)).Value!.Count);
+    }
+
+    [Theory]
+    [InlineData("*", "every website")]
+    [InlineData("https://edit-other.example.test", "already on the list")]
+    [InlineData("http://edit-me.example.test", "Use https://")]
+    public async Task An_edit_is_checked_like_a_new_origin(string newOrigin, string reason)
+    {
+        await Service.AddBrowserOriginAsync(Admin, new AddOriginRequest("https://edit-me.example.test", null));
+        await Service.AddBrowserOriginAsync(Admin, new AddOriginRequest("https://edit-other.example.test", null));
+
+        var result = await Service.ChangeBrowserOriginAsync(Admin, new ChangeOriginRequest("https://edit-me.example.test", newOrigin, null));
+
+        Assert.Equal(FailureKind.BadRequest, result.Failure?.Kind);
+        Assert.Contains(reason, result.Failure!.Message);
+        Assert.Contains((await Service.GetBrowserAccessAsync(Admin)).Value!.Origins, o => o.Origin == "https://edit-me.example.test");
+    }
+
+    [Fact]
+    public async Task Only_the_admin_role_can_edit_and_only_origins_added_here()
+    {
+        await Service.AddBrowserOriginAsync(Admin, new AddOriginRequest("https://not-yours.example.test", null));
+
+        var byPublisher = await Service.ChangeBrowserOriginAsync(Publisher, new ChangeOriginRequest("https://not-yours.example.test", "https://mine.example.test", null));
+        Assert.Equal(FailureKind.Forbidden, byPublisher.Failure?.Kind);
+        var fromApi = await Client("aggregator.publisher").PutAsJsonAsync("/admin/cors/origins",
+            new { origin = "https://not-yours.example.test", newOrigin = "https://mine.example.test" });
+        Assert.Equal(HttpStatusCode.Forbidden, fromApi.StatusCode);
+
+        var missing = await Service.ChangeBrowserOriginAsync(Admin, new ChangeOriginRequest("https://never-added.example.test", "https://x.example.test", null));
+        Assert.Equal(FailureKind.NotFound, missing.Failure?.Kind);
+
+        var byAdminApi = await Client("aggregator.admin").PutAsJsonAsync("/admin/cors/origins",
+            new { origin = "https://not-yours.example.test", newOrigin = "https://renamed.example.test", note = "from a script" });
+        Assert.Equal(HttpStatusCode.OK, byAdminApi.StatusCode);
+    }
+
+    [Fact]
     public async Task An_admin_token_can_change_browser_access_through_the_admin_api()
     {
         var client = Client("aggregator.admin", subject: "ops-script");
@@ -128,6 +188,8 @@ public sealed class BrowserAccessTests(AdminApp app) : IClassFixture<AdminApp>
 
         var removeOperations = await service.RemoveBrowserOriginAsync(Admin, "https://app.example.test");
         Assert.Contains("Operations set this origin", removeOperations.Failure?.Title);
+        var editOperations = await service.ChangeBrowserOriginAsync(Admin, new ChangeOriginRequest("https://app.example.test", "https://other.example.test", null));
+        Assert.Contains("Operations set this origin", editOperations.Failure?.Title);
 
         var view = (await service.GetBrowserAccessAsync(Admin)).Value!;
         Assert.Equal(OriginSource.Operations, Assert.Single(view.Origins).Source);

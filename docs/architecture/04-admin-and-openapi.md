@@ -43,7 +43,7 @@ first save (the address keeps `?guide=first`). Without the sample CRM (real mode
 | Developer / admin | Register services, set up auth profiles and secret references | `aggregator.author` (profiles and services) |
 | QA / technician | Build aggregated endpoints in the wizard, run "Try it", save drafts | `aggregator.author` |
 | Approver | Publish, roll back and delete endpoints | `aggregator.publisher` (includes author) |
-| Platform admin | Add and remove the websites allowed to call `/bff/*` from a browser (**Settings → Browser access (CORS)**). Authors and publishers can look and use **Test an origin** | `aggregator.admin` (separate: gives no author or publisher rights) |
+| Platform admin | Add, edit and remove the websites allowed to call `/bff/*` from a browser (**Settings → Browser access (CORS)**). Authors and publishers can look and use **Test an origin** | `aggregator.admin` (separate: gives no author or publisher rights) |
 
 In Development, `/signin` asks for a name, a role and whether you are also an admin. In production the roles come
 from the identity provider (app roles named `aggregator.author`, `aggregator.publisher` and `aggregator.admin`; the
@@ -53,7 +53,8 @@ claim is set by `Auth:Oidc:RoleClaim`).
 
 **Settings → Browser access (CORS)** (`/settings/browser-access`, [ADR 0015](../adr/0015-cors-for-the-gateway.md)):
 the origins the gateway allows (source *Operations* or *Added here*, note, who and when), entries the gateway
-skips with the reason, **Add origin** and **Remove** (with a confirm box) for admins, **History**, a read-only
+skips with the reason, **Add origin**, **Edit** (address and note, checked like a new origin) and **Remove** (with a
+confirm box) for admins, **History** (an edit shows what it was before), a read-only
 *What browsers can send* panel (methods, headers, exposed headers, max age, never credentials) and **Test an
 origin**. Everything is built by `BrowserAccessPolicy`, the same code the gateway uses, from `cors.json` and the
 `Gateway:Cors:*` settings (which must be the same on both apps).
@@ -230,8 +231,9 @@ here (401). Roles are checked by the endpoint policy and again by `AdminService`
 | `GET /admin/recipes/{id}/history` | author | Entries newest first: `version`, `action`, `at`, `by`, `restoredFrom`, `isLive` |
 | `GET /admin/recipes/{id}/history/{v}` | author | One version's recipe (read only) |
 | `GET /admin/cors` | any role | Browser access: `origins` (with `source`), `skipped`, `patterns`, `methods`, `headers`, `exposedHeaders`, `preflightMaxAgeSeconds`, `allowsCredentials` (always false), `canChange` |
-| `GET /admin/cors/history` | any role | Browser-access changes newest first: `number`, `action` (`added`/`removed`), `origin`, `note`, `at`, `by`, `byName` |
+| `GET /admin/cors/history` | any role | Browser-access changes newest first: `number`, `action` (`added`/`removed`/`changed`), `origin`, `note`, `at`, `by`, `byName`, and for `changed` the `previousOrigin` and `previousNote` |
 | `POST /admin/cors/test` `{ "origin" }` | any role | `{ "allowed", "reason" }` |
 | `POST /admin/cors/origins` `{ "origin", "note" }` | **admin** | Add an origin. 400 with `title` and `field` when it isn't allowed |
+| `PUT /admin/cors/origins` `{ "origin", "newOrigin", "note" }` | **admin** | Edit an origin added here: its address and/or note, checked like a new one (400 with the reason, or for one operations set; 404 if not listed). Unchanged: nothing recorded |
 | `DELETE /admin/cors/origins?origin=` | **admin** | Remove an origin added here (400 for one operations set, 404 if not listed) |
 | `POST /admin/recipes/{id}/rollback/{v}` | **publisher** | Publish version v's content as a new version |

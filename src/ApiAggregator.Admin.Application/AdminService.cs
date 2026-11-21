@@ -462,6 +462,49 @@ public sealed class AdminService(
         finally { _liveChanges.Release(); }
     }
 
+    /// <summary>
+    /// Edits an origin added here: its address, its note, or both, with the same checks as adding one. Recorded in the
+    /// history with what it was before. Origins operations set can only be changed in the app settings.
+    /// </summary>
+    public async Task<AdminResult<BrowserOrigin>> ChangeBrowserOriginAsync(AdminActor actor, ChangeOriginRequest request, CancellationToken ct = default)
+    {
+        if (NeedsAdmin(actor) is { } no) return no;
+        var value = request.Origin?.Trim() ?? "";
+        var note = string.IsNullOrWhiteSpace(request.Note) ? null : request.Note.Trim();
+
+        await _liveChanges.WaitAsync(ct);
+        try
+        {
+            var current = (await store.GetSnapshotAsync(ct)).BrowserOrigins;
+            var entry = current.FirstOrDefault(e => string.Equals(e.Origin, value, StringComparison.OrdinalIgnoreCase));
+            if (entry is null) return NotOnTheList(value);
+
+            // Checked like a new entry, against the others: the same rules can't be got round by editing.
+            var others = current.Where(e => e != entry).ToList();
+            var check = OriginRules.CheckAdminEntry(request.NewOrigin, note, others, options.BrowserAccess, options.IsDevelopment);
+            if (!check.Ok) return Refuse.BadRequest(check.Problem, ("field", check.Problem == OriginRules.CheckNote(note) ? "note" : "origin"));
+            if (check.Value == entry.Origin && note == entry.Note) return entry; // nothing changed: nothing to record
+
+            var changed = new BrowserOrigin
+            {
+                Origin = check.Value!, Note = note, AddedAt = entry.AddedAt, AddedBy = entry.AddedBy, AddedByName = entry.AddedByName
+            };
+            var change = new BrowserAccessHistoryEntry
+            {
+                Number = await NextBrowserAccessNumber(ct), Action = BrowserAccessAction.Changed, Origin = changed.Origin, Note = note,
+                PreviousOrigin = entry.Origin, PreviousNote = entry.Note,
+                At = DateTimeOffset.UtcNow, By = actor.Subject, ByName = actor.DisplayName
+            };
+            // Same position in the list, so the page doesn't reorder.
+            try { await store.SaveBrowserOriginsAsync(current.Select(e => e == entry ? changed : e).ToList(), change, ct); }
+            catch (HistoryConflictException) { return ChangedMeanwhile(); }
+
+            log.LogInformation("Browser access change {Number} ({Action}) by {Subject}", change.Number, change.Action, actor.Subject);
+            return changed;
+        }
+        finally { _liveChanges.Release(); }
+    }
+
     /// <summary>Removes an origin added here. Origins operations set can only be changed in the app settings.</summary>
     public async Task<AdminResult<OriginRemoved>> RemoveBrowserOriginAsync(AdminActor actor, string? origin, CancellationToken ct = default)
     {
@@ -474,13 +517,7 @@ public sealed class AdminService(
             var current = (await store.GetSnapshotAsync(ct)).BrowserOrigins;
             // Match the entry as stored, so an entry the gateway skips (not in the exact form) can still be removed.
             var entry = current.FirstOrDefault(e => string.Equals(e.Origin, value, StringComparison.OrdinalIgnoreCase));
-            if (entry is null)
-            {
-                var canonical = OriginRules.CheckOrigin(value, isDevelopment: true).Value;
-                return canonical is not null && OriginRules.OperationsOrigins(options.BrowserAccess, options.IsDevelopment).Contains(canonical)
-                    ? Refuse.BadRequest("Operations set this origin in the app settings, so it can't be removed here. Ask operations.")
-                    : Refuse.NotFound("That origin isn't on the list.");
-            }
+            if (entry is null) return NotOnTheList(value);
 
             var change = new BrowserAccessHistoryEntry
             {
@@ -509,6 +546,15 @@ public sealed class AdminService(
     /// <summary>History numbers are never reused, like recipe versions.</summary>
     private async Task<int> NextBrowserAccessNumber(CancellationToken ct) =>
         (await store.GetBrowserAccessHistoryAsync(ct)).Select(e => e.Number).DefaultIfEmpty(0).Max() + 1;
+
+    /// <summary>An origin to change or remove that isn't among those added here: set by operations, or not there at all.</summary>
+    private AdminFailure NotOnTheList(string value)
+    {
+        var canonical = OriginRules.CheckOrigin(value, isDevelopment: true).Value;
+        return canonical is not null && OriginRules.OperationsOrigins(options.BrowserAccess, options.IsDevelopment).Contains(canonical)
+            ? Refuse.BadRequest("Operations set this origin in the app settings, so it can't be changed here. Ask operations.")
+            : Refuse.NotFound("That origin isn't on the list.");
+    }
 
     private static AdminFailure ChangedMeanwhile() =>
         Refuse.Conflict("Someone else changed browser access at the same moment. Reload the page and try again.");
