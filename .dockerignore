@@ -7,3 +7,5 @@
 docs
 config/drafts
 config/history
+# Local secrets (Development) never go into a build, not even the build stage
+**/secrets.local.json

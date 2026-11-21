@@ -1,6 +1,6 @@
 # Local development stack: mock services + gateway + admin app (pages and /admin/* API, ADR 0014).
 #   docker compose up --build
-# All four containers share one network namespace (the gateway's), so the sample config's
+# All three containers share one network namespace (the gateway's), so the sample config's
 # "http://localhost:5100" service URLs work unchanged inside Docker.
 #
 #   http://localhost:5100/_stats   mock services (call counters)
