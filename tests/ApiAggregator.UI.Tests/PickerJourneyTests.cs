@@ -136,13 +136,15 @@ public class PickerJourneyTests(StackFixture stack)
     public async Task Opening_a_saved_endpoint_shows_only_its_real_problems()
     {
         // The editor used to show the problems of the empty form it starts with (no id, no route, no steps) until the
-        // next click. These endpoints have none.
-        foreach (var id in new[] { "customer-overview", "contacts-unique", "people-directory" })
+        // next click. These endpoints have none. customer-summary sends a whole request body ("to": "body", no name
+        // after it), which used to crash the page.
+        foreach (var id in new[] { "customer-overview", "contacts-unique", "people-directory", "customer-summary" })
         {
             var page = await stack.OpenAsync($"/endpoints/{id}");
             await Expect(page.Locator(".stepper")).Not.ToContainTextAsync("to fix");
             await Expect(page.Locator(".field-issues li.problem")).ToHaveCountAsync(0);
             await Expect(page.Locator(".sticky-footer")).ToContainTextAsync("No problems found");
+            if (id == "customer-summary") await Expect(page.Locator("table.bindings td", new() { HasTextString = "Whole body" })).ToHaveCountAsync(1);
             await page.CloseAsync();
         }
     }

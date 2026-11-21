@@ -195,7 +195,7 @@ else if (IsNew)
                     <tbody>
                         @foreach (var (target, binding) in step.Bindings.OrderBy(b => b.Key))
                         {
-                            var parts = target.Split('.', 2);
+                            var parts = TargetParts(target);
                             <tr>
                                 <td>@parts[1]</td>
                                 <td><span class="tag">@parts[0]</span></td>
@@ -703,10 +703,17 @@ else if (IsNew)
     private IReadOnlyList<ValidationIssue> ProblemsWhere(Func<string, bool> where) => Issues.Where(i => where(i.Where)).ToList();
     private IReadOnlyList<ValidationIssue> WarningsWhere(Func<string, bool> where) => Warnings.Where(i => where(i.Where)).ToList();
 
+    /// <summary>
+    /// "header.X-Customer-Id" → [header, X-Customer-Id]. A value sent as the whole request body is saved as just "body",
+    /// with no name after it: shown as "Whole body".
+    /// </summary>
+    internal static string[] TargetParts(string target) =>
+        target.Split('.', 2) is [var where, var name] ? [where, name] : [target, "Whole body"];
+
     /// <summary>Problems about one value of a step, recognised by how the validator names it: 'X-Customer-Id' (header).</summary>
     private IReadOnlyList<ValidationIssue> BindingProblems(StepForm step, string target)
     {
-        var parts = target.Split('.', 2);
+        var parts = TargetParts(target);
         return Issues.Where(i => i.Where == $"steps.{step.Alias}" &&
             (i.Message.Contains($"'{parts[1]}' ({parts[0]})") || i.Message.Contains($"'{target}'") || i.Message.Contains($"Header '{parts[1]}'"))).ToList();
     }
