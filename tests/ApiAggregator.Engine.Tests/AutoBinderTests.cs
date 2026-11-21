@@ -33,6 +33,13 @@ public class AutoBinderTests
                         new ParamDef { Name = "accountNo", In = "query" },
                         new ParamDef { Name = "status", In = "query" }
                     ]
+                },
+                new ApiEndpoint
+                {
+                    Id = "searchOrders", Method = "POST", Path = "/orders/search",
+                    RequestSchema = JsonNode.Parse("""
+                        { "type": "object", "properties": { "customerId": {}, "status": {}, "page.size": {} } }
+                        """)
                 }
             ]
         }
@@ -50,7 +57,8 @@ public class AutoBinderTests
         Steps =
         [
             new StepDef { Alias = "getCustomer", DisplayName = "Get customer", Endpoint = "a/getCustomer" },
-            new StepDef { Alias = "getOrders", Endpoint = "b/getOrders" }
+            new StepDef { Alias = "getOrders", Endpoint = "b/getOrders" },
+            new StepDef { Alias = "searchOrders", Endpoint = "b/searchOrders" }
         ]
     };
 
@@ -68,6 +76,17 @@ public class AutoBinderTests
 
     [Fact] public void Same_named_input_wins() =>
         Assert.Equal("request.query.status", Suggest("getOrders")["query.status"]);
+
+    [Fact]
+    public void Each_field_of_the_request_body_is_a_value_of_its_own_and_gets_suggestions()
+    {
+        var suggested = Suggest("searchOrders");
+
+        Assert.Equal("getCustomer.body.id", suggested["body.customerId"]);
+        Assert.Equal("request.query.status", suggested["body.status"]);
+        // body.page.size would build { "page": { "size": … } }, not the field "page.size": not offered.
+        Assert.Equal(["customerId", "status"], AutoBinder.BodyFields(Config().FindEndpoint("b/searchOrders", out _)!));
+    }
 
     [Fact] public void No_guess_when_nothing_matches() =>
         Assert.False(Suggest("getOrders").ContainsKey("query.account"));

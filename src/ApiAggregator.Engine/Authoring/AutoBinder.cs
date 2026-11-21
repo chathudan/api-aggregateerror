@@ -41,6 +41,7 @@ public static partial class AutoBinder
         var routeInputs = recipe.Inputs.Keys.Where(k => k.StartsWith("route.", StringComparison.OrdinalIgnoreCase)).ToList();
         var targets = PathParams(endpoint.Path).Select(p => $"path.{p}")
             .Concat(endpoint.Parameters.Where(p => p.In != "path").Select(p => $"{p.In}.{p.Name}"))
+            .Concat(BodyFields(endpoint).Select(f => $"body.{f}"))
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToList();
 
@@ -114,6 +115,13 @@ public static partial class AutoBinder
 
     private static IEnumerable<string> TopFields(JsonNode? schema) =>
         schema?["properties"] is JsonObject props ? props.Select(p => p.Key) : [];
+
+    /// <summary>
+    /// The top-level fields of the endpoint's request body (its requestSchema), each sent on its own as body.&lt;field&gt;.
+    /// A name with a dot is left out: body.a.b would build a nested object, not a field called "a.b".
+    /// </summary>
+    public static IEnumerable<string> BodyFields(ApiEndpoint endpoint) =>
+        TopFields(endpoint.RequestSchema).Where(f => f.Length > 0 && !f.Contains('.'));
 
     public static IEnumerable<string> PathParams(string path) =>
         PathParamRegex().Matches(path).Select(m => m.Groups[1].Value);

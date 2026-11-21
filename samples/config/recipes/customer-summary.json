@@ -30,7 +30,8 @@
       "displayName": "Search orders (customer id in the body)",
       "endpoint": "service-b/searchOrders",
       "bind": [
-        { "template": { "customerId": "{{customer.body.id}}", "status": "{{request.query.status}}" }, "to": "body" }
+        { "from": "customer.body.id", "to": "body.customerId" },
+        { "from": "request.query.status", "to": "body.status" }
       ]
     },
     {

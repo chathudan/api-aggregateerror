@@ -71,7 +71,10 @@ The recipe ([`customer-summary.json`](../../samples/config/recipes/customer-summ
     "bind": [ { "from": "customer.body.id", "to": "path.customerId" } ] },
 
   { "alias": "orders", "endpoint": "service-b/searchOrders",
-    "bind": [ { "template": { "customerId": "{{customer.body.id}}", "status": "{{request.query.status}}" }, "to": "body" } ] },
+    "bind": [
+      { "from": "customer.body.id",     "to": "body.customerId" },
+      { "from": "request.query.status", "to": "body.status" }
+    ] },
 
   { "alias": "offers", "endpoint": "service-c/getRecommendations", "required": false,
     "bind": [
@@ -144,7 +147,17 @@ list. There's no scripting, on purpose ([ADR 0002](../adr/0002-declarative-recip
 
 ### Where values can go
 
-`path.<name>`, `query.<name>`, `header.<Name>`, `cookie.<name>`, `body` (a whole JSON template) or
+In the wizard, each value is a row: its name, where it's **sent in** (path, query, header, cookie or body) and
+**Use value from**. Each field of a request body is a row of its own, listed from the service endpoint, so
+there's no JSON to write. To send something the endpoint doesn't list, use **Send another value**: pick where
+it goes (Header, Query, Body field or Cookie), type its name and choose **Add value**. A fixed value is typed
+in the box under the list.
+
+An endpoint saved with one JSON body for the whole request shows a single **Whole body** row. When each
+field of it is a plain value, **Split into fields** turns it into one row per field; the service gets
+exactly the same body.
+
+In the recipe: `path.<name>`, `query.<name>`, `header.<Name>`, `cookie.<name>`, `body` (a whole JSON template) or
 `body.<field>`. Each value is escaped for where it goes, so a value can't change the address or add a
 header. `Authorization`, `Cookie`, `Host` and a few other headers can't be set this way, because the
 service's [sign-in](adding-services.md#pick-the-sign-in) handles them.

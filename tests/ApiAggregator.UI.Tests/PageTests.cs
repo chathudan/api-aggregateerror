@@ -8,7 +8,7 @@ namespace ApiAggregator.UI.Tests;
 [Collection(UiCollection.Name)]
 public class PageTests(StackFixture stack)
 {
-    private static readonly string[] Pages = ["/", "/endpoints", "/endpoints/new", "/endpoints/new?guide=first", "/endpoints/customer-overview", "/services", "/logs", "/settings/browser-access", "/help", "/help/build", "/help/add-service", "/help/troubleshooting", "/signin"];
+    private static readonly string[] Pages = ["/", "/endpoints", "/endpoints/new", "/endpoints/new?guide=first", "/endpoints/customer-overview", "/endpoints/customer-summary", "/services", "/logs", "/settings/browser-access", "/help", "/help/build", "/help/add-service", "/help/troubleshooting", "/signin"];
 
     private static readonly HashSet<string> Interactive = ["textbox", "searchbox", "combobox", "checkbox", "radio", "button", "link", "spinbutton", "menuitem"];
 

@@ -1,3 +1,4 @@
+using System.Text.Json.Nodes;
 using Microsoft.Playwright;
 using static Microsoft.Playwright.Assertions;
 
@@ -136,17 +137,69 @@ public class PickerJourneyTests(StackFixture stack)
     public async Task Opening_a_saved_endpoint_shows_only_its_real_problems()
     {
         // The editor used to show the problems of the empty form it starts with (no id, no route, no steps) until the
-        // next click. These endpoints have none. customer-summary sends a whole request body ("to": "body", no name
-        // after it), which used to crash the page.
+        // next click. These endpoints have none.
         foreach (var id in new[] { "customer-overview", "contacts-unique", "people-directory", "customer-summary" })
         {
             var page = await stack.OpenAsync($"/endpoints/{id}");
             await Expect(page.Locator(".stepper")).Not.ToContainTextAsync("to fix");
             await Expect(page.Locator(".field-issues li.problem")).ToHaveCountAsync(0);
             await Expect(page.Locator(".sticky-footer")).ToContainTextAsync("No problems found");
-            if (id == "customer-summary") await Expect(page.Locator("table.bindings td", new() { HasTextString = "Whole body" })).ToHaveCountAsync(1);
             await page.CloseAsync();
         }
+    }
+
+    [UiFact]
+    public async Task A_whole_json_body_opens_and_splits_into_one_value_per_field()
+    {
+        // An endpoint written before body fields had rows of their own: one JSON body ("to": "body", nothing after it),
+        // which used to crash the page.
+        var recipe = JsonNode.Parse(File.ReadAllText(Path.Combine(stack.ConfigDir, "recipes", "customer-summary.json")))!.AsObject();
+        recipe["id"] = "whole-body-check";
+        recipe["route"] = "check/{id}/whole-body";
+        var ordersStep = recipe["steps"]!.AsArray().Single(s => (string?)s!["alias"] == "orders")!;
+        ordersStep["bind"] = JsonNode.Parse("""
+            [ { "template": { "customerId": "{{customer.body.id}}", "status": "{{request.query.status}}" }, "to": "body" } ]
+            """);
+        File.WriteAllText(Path.Combine(stack.ConfigDir, "drafts", "whole-body-check.json"), recipe.ToJsonString());
+
+        var page = await stack.OpenAsync("/endpoints/whole-body-check");
+        var orders = page.Locator(".step", new() { Has = page.Locator("code[data-alias]:text-is('orders')") });
+        var rows = orders.Locator("table.bindings tbody tr");
+        await Expect(rows).ToHaveCountAsync(1);
+        await Expect(rows).ToContainTextAsync("Whole body");
+        await Expect(orders.GetByLabel("Fixed value for Whole body (JSON)")).ToHaveValueAsync(new System.Text.RegularExpressions.Regex("customerId"));
+
+        await orders.GetByRole(AriaRole.Button, new() { Name = "Split into fields" }).ClickAsync();
+
+        await Expect(rows).ToHaveCountAsync(2);
+        await Expect(orders.GetByLabel("Value for customerId (body)")).ToHaveValueAsync("src:customer.body.id");
+        await Expect(orders.GetByLabel("Value for status (body)")).ToHaveValueAsync("src:request.query.status");
+    }
+
+    [UiFact]
+    public async Task Body_fields_and_extra_values_are_picked_like_any_other_value()
+    {
+        var page = await stack.OpenAsync("/endpoints/customer-summary");
+        var orders = page.Locator(".step", new() { Has = page.Locator("code[data-alias]:text-is('orders')") });
+
+        // Each field of the request body is a row of its own, with the usual picker: no JSON to write.
+        var rows = orders.Locator("table.bindings tbody tr");
+        await Expect(rows).ToHaveCountAsync(2);
+        await Expect(orders.GetByLabel("Value for customerId (body)")).ToHaveValueAsync("src:customer.body.id");
+        await Expect(orders.GetByLabel("Value for status (body)")).ToHaveValueAsync("src:request.query.status");
+
+        // Another value: pick where it goes, type its name.
+        await orders.GetByLabel("Where to send it").SelectOptionAsync("header");
+        await orders.GetByRole(AriaRole.Button, new() { Name = "Add value" }).ClickAsync();
+        await Expect(orders.Locator(".field-issues li.problem")).ToContainTextAsync("Type the name of the value first");
+        await Type(orders.GetByLabel("Name of the value"), "X-Channel");
+        await orders.GetByRole(AriaRole.Button, new() { Name = "Add value" }).ClickAsync();
+        await Expect(rows).ToHaveCountAsync(3);
+
+        // A long fixed value wraps under the picker instead of running off the page.
+        await orders.GetByLabel("Value for X-Channel (header)").SelectOptionAsync("fixed");
+        await Type(orders.GetByLabel("Fixed value for X-Channel"), new string('w', 300));
+        Assert.Equal(0, await page.EvaluateAsync<int>("document.documentElement.scrollWidth - window.innerWidth"));
     }
 
     [UiFact]

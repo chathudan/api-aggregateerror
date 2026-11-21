@@ -131,20 +131,41 @@ public sealed class StackFixture : IAsyncLifetime
 
     // ------------------------------------------------------------------ helpers
 
-    /// <summary>samples/config, with the mocks' address changed to the port used here.</summary>
+    /// <summary>
+    /// samples/config, with the mocks' address changed to the port used here. Only files in git: drafts that
+    /// dev-run.sh saves while someone uses the app would otherwise change what the tests see.
+    /// </summary>
     private void CopySampleConfig()
     {
         var source = Path.Combine(RepoRoot, "samples", "config");
+        var tracked = TrackedFiles("samples/config");
         foreach (var file in Directory.EnumerateFiles(source, "*", SearchOption.AllDirectories))
         {
             var relative = Path.GetRelativePath(source, file);
             if (relative == "secrets.local.json") continue; // never copy someone's local secrets
+            if (tracked is not null && !tracked.Contains(Path.GetRelativePath(RepoRoot, file).Replace('\\', '/'))) continue;
             var target = Path.Combine(ConfigDir, relative);
             Directory.CreateDirectory(Path.GetDirectoryName(target)!);
             if (file.EndsWith(".json")) File.WriteAllText(target, File.ReadAllText(file).Replace("localhost:5100", $"localhost:{MockPort}"));
             else File.Copy(file, target);
         }
         Directory.CreateDirectory(LogDir);
+    }
+
+    /// <summary>The files git tracks under a folder (paths from the repository root), or null without git.</summary>
+    private HashSet<string>? TrackedFiles(string folder)
+    {
+        try
+        {
+            using var git = Process.Start(new ProcessStartInfo("git", ["ls-files", "-z", "--", folder])
+            {
+                WorkingDirectory = RepoRoot, RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false
+            })!;
+            var output = git.StandardOutput.ReadToEnd();
+            git.WaitForExit();
+            return git.ExitCode == 0 ? output.Split('\0', StringSplitOptions.RemoveEmptyEntries).ToHashSet() : null;
+        }
+        catch (System.ComponentModel.Win32Exception) { return null; } // no git here: copy everything
     }
 
     private void Start(string name, string projectDir, int port, Dictionary<string, string> extraEnvironment)

@@ -191,34 +191,49 @@ else if (IsNew)
             {
                 var sources = SourcesFor(step);
                 <table class="list bindings">
-                    <thead><tr><th>Value</th><th>Sent as</th><th>Use value from</th></tr></thead>
+                    <thead><tr><th>Value</th><th>Sent in</th><th>Use value from</th></tr></thead>
                     <tbody>
-                        @foreach (var (target, binding) in step.Bindings.OrderBy(b => b.Key))
+                        @foreach (var (target, binding) in step.Bindings.OrderBy(b => TargetOrder(b.Key)).ThenBy(b => b.Key))
                         {
-                            var parts = TargetParts(target);
+                            var (name, where) = ValueTargets.Describe(target);
                             <tr>
-                                <td>@parts[1]</td>
-                                <td><span class="tag">@parts[0]</span></td>
+                                <td>@name</td>
+                                <td><span class="tag">@where</span></td>
                                 <td>
-                                    @if (binding.Suggested) { <span class="tag suggested" title="@binding.Reason">suggested</span> }
-                                    <select value="@SelectValue(binding)" aria-label="@($"Value for {parts[1]} ({parts[0]})")" @onchange="e => OnBindingChanged(binding, e.Value?.ToString())">
-                                        <option value="none">Leave empty</option>
-                                        @foreach (var group in sources.GroupBy(o => o.Group))
-                                        {
-                                            <optgroup label="@group.Key">
-                                                @foreach (var o in group) { <option value="@($"src:{o.Expression}")">@o.Label</option> }
-                                            </optgroup>
-                                        }
-                                        @* A value the field list doesn't know (the service has no response schema): show it rather than a blank box. *@
-                                        @if (binding.Mode == BindingMode.FromSource && !sources.Any(o => o.Expression == binding.Expression))
-                                        {
-                                            <option value="@($"src:{binding.Expression}")">@binding.Expression (not in the field list)</option>
-                                        }
-                                        <option value="fixed">Fixed value…</option>
-                                    </select>
+                                    <div class="value-pick">
+                                        @if (binding.Suggested) { <span class="tag suggested" title="@binding.Reason">suggested</span> }
+                                        <select value="@SelectValue(binding)" aria-label="@($"Value for {name} ({where})")" @onchange="e => OnBindingChanged(binding, e.Value?.ToString())">
+                                            <option value="none">Leave empty</option>
+                                            @foreach (var group in sources.GroupBy(o => o.Group))
+                                            {
+                                                <optgroup label="@group.Key">
+                                                    @foreach (var o in group) { <option value="@($"src:{o.Expression}")">@o.Label</option> }
+                                                </optgroup>
+                                            }
+                                            @* A value the field list doesn't know (the service has no response schema): show it rather than a blank box. *@
+                                            @if (binding.Mode == BindingMode.FromSource && !sources.Any(o => o.Expression == binding.Expression))
+                                            {
+                                                <option value="@($"src:{binding.Expression}")">@binding.Expression (not in the field list)</option>
+                                            }
+                                            <option value="fixed">Fixed value…</option>
+                                        </select>
+                                    </div>
                                     @if (binding.Mode == BindingMode.FixedValue)
                                     {
-                                        <input @bind="binding.FixedValue" placeholder="@(binding.FixedIsJson ? "JSON value" : "Type the value")" aria-label="@($"Fixed value for {parts[1]}")" />
+                                        @* On its own line, so a long value wraps instead of running off the page. *@
+                                        if (binding.FixedIsJson)
+                                        {
+                                            <textarea class="fixed-value json" rows="@Math.Clamp((binding.FixedValue ?? "").Count(c => c == '\n') + 2, 2, 10)" @bind="binding.FixedValue" aria-label="@($"Fixed value for {name} (JSON)")"></textarea>
+                                        }
+                                        else
+                                        {
+                                            <input class="fixed-value" @bind="binding.FixedValue" placeholder="Type the value" aria-label="@($"Fixed value for {name}")" />
+                                        }
+                                    }
+                                    @if (target.Equals("body", StringComparison.OrdinalIgnoreCase) && ValueTargets.SplitBody(binding) is not null)
+                                    {
+                                        <p class="hint">Each field of this body can have its own value, picked like the others.
+                                            <button class="link" @onclick="() => SplitBody(step)">Split into fields</button></p>
                                     }
                                     @if (NeedsLoop(step, binding))
                                     {
@@ -230,10 +245,20 @@ else if (IsNew)
                         }
                     </tbody>
                 </table>
-                <div class="inline">
-                    <input @bind="_extraTarget[number]" placeholder="header.X-Something or query.name" aria-label="Another value to send: where it goes" />
-                    <button class="link" @onclick="() => AddExtraValue(step, number)">Add another value</button>
-                </div>
+            }
+            @if (!string.IsNullOrEmpty(step.Endpoint))
+            {
+                <fieldset class="add-value">
+                    <legend>Send another value</legend>
+                    <div class="inline tight">
+                        <select aria-label="Where to send it" value="@ExtraKind(number)" @onchange="e => PickExtraKind(number, e.Value?.ToString())">
+                            @foreach (var (prefix, label) in ValueTargets.Kinds) { <option value="@prefix">@label</option> }
+                        </select>
+                        <input @bind="_extraName[number]" placeholder="@ExtraPlaceholder(number)" aria-label="Name of the value" />
+                        <button class="link" @onclick="() => AddExtraValue(step, number)">Add value</button>
+                    </div>
+                    @if (_extraProblem.GetValueOrDefault(number) is { } extraProblem) { <ul class="field-issues"><li class="problem"><span aria-hidden="true">✕</span><span class="visually-hidden">Problem: </span>@extraProblem</li></ul> }
+                </fieldset>
             }
 
             @if (RunsAfter(step) is { Length: > 0 } after) { <p class="hint">Runs after @after.</p> }
@@ -612,7 +637,10 @@ else if (IsNew)
     private bool _loaded;                  // the endpoint (if any) is loaded: before that only "Loading" is shown
     private bool _picking;
     private string _search = "";
-    private readonly Dictionary<int, string> _extraTarget = new();
+    // "Send another value", per step number: where it goes (header, query...), its name, and why it wasn't added.
+    private readonly Dictionary<int, string> _extraKind = new();
+    private readonly Dictionary<int, string> _extraName = new();
+    private readonly Dictionary<int, string> _extraProblem = new();
 
     private enum Confirm { None, Discard, Delete }
     private Capabilities _caps = new(false, false, true, false, []);
@@ -637,7 +665,7 @@ else if (IsNew)
         _caps = await Ui.CapabilitiesAsync();
 
         if (!IsNew) await LoadRecipe();
-        for (var i = 1; i <= 20; i++) _extraTarget[i] = "";
+        for (var i = 1; i <= 20; i++) _extraName[i] = "";
         MarkSaved();
         _loaded = true;
     }
@@ -938,6 +966,8 @@ else if (IsNew)
             step.Bindings[$"path.{p}"] = new BindingForm();
         foreach (var p in endpoint.Parameters.Where(p => p.In != "path"))
             step.Bindings[$"{p.In}.{p.Name}"] = new BindingForm();
+        foreach (var f in AutoBinder.BodyFields(endpoint))
+            step.Bindings[$"body.{f}"] = new BindingForm();
 
         // Pre-fill what we can; the user confirms or changes it.
         foreach (var suggestion in AutoBinder.Suggest(_form.ToRecipe(), step.Alias, _snapshot))
@@ -1049,12 +1079,46 @@ else if (IsNew)
         binding.Expression = value["src:".Length..];
     }
 
+    private string ExtraKind(int number) => _extraKind.GetValueOrDefault(number) ?? ValueTargets.Kinds[0].Prefix;
+
+    private void PickExtraKind(int number, string? kind)
+    {
+        _extraKind[number] = kind ?? ValueTargets.Kinds[0].Prefix;
+        _extraProblem.Remove(number);
+    }
+
+    private string ExtraPlaceholder(int number) => ExtraKind(number) == "header" ? "e.g. X-Channel" : "e.g. status";
+
     private void AddExtraValue(StepForm step, int number)
     {
-        var target = _extraTarget[number].Trim();
-        if (target.Contains('.')) step.Bindings[target] = new BindingForm();
-        _extraTarget[number] = "";
+        _extraProblem.Remove(number);
+        if (ValueTargets.Compose(ExtraKind(number), _extraName.GetValueOrDefault(number)) is not { } target)
+        {
+            _extraProblem[number] = "Type the name of the value first, for example X-Channel.";
+            return;
+        }
+        if (step.Bindings.ContainsKey(target))
+        {
+            _extraProblem[number] = $"{ValueTargets.Describe(target).Name} is already in the list above.";
+            return;
+        }
+        step.Bindings[target] = new BindingForm();
+        _extraName[number] = "";
     }
+
+    /// <summary>A whole-body JSON value becomes one value per field (sends the same body), so each can be picked.</summary>
+    private void SplitBody(StepForm step)
+    {
+        if (!step.Bindings.TryGetValue("body", out var body) || ValueTargets.SplitBody(body) is not { } fields) return;
+        step.Bindings.Remove("body");
+        foreach (var (target, value) in fields) step.Bindings[target] = value;
+    }
+
+    /// <summary>Rows in the order of a request: address, query, headers, cookies, body.</summary>
+    private static int TargetOrder(string target) => target.Split('.', 2)[0].ToLowerInvariant() switch
+    {
+        "path" => 0, "query" => 1, "header" => 2, "cookie" => 3, _ => 4
+    };
 
     // ------------------------------------------------------------------ actions
 

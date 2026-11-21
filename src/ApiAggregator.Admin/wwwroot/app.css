@@ -260,3 +260,20 @@ details.more .menu { position: absolute; right: 0; top: calc(100% + 4px); z-inde
 .guide-steps li.done .num { background: #e3f1e3; color: var(--ok); border-color: transparent; }
 .guide-steps li.current .num { border-color: var(--accent); color: var(--accent); }
 .guide-steps p { margin: 4px 0; }
+
+/* A step's values: the step name gets room; a fixed value goes on its own line and wraps; "Send another value" */
+.header-row .step-name { flex: 1 1 auto; min-width: 0; max-width: 48ch; }
+table.list.bindings { table-layout: fixed; }
+table.list.bindings th:nth-child(1) { width: 28%; }
+table.list.bindings th:nth-child(2) { width: 90px; }
+table.list.bindings td { overflow-wrap: anywhere; }
+table.list.bindings td:last-child { white-space: normal; }
+.value-pick { display: flex; gap: 8px; align-items: center; }
+.value-pick > select { flex: 1 1 auto; min-width: 0; }
+.fixed-value { display: block; width: 100%; box-sizing: border-box; margin-top: 6px; }
+textarea.fixed-value { font: 13px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace; padding: 6px 8px; border: 1px solid var(--control-border); border-radius: var(--radius); background: var(--surface); color: var(--text); resize: vertical; }
+fieldset.add-value { border: none; padding: 0; margin: 4px 0 8px; min-width: 0; }
+fieldset.add-value > legend { font-size: 13px; color: var(--muted); padding: 0; }
+fieldset.add-value .inline.tight { margin-top: 4px; flex-wrap: wrap; }
+fieldset.add-value select { flex: 0 1 260px; min-width: 0; }
+fieldset.add-value input { flex: 1 1 200px; min-width: 0; max-width: 320px; }
