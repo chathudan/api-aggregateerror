@@ -40,8 +40,8 @@ for _ in 1 2; do
 done
 
 echo
-echo "== Downstream call counts"
-curl -s http://localhost:5100/_stats; echo
+echo "== Downstream call counts (local mock services only)"
+curl -s -m 5 http://localhost:5100/_stats || echo "(the mock services aren't running on this machine)"; echo
 
 if [[ $failed -ne 0 ]]; then echo; echo "Some endpoints didn't answer as expected (FAIL above)."; exit 1; fi
 echo; echo "All sample endpoints answered as expected."

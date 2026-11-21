@@ -7,6 +7,8 @@ set -e
 
 (cd /app/mocks && ASPNETCORE_URLS=http://127.0.0.1:5100 exec dotnet MockServices.dll) &
 (cd /app/gateway && ASPNETCORE_URLS=http://127.0.0.1:5200 exec dotnet ApiAggregator.Gateway.dll) &
-(cd /app/admin && ASPNETCORE_URLS=http://127.0.0.1:5300 exec dotnet ApiAggregator.Admin.dll) &
+# The admin app reads X-Forwarded-Proto from Caddy, so behind Vercel's HTTPS it knows it's on https://. It only
+# listens on 127.0.0.1, so nothing but Caddy can send it that header.
+(cd /app/admin && ASPNETCORE_URLS=http://127.0.0.1:5300 ASPNETCORE_FORWARDEDHEADERS_ENABLED=true exec dotnet ApiAggregator.Admin.dll) &
 
 exec caddy run --config /app/Caddyfile --adapter caddyfile
