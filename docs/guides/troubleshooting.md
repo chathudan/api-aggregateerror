@@ -57,7 +57,8 @@ logs (event 1200 `DownstreamAuthFailed`). Apps get `auth_failed` (502) and never
 | Auth profile '…' step … (…) is missing setting '…' | A required field of the sign-in is empty | Fill it in under the service's sign-in |
 | Step … (…): '…' must be a secret reference like secret:my-service-password, not the value itself. | A secret was typed into a plain field (files or API only) | Type it in the UI's password box, or use `secret:<name>` in the file |
 | Auth profile '…' uses unknown kind '…' / Step …: unknown kind '…' | A typo in `auth-profiles.json` | Use one of Basic, SessionLogin, OAuthClientCredentials, ApiKey, StaticBearer, PassThroughUserToken |
-| Service … answered 401 (in Try it), code `unauthorized` | The service refused the credentials even after a fresh sign-in | Check the credentials; ask the owner whether the account is enabled |
+| … uses the sign-in '…', which doesn't exist. Set its sign-in on the Services page. | The service (or one endpoint) names a sign-in that was deleted or mistyped in the files. The gateway refuses to call it without credentials | Open the service on **Services**, choose **Sign-in** and save one; or fix `authProfileId` in `services.json` |
+| Service … answered 401 (in Try it), code `unauthorized` | The service refused the credentials even after a fresh sign-in, or the service has **No sign-in** but needs one | Check the service has a sign-in on **Services**, then the credentials; ask the owner whether the account is enabled |
 | Service … answered 403, code `forbidden` | The account works but lacks permission | Ask the owner to grant the gateway's account access |
 
 ## Problems shown in the wizard

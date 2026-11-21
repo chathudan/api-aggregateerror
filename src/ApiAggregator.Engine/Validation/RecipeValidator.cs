@@ -81,6 +81,7 @@ public static partial class RecipeValidator
 
             var endpoint = config.FindEndpoint(step.Endpoint, out var service);
             if (endpoint is null || service is null) { Add(at, $"Endpoint '{step.Endpoint}' was not found. Pick one from the service list."); continue; }
+            if (SignInReferences.Problem(service, endpoint, config) is { } signIn) Add(at, signIn);
 
             var boundTargets = step.Bind.Select(b => b.To).ToHashSet(StringComparer.OrdinalIgnoreCase);
             foreach (var pathParam in RouteParamRegex().Matches(endpoint.Path).Select(m => m.Groups[1].Value))

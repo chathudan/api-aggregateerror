@@ -71,6 +71,13 @@ public sealed class AdminService(
             return Refuse.BadRequest("Base URL must be an http or https address.");
         if (string.IsNullOrWhiteSpace(service.Name) || service.Name.Length > 100 || service.Name.Any(char.IsControl))
             return Refuse.BadRequest("Give the service a name of up to 100 characters.");
+
+        // A sign-in that doesn't exist would leave the service called without credentials: refuse it here.
+        var config = await store.GetSnapshotAsync(ct);
+        foreach (var signIn in new[] { service.AuthProfileId }.Concat(service.Endpoints.Select(e => e.AuthProfileId)).OfType<string>().Distinct())
+            if (config.GetAuthProfile(signIn) is null)
+                return Refuse.BadRequest($"The sign-in '{signIn}' doesn't exist. Save the sign-in first, or pick another one.");
+
         await store.SaveServiceAsync(service, ct);
         return service;
     }
@@ -531,7 +538,8 @@ public sealed class AdminService(
     /// </summary>
     private async Task<SignInStatus> CheckSignIn(AuthProfile profile, ConfigSnapshot config, CancellationToken ct)
     {
-        var service = config.Services.FirstOrDefault(s => s.AuthProfileId == profile.Id);
+        // The address to try: a service that uses this sign-in, itself or for one of its endpoints.
+        var service = config.Services.FirstOrDefault(s => s.AuthProfileId == profile.Id || s.Endpoints.Any(e => e.AuthProfileId == profile.Id));
         using var probe = new HttpRequestMessage(HttpMethod.Get, service?.BaseUrl ?? "http://localhost/");
         var signsInOnline = profile.Steps.Any(s => s.Kind is "SessionLogin" or "OAuthClientCredentials");
         try

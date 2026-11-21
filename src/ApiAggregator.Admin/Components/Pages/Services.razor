@@ -236,7 +236,7 @@ else if (_services.Count > 0)
             {
                 <div class="panel">
                     <h3>How the gateway signs in to @s.Name <HelpLink Topic="sign-in" Text="Which one do I pick?" /></h3>
-                    <SignInEditor Form="_signIn" ServiceId="@s.Id" CanSaveSecrets="_canSaveSecrets" />
+                    <SignInEditor Form="_signIn" ServiceId="@s.Id" CanSaveSecrets="_canSaveSecrets" WhenNone="@NoSignInWarning(s, profile)" />
                     <Problems Items="_problems" />
                     <div class="inline">
                         <button class="button primary" @onclick="() => SaveSignIn(s, profile)">Save and check sign-in</button>
@@ -470,10 +470,23 @@ else if (_services.Count > 0)
         await Reload();
     }
 
-    private void OpenSignIn(ApiService s, AuthProfile? profile)
+    private async Task OpenSignIn(ApiService s, AuthProfile? profile)
     {
         Open(s.Id, Panel.SignIn);
         _signIn = SignInForm.From(profile);
+        _usage = await Admin.GetServiceUsageAsync(_me, s.Id).ValueAsync(); // for the "No sign-in" warning
+    }
+
+    /// <summary>
+    /// Taking the sign-in away from a service that published endpoints call: they'd call it without credentials, and a
+    /// service that needs them answers 401. Said before saving, with the endpoints named.
+    /// </summary>
+    private string? NoSignInWarning(ApiService s, AuthProfile? current)
+    {
+        if (current is null || _usage is not { Published.Count: > 0 } usage || usage.Id != s.Id) return null;
+        var names = string.Join(", ", usage.Published.Select(r => r.Name));
+        return $"{usage.Published.Count} published endpoint{(usage.Published.Count == 1 ? "" : "s")} call{(usage.Published.Count == 1 ? "s" : "")} {s.Name}: {names}. "
+             + "Without a sign-in the gateway calls it with no credentials, and if it needs them every one of these fails (the service answers 401).";
     }
 
     private async Task SaveSignIn(ApiService s, AuthProfile? existing)

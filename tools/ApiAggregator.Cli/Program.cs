@@ -50,6 +50,7 @@ switch (args[0])
             foreach (var issue in result.Issues) Console.WriteLine($"       {issue.Where}: {issue.Message}");
             if (!result.IsValid) failed++;
         }
+        foreach (var (where, message) in SignInReferences.All(snapshot)) { Console.WriteLine($"FAIL {where}: {message}"); failed++; }
         var auth = host.Services.GetRequiredService<DownstreamAuthenticator>();
         foreach (var profile in snapshot.AuthProfiles)
             foreach (var problem in auth.Check(profile)) { Console.WriteLine($"FAIL auth-profile {profile.Id}: {problem}"); failed++; }

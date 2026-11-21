@@ -56,6 +56,30 @@ public sealed class RoleTests(AdminApp app) : IClassFixture<AdminApp>
     }
 
     [Fact]
+    public async Task A_service_naming_a_sign_in_that_does_not_exist_is_not_saved()
+    {
+        var service = new ApiService
+        {
+            Id = "no-such-sign-in", Name = "No such sign-in", BaseUrl = "http://localhost:5100/x", AuthProfileId = "missing-signin",
+            Endpoints = [new ApiEndpoint { Id = "get", Path = "/x" }]
+        };
+
+        var result = await Service.SaveServiceAsync(Author, service.Id, service);
+
+        Assert.Equal(FailureKind.BadRequest, result.Failure?.Kind);
+        Assert.Equal("The sign-in 'missing-signin' doesn't exist. Save the sign-in first, or pick another one.", result.Failure?.Message);
+        Assert.Null((await app.Services.GetRequiredService<IConfigStore>().GetSnapshotAsync()).GetService(service.Id));
+
+        // An endpoint's own sign-in is checked the same way.
+        var endpointOnly = new ApiService
+        {
+            Id = service.Id, Name = service.Name, BaseUrl = service.BaseUrl,
+            Endpoints = [new ApiEndpoint { Id = "get", Path = "/x", AuthProfileId = "missing-signin" }]
+        };
+        Assert.Equal(FailureKind.BadRequest, (await Service.SaveServiceAsync(Author, service.Id, endpointOnly)).Failure?.Kind);
+    }
+
+    [Fact]
     public async Task Someone_without_a_role_can_do_nothing_at_all()
     {
         var nobody = AdminActor.From(new ClaimsPrincipal(new ClaimsIdentity([new Claim("sub", "x")], "test")));

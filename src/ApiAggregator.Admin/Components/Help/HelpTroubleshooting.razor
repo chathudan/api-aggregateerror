@@ -5,10 +5,11 @@
         <tr><td>The secret '…' has no value</td><td>A password, key or client secret was never saved, or isn't in Key Vault</td><td>Open the service's <strong>Sign-in</strong>, type the value again and save. In test or production, ask an admin to add that secret name to Key Vault</td></tr>
         <tr><td>Couldn't reach the sign-in address</td><td>The login or token address is wrong, or the service is down</td><td>Check the address with the owner; try it in a browser or Postman</td></tr>
         <tr><td>Login for profile '…' failed with 401</td><td>Wrong username or password</td><td>Re-enter them under <strong>Sign-in</strong>; confirm with the owner</td></tr>
+        <tr><td>… uses the sign-in '…', which doesn't exist</td><td>The service names a sign-in that was deleted or mistyped. The gateway won't call it without credentials</td><td>On <strong>Services</strong>, open its <strong>Sign-in</strong> and save one</td></tr>
         <tr><td>Token endpoint … answered 400 or 401</td><td>Wrong client id, client secret or scope</td><td>Re-enter them; ask the owner which scope to use</td></tr>
         <tr><td>Login … returned no session cookie or token</td><td>The login worked but the answer wasn't what was expected</td><td>Ask where the token is in the login answer and set "Token in the login response"</td></tr>
         <tr><td>Settings and secrets are complete. This sign-in type is checked…</td><td>Basic, API key and fixed-token sign-ins can only be proven by a real call</td><td>Build a small endpoint and use <strong>Try it</strong></td></tr>
-        <tr><td>Service … answered 401 / 403</td><td>The service rejected the credentials, or the account lacks permission</td><td>Check the sign-in; ask the owner to grant access</td></tr>
+        <tr><td>Service … answered 401 / 403</td><td>The service rejected the credentials, the account lacks permission, or the service has <strong>No sign-in</strong> but needs one</td><td>Check the service has a sign-in on <strong>Services</strong>, then the credentials; ask the owner to grant access</td></tr>
         <tr><td>Service … answered 404</td><td>The test record doesn't exist, or the path is wrong</td><td>Try another test value; check the endpoint path</td></tr>
         <tr><td>'x' (path) is required by … but has no value</td><td>A step value is empty</td><td>Pick something in <strong>Use value from</strong></td></tr>
         <tr><td>… uses request input '…', which isn't declared</td><td>A value comes from an input that isn't listed in step 2</td><td>Add that input</td></tr>

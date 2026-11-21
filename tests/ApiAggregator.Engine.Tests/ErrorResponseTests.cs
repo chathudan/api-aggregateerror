@@ -3,6 +3,7 @@ using ApiAggregator.Engine.Config;
 using ApiAggregator.Engine.Auth;
 using ApiAggregator.Engine.Execution;
 using ApiAggregator.Engine.Model;
+using ApiAggregator.Engine.Validation;
 using Microsoft.Extensions.Logging;
 using static ApiAggregator.Engine.Tests.TestData;
 
@@ -201,6 +202,43 @@ public class ErrorResponseTests
         Assert.Equal("corr-2", result.Body["correlationId"]!.GetValue<string>());
         Assert.Equal("invalid_input", result.Body["errors"]![0]!["code"]!.GetValue<string>());
         Assert.False(string.IsNullOrEmpty(result.Body["errors"]![0]!["message"]!.GetValue<string>()));
+    }
+
+    /// <summary>Service b names the sign-in "gone", which isn't in the configuration (deleted, or mistyped in the file).</summary>
+    private static ConfigSnapshot MissingSignIn(Recipe recipe)
+    {
+        var withProfile = SnapshotWithAuth("b", BasicProfile("gone"), recipe);
+        return new ConfigSnapshot(withProfile.Services, [], [recipe], "v1");
+    }
+
+    [Fact]
+    public async Task A_service_whose_sign_in_is_missing_is_never_called_without_credentials()
+    {
+        var recipe = AbcRecipe();
+        var downstream = Healthy();
+
+        var result = await Run(recipe, downstream, MissingSignIn(recipe));
+
+        Assert.Equal(502, result.StatusCode);
+        Assert.Equal("auth_failed", result.ErrorCode);
+        Assert.DoesNotContain(downstream.Requests, r => r.RequestUri!.Host == "b.test"); // not called at all
+        Assert.DoesNotContain("gone", result.Body!.ToJsonString()); // apps don't see sign-in names
+    }
+
+    [Fact]
+    public void A_missing_sign_in_is_reported_before_publishing_and_by_validate()
+    {
+        var recipe = AbcRecipe();
+        var config = MissingSignIn(recipe);
+
+        var issue = Assert.Single(RecipeValidator.Validate(recipe, config).Issues);
+        Assert.Equal("steps.b", issue.Where);
+        Assert.Equal("b uses the sign-in 'gone', which doesn't exist. Set its sign-in on the Services page.", issue.Message);
+
+        var (where, message) = Assert.Single(SignInReferences.All(config));
+        Assert.Equal("services.b", where);
+        Assert.Equal(issue.Message, message);
+        Assert.Empty(SignInReferences.All(SnapshotWithAuth("b", BasicProfile("gone"), recipe))); // it exists: fine
     }
 
     // ---------------------------------------------------------------- logging

@@ -292,6 +292,14 @@ Service K wants an API key **and** a token from its login. Steps run in order an
 Other common combinations: "Basic login → session + API key" is `ApiKey` plus `SessionLogin` with
 `loginUsesBasic: "true"`. "Login → JWT → Bearer" is `SessionLogin` with `tokenPath`.
 
+### Taking a sign-in away, or one that doesn't exist
+
+Choosing **No sign-in** for a service that published endpoints call shows which ones, before you save:
+without credentials, a service that needs them answers 401 to every call. A service or endpoint that names a
+sign-in that doesn't exist is never called without credentials instead: the admin app refuses to save it,
+**Check before publishing** and `aggregator validate` report it, and if it still happens the step fails with
+`auth_failed`.
+
 ## Secrets
 
 Passwords, keys, client secrets and tokens are **never** stored in `auth-profiles.json`. The file holds

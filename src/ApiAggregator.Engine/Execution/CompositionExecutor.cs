@@ -10,6 +10,7 @@ using ApiAggregator.Engine.Expressions;
 using ApiAggregator.Engine.Logging;
 using ApiAggregator.Engine.Model;
 using ApiAggregator.Engine.Planning;
+using ApiAggregator.Engine.Validation;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
@@ -305,8 +306,11 @@ public sealed class CompositionExecutor(
 
             var endpoint = config.FindEndpoint(step.Endpoint, out var service)
                 ?? throw new BindingException($"Endpoint '{step.Endpoint}' no longer exists.");
-            var profile = config.GetAuthProfile(endpoint.AuthProfileId ?? service!.AuthProfileId);
-            profileId = profile?.Id;
+            profileId = SignInReferences.SignInId(service!, endpoint);
+            var profile = config.GetAuthProfile(profileId);
+            // A sign-in that's named but missing fails the step: never call the service without credentials instead.
+            if (profileId is not null && profile is null)
+                throw new AuthFailedException(SignInReferences.Problem(service!, endpoint, config)!);
             var call = new CallTarget(step, service!, endpoint, profile);
 
             StepRun run;

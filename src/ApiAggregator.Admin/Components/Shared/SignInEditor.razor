@@ -13,6 +13,10 @@
             </button>
         }
     </div>
+    @if (Form.None && WhenNone is not null)
+    {
+        <p class="issues warnings" role="status">@WhenNone</p>
+    }
 
     @for (var i = 0; i < Form.Steps.Count; i++)
     {
@@ -79,6 +83,9 @@
     [Parameter, EditorRequired] public SignInForm Form { get; set; } = new();
     [Parameter] public string ServiceId { get; set; } = "service";
     [Parameter] public bool CanSaveSecrets { get; set; }
+
+    /// <summary>Shown when "No sign-in" is picked, e.g. which published endpoints would then call the service without credentials.</summary>
+    [Parameter] public string? WhenNone { get; set; }
 
     private string _extraKind = "ApiKey";
 
