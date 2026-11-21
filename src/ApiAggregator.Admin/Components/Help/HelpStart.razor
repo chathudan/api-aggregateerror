@@ -1,0 +1,43 @@
+@* Help → How it works and roles. Mirrors docs/guides/getting-started.md. *@
+<ol class="steps">
+    <li><strong>Services</strong>: register each backend API once: its address, its endpoints and how the gateway signs in to it.</li>
+    <li><strong>Endpoints</strong>: build an aggregated endpoint by picking service endpoints as steps. Apps call one address, for example <code>GET /bff/customer/C-10042/overview</code>, and get one combined answer.</li>
+    <li><strong>Try it</strong>, then <strong>Publish</strong>. Apps can use it straight away; nothing needs redeploying.</li>
+</ol>
+<p><a class="button primary" href="/endpoints/new?guide=first">Build your first endpoint with the guide</a></p>
+<section id="roles">
+<h2>Roles <GuideLink Guide="getting-started#3-look-around-the-admin-ui-3-minutes" /></h2>
+<p>You sign in to this admin app as yourself. Your name appears at the top right, with <strong>Sign out</strong> next to it. What you can do depends on your role:</p>
+<table class="list">
+    <thead><tr><th>Role</th><th>Can</th></tr></thead>
+    <tbody>
+        <tr><td>Author</td><td>Add services and their sign-ins, build endpoints, save drafts and use <strong>Try it</strong></td></tr>
+        <tr><td>Publisher</td><td>Everything an author can, plus <strong>Publish</strong>, <strong>Roll back to this</strong> and <strong>Delete endpoint</strong></td></tr>
+        <tr><td>Admin</td><td>A separate role for the platform team: add and remove the websites allowed to call the gateway from a browser (<strong>Settings</strong>). It doesn't let you build or publish endpoints; ask for author or publisher too if you need them</td></tr>
+    </tbody>
+</table>
+<ul>
+    <li><strong>On your own computer (development)</strong>, the sign-in asks only for a name and a role (tick <strong>Also admin</strong> to try the Settings page). There's no password. Pick <strong>Author</strong> to see what someone who can't publish sees.</li>
+    <li><strong>In test and production</strong>, you sign in with your organisation's account. Your role comes from there: ask your administrator if you need publisher.</li>
+    <li>The history of each endpoint records who published it, with the name you signed in with.</li>
+</ul>
+<p class="hint">Signing in here is about <em>you</em>. A service's <strong>sign-in</strong> (on the Services page) is how the gateway proves who <em>it</em> is to that service. They're separate.</p>
+</section>
+<section id="guides">
+<h2>Guides</h2>
+<table class="list">
+    <thead><tr><th>Guide</th><th>For</th><th>What's in it</th></tr></thead>
+    <tbody>
+        <tr><td><GuideLink Guide="getting-started" Text="Getting started" /></td><td>Everyone</td><td>From clone to calling a published endpoint, in sample mode and real mode</td></tr>
+        <tr><td><GuideLink Guide="adding-services" Text="Adding services" /></td><td>Technicians</td><td>From a spec or by hand, every sign-in type with an example, secrets</td></tr>
+        <tr><td><GuideLink Guide="building-endpoints" Text="Building endpoints" /></td><td>Technicians</td><td>Passing values between calls, inputs, conditions, run for each, caching</td></tr>
+        <tr><td><GuideLink Guide="combine-lists" Text="Combine lists" /></td><td>Technicians</td><td>One list of records from several services, without guessing</td></tr>
+        <tr><td><GuideLink Guide="testing-and-publishing" Text="Testing and publishing" /></td><td>Technicians, testers</td><td>Try it, API docs, Postman, history and rolling back</td></tr>
+        <tr><td><GuideLink Guide="troubleshooting" Text="Troubleshooting" /></td><td>Everyone</td><td>Every message, what it means and what to do</td></tr>
+        <tr><td><GuideLink Guide="for-app-developers" Text="For app developers" /></td><td>App developers</td><td>Calling the gateway, every error code, C# and TypeScript examples</td></tr>
+        <tr><td><GuideLink Guide="operations" Text="Operations" /></td><td>Platform team</td><td>Deploying, configuration, health checks, logs, backups, secrets</td></tr>
+        <tr><td><GuideLink Guide="security-and-privacy" Text="Security and privacy" /></td><td>Everyone</td><td>What's protected, what's never logged, what needs review</td></tr>
+        <tr><td><GuideLink Guide="glossary" Text="Glossary" /> · <GuideLink Guide="faq" Text="FAQ" /></td><td>Everyone</td><td>The words used here, and common questions</td></tr>
+    </tbody>
+</table>
+</section>

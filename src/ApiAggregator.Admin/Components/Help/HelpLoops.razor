@@ -1,0 +1,34 @@
+@* Help → Run for each item, conditions and step names. Mirrors docs/guides/building-endpoints.md. *@
+<section id="for-each">
+<h2>Run for each item <GuideLink Guide="building-endpoints#run-for-each-item" /></h2>
+<ol class="steps">
+    <li>Under the step's name, choose <strong>Run this step: Once for each item in a list</strong>.</li>
+    <li>Pick the list. It names every list in the earlier steps' answers, and every field inside one: <strong>Orders from CRM → each order</strong>, <strong>Orders from CRM → each order's contactId</strong>.</li>
+    <li>Pick <strong>Current item</strong> for the value the service needs. A value named like the looped field is filled in for you, marked <span class="tag suggested">suggested</span>. For a loop over whole records (<strong>each order</strong>), pick <strong>Current item → contactId</strong>.</li>
+</ol>
+<p><strong>Call once per unique item</strong> stays ticked: 6 orders from 3 contacts make 3 calls, not 6. Open <strong>Unique contacts and their notes</strong> (<code>contacts-unique</code>) and <strong>Try it</strong>: the notes call ends with <strong>×3</strong>.</p>
+<p class="hint">If you choose <strong>Current item</strong> before picking a list, the step says <strong>Choose what to loop over first</strong>. If the list gives another field than the value needs (each order's <code>id</code> sent as <code>contactId</code>), <strong>Check before publishing</strong> names the one you probably meant.</p>
+<details>
+    <summary>What this does underneath</summary>
+    <p><strong>Orders from CRM → each order's contactId</strong> is saved as <code>{{orders.body.orders[*].contactId}}</code>: <code>[*]</code> means "every item". <strong>Custom expression…</strong> lets you type one the list doesn't offer, such as only the first three orders, <code>{{b.body.items[0:3].id}}</code> (<code>customer-overview</code>).</p>
+</details>
+</section>
+
+<section id="only-run-when">
+<h2>Only run when <GuideLink Guide="building-endpoints#conditions-only-run-when" /></h2>
+<p>Under the step's <strong>Advanced</strong>: <strong>Only run when</strong> [value] [<strong>is</strong> / <strong>is not</strong> / <strong>has a value</strong>] [text], for example <strong>Get customer → isPremium</strong> <strong>is</strong> <code>true</code>. "Has a value" means it's there and isn't empty, false or 0. Upper or lower case doesn't matter. A skipped step isn't an error.</p>
+<details>
+    <summary>What this does underneath</summary>
+    <p>It's saved as <code>{{a.body.isPremium}} == true</code> (<code>!=</code> for "is not", just the value for "has a value"). <strong>Custom condition…</strong> is for anything else, such as comparing two values.</p>
+</details>
+</section>
+
+<section id="renaming">
+<h2>Renaming a step <GuideLink Guide="building-endpoints#renaming-a-step" /></h2>
+<p>Under each step's name is its <strong>name in expressions</strong>, for example <em>Name in expressions: getOrders</em>, with a <strong>Copy</strong> button. You only need it for a Custom expression or condition.</p>
+<ul>
+    <li>While nothing uses the step, it follows the display name by itself.</li>
+    <li>Once something uses it, changing the display name asks <strong>Also rename it to ordersFromCrm in expressions?</strong> and says how many places use it. <strong>Rename everywhere</strong> updates all of them.</li>
+    <li>On a live endpoint it always asks: apps see the name in error details, and as a field name in the answer when there are no response fields. Nothing changes for apps until you publish.</li>
+</ul>
+</section>

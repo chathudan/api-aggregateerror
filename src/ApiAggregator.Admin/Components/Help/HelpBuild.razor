@@ -1,0 +1,46 @@
+@* Help → Build an endpoint. Mirrors docs/guides/building-endpoints.md. *@
+<p>New to this? The guide walks you through a whole endpoint with the sample data, ticking each step off as you do it.</p>
+<p><a class="button primary" href="/endpoints/new?guide=first">Build your first endpoint with the guide</a></p>
+<ol class="steps">
+    <li><strong>Name and address.</strong> <a href="/endpoints">Endpoints</a> → <strong>Create endpoint</strong>. Type a name and a route such as <code>customer/{id}/summary</code>: apps will call <code>/bff/customer/C-10042/summary</code>. Values in braces, like <code>{id}</code>, become inputs for you.</li>
+    <li><strong>Add steps.</strong> <strong>Add step</strong>, search, <strong>Add</strong>. Each step calls one service endpoint. Values marked <span class="tag suggested">suggested</span> were filled in for you: check them. For an empty one, pick from <strong>Use value from</strong>: an input, or a field from an earlier step.</li>
+    <li><strong>One call per item of a list?</strong> Under the step, <strong>Run this step</strong> → <strong>Once for each item in a list</strong>. See <a href="/help/loops">Run for each item</a>.</li>
+    <li><strong>Choose the answer.</strong> In <strong>Response</strong>, choose <strong>Add fields from …</strong>, then rename or remove fields. See <a href="/help/response">The response</a>.</li>
+    <li><strong>Try it</strong> with a test value next to each input, then publish: <a href="/help/publish">Test and publish</a>.</li>
+</ol>
+<p class="hint">For nice-to-have data, open the step's <strong>Advanced</strong> and untick "If this call fails, fail the whole endpoint", so apps still get the rest. "Runs after…" shows the order the gateway worked out; steps that don't need each other run at the same time.</p>
+<details>
+    <summary>What this does underneath</summary>
+    <p>The endpoint is saved as a <em>recipe</em>. Each step has a <strong>name in expressions</strong> (shown under its name), and a value from an earlier step is written as that name, then <code>body</code>, then the field: <strong>Get customer → id</strong> is <code>customer.body.id</code>, and an input is <code>request.route.id</code>. You never have to type these; the lists write them for you.</p>
+</details>
+<h2>Example: passing values between calls</h2>
+<p>Open <strong>Customer summary</strong> (<code>customer-summary</code>). It gets a customer from Service A, then passes values from A's answer to three other services, each in a different place:</p>
+<table class="list">
+    <thead><tr><th>Step</th><th>Calls</th><th>Value</th><th>Goes into</th></tr></thead>
+    <tbody>
+        <tr><td>customer</td><td>A: <code>GET /customers/{customerId}</code></td><td>The caller's <code>{id}</code></td><td>The path</td></tr>
+        <tr><td>loyalty</td><td>I: <code>GET /loyalty/{customerId}</code></td><td>A's <code>id</code></td><td>The path</td></tr>
+        <tr><td>orders</td><td>B: <code>POST /orders/search</code></td><td>A's <code>id</code> and the caller's <code>status</code></td><td>The body</td></tr>
+        <tr><td>offers</td><td>C: <code>GET /recommendations</code></td><td>A's <code>segmentCode</code> and I's <code>tier</code></td><td>A query value and a header</td></tr>
+    </tbody>
+</table>
+<p><strong>Try it</strong> with id <code>C-10042</code> and you get:</p>
+<pre><code>{ "name": "Alex Example", "points": 1250, "tier": "gold", "orderStatus": "open",
+  "orderIds": ["O-042-1", "O-042-2", "O-042-3"], "offers": ["Offer for family/gold", "Loyalty bonus"] }</code></pre>
+<p><code>loyalty</code> and <code>orders</code> run at the same time, because neither needs the other. <code>offers</code> waits for both <code>customer</code> and <code>loyalty</code>.</p>
+
+
+<h2>More things to try with the sample data</h2>
+<table class="list">
+    <thead><tr><th>To see</th><th>Open</th><th>Test value</th><th>What happens</th></tr></thead>
+    <tbody>
+        <tr><td>An input that's refused</td><td>Customer summary</td><td><code>10042</code></td><td>400: <em>'id' is not in the expected format.</em> No service is called</td></tr>
+        <tr><td>An optional step failing</td><td>Customer summary</td><td><code>C-30003</code></td><td>200 with <code>_errors</code>: loyalty answered 404, so <code>points</code> and <code>tier</code> are empty and <code>offers</code> doesn't run</td></tr>
+        <tr><td>A required step failing</td><td>Customer overview</td><td><code>C-99999</code></td><td>502 <code>not_found</code>: Service A doesn't know that customer</td></tr>
+        <tr><td>Only run when</td><td>Customer overview</td><td><code>C-20001</code></td><td>The order-lines step is skipped: the customer isn't premium</td></tr>
+        <tr><td>Run once for each item</td><td>Customer overview</td><td><code>C-10042</code></td><td>Order lines are fetched for the first 3 orders: the call ends with <strong>×3</strong></td></tr>
+        <tr><td>Caching</td><td>Customer profile</td><td><code>C-10042</code></td><td>Cached for 30 seconds, per user. Call it twice through the API docs: the second answer is instant</td></tr>
+    </tbody>
+</table>
+
+<p class="hint"><strong>Cache responses</strong> makes repeat calls much faster. Each app user gets their own cached copy, so nobody sees someone else's data. Keep it off for data that must always be up to the second.</p>

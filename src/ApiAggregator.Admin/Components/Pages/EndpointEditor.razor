@@ -46,6 +46,15 @@
     </ol>
 </nav>
 
+@if (ShowGuide)
+{
+    <GuidePanel Form="_form" TestPassed="TestedCurrent" Available="FirstEndpointGuide.Available(_snapshot)" OnHide="() => _guideHidden = true" SectionHref="SectionLink" />
+}
+else if (IsNew)
+{
+    <p class="hint">New to this? <a href="/endpoints/new?guide=@FirstEndpointGuide.Id">Build your first endpoint with a guide</a>: it walks you through one with the sample data.</p>
+}
+
 @if (_deleted)
 {
     <div class="issues warnings">
@@ -305,7 +314,7 @@
     {
     var allSources = SourcesFor(null);
     var forShapes = TryRecipe();
-    <table class="list">
+    <table class="list response-fields">
         <thead><tr><th>Field name</th><th>Value</th><th></th></tr></thead>
         <tbody>
             @foreach (var field in _form.Response)
@@ -335,7 +344,7 @@
                                 <option value="@picked">@picked (not in the field list)</option>
                             }
                         </select>
-                        @if (shaped is not null && forShapes is not null && ResponseShapes.IsList(forShapes, shaped.Value, _snapshot!))
+                        @if (shaped is not null && forShapes is not null && !ResponseShapes.IsCallList(forShapes, shaped.Value) && ResponseShapes.IsList(forShapes, shaped.Value, _snapshot!))
                         {
                             <select value="@shaped.Shape" aria-label="@($"What {field.Name} returns of the list")" @onchange="e => PickResponseShape(field, shaped, e.Value?.ToString())">
                                 @foreach (var (shape, label) in ResponseShapes.Choices) { <option value="@shape">@label</option> }
@@ -580,6 +589,12 @@
 
 @code {
     [Parameter] public string? Id { get; set; }
+
+    /// <summary>"first" opens the guided walkthrough (FirstEndpointGuide).</summary>
+    [SupplyParameterFromQuery(Name = "guide")] public string? Guide { get; set; }
+
+    private bool _guideHidden;
+    private bool ShowGuide => Guide == FirstEndpointGuide.Id && !_guideHidden;
 
     private bool IsNew => Id is null;
     private RecipeForm _form = new();
@@ -985,8 +1000,15 @@
     /// <summary>A new value for a response field keeps its shape ("How many"...) when the new value is a list too.</summary>
     private void PickResponseValue(ResponseField field, string? value)
     {
+        var recipe = TryRecipe();
+        // "Number of calls" is always a count: a for-each step's whole result also holds downstream headers.
+        if (!string.IsNullOrEmpty(value) && recipe is not null && ResponseShapes.IsCallList(recipe, value))
+        {
+            field.Expression = ResponseShapes.Compose(new ShapedValue(value, ResponseShape.Count, null));
+            return;
+        }
         var old = ResponseShapes.Split(field.Expression);
-        var keep = old is not null && !string.IsNullOrEmpty(value) && TryRecipe() is { } recipe && ResponseShapes.IsList(recipe, value, _snapshot!);
+        var keep = old is not null && !string.IsNullOrEmpty(value) && recipe is not null && ResponseShapes.IsList(recipe, value, _snapshot!);
         field.Expression = keep ? ResponseShapes.Compose(old! with { Value = value! }) : value ?? "";
     }
 
@@ -1048,7 +1070,8 @@
             _error = null;
             _hasDraft = _everSaved = true;
             MarkSaved();
-            if (IsNew) { _leaving = true; Nav.NavigateTo($"/endpoints/{_form.Id}", replace: true); _leaving = false; }
+            // The address changes to the saved endpoint's; the guide, if open, comes along.
+            if (IsNew) { _leaving = true; Nav.NavigateTo($"/endpoints/{_form.Id}{(ShowGuide ? $"?guide={FirstEndpointGuide.Id}" : "")}", replace: true); _leaving = false; }
             return true;
         }
         catch (Exception ex) when (ex is InvalidOperationException or FormatException) { ShowError($"These settings can't be saved yet: {ex.Message}"); return false; }

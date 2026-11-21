@@ -14,8 +14,9 @@ You connect services and build, test and publish aggregated endpoints in the adm
 5. [Testing and publishing](guides/testing-and-publishing.md): Try it, API docs, Postman, history and rolling back
 6. [Troubleshooting](guides/troubleshooting.md): every message, what it means and what to do
 
-The admin UI's **Help** page has the same steps and examples, every screen links to its section, and each
-section links back here (**Full guide**).
+The admin UI's **Help** has the same steps, shorter: a page per task (*Add a service · Build an endpoint · Test and
+publish · Fix a problem*) and a few reference pages. Every screen links to its page, and each page links back here
+(**Full guide**). New to it? **Build your first endpoint with the guide** walks you through one in the wizard.
 
 ## I'm building an app
 

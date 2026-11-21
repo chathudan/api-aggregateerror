@@ -21,11 +21,20 @@ and `AdminService` uses no HTTP or Blazor types.
 
 ## In-app help
 
-The admin app has a **Help** page (`/help`) written for technicians: what to ask a service owner,
-which sign-in to pick, how secrets are handled, building and publishing, a troubleshooting table of
-every common message, and the error codes apps receive. Each screen links to the matching section, and each
-section links to its full guide in `docs/guides/` (**Full guide**, an address built from `Docs:BaseUrl`), so the
-examples there, which `check-docs.sh` keeps true, are one click away.
+**Help** (`/help`) is written for technicians first, with "What this does underneath" folded away for developers.
+`/help` asks *what do you want to do?* (Add a service · Build an endpoint · Test and publish · Fix a problem) and offers
+the guided walkthrough; each topic is its own short page, `/help/{topic}`, one Razor component in `Components/Help/`,
+listed in `HelpTopics` (title, summary, full guide). Reference pages (errors apps receive, logs, browser access, API
+docs, words) keep their tables. Screens link with `HelpLink Topic="…"`; topics that became part of another page
+(`history`, `sign-in`…) still resolve (`HelpTopics.Href`), and a test checks every topic used in the app exists. Each
+page links to its full guide in `docs/guides/` (**Full guide**, from `Docs:BaseUrl`), whose examples `check-docs.sh`
+keeps true. Technician text is mirrored in both: change both.
+
+**Guided walkthrough.** `/endpoints/new?guide=first` opens "Guide: build your first endpoint" above the editor: 8 steps
+that build the sample `contacts-unique` with the pickers only (contacts, orders, notes once for each order's contact,
+the answer, Try it). Each step ticks itself off from the form (`FirstEndpointGuide`, pure and unit-tested); only the
+current one is open, with **Show me** (jumps to the section) and "What this does underneath". The guide survives the
+first save (the address keeps `?guide=first`). Without the sample CRM (real mode) it says it needs the sample data.
 
 ## Who does what
 
@@ -146,7 +155,7 @@ unit-tested without a browser, and the validator still checks the result like an
 | "Only run when" | [value] [is / is not / has a value] [text] writes exactly the syntax `Conditions` already evaluates (`{{x}}`, `{{x}} == t`, `{{x}} != t`). `Conditions.TryParseSimple` opens saved conditions in the picker; anything else is **Custom condition…** | `Conditions`, `StepChoices`, `ConditionPicker` |
 | Step names (aliases) | Shown under the step's name with a **Copy** button (`navigator.clipboard.writeText` through `IJSRuntime`, no script of our own, so a Content-Security-Policy won't break it). Made from the display name by `RecipeRefactor.AliasFor` (camelCase, unique, never reserved). While nothing uses a step, and the endpoint isn't live, the alias follows the display name silently; otherwise the wizard asks first, and on a live endpoint it says that apps see the name in `errors[].step` (and as an answer field when there are no response fields) | `RecipeRefactor`, `EndpointEditor` |
 | Renaming | `RecipeRefactor.RenameStep` rewrites only expressions whose **root** (`ValuePath.Root`) is the old alias: bindings, body templates, when, forEach, response, combine sources, mappings (`via`) and owners that name the step. A field or transform argument spelled like the alias is left alone; a clash or reserved name is refused in plain words. `RecipeForm.RenameStep` applies the same rewrite to the form (a test checks the two give the same recipe) | `RecipeRefactor`, `RecipeForm` |
-| "How many" / "Without repeats" | For a list value, a second select: All of it, How many (`\| count`), Without repeats by a field (`\| distinct('id')`), or both. `ResponseShapes.Split` takes a saved value apart only when writing it back gives the exact same text; anything else is shown as written. The "by" field must be a plain field name, so it can't close the quotes | `ResponseShapes`, `EndpointEditor` |
+| "How many" / "Without repeats" | For a list value, a second select: All of it, How many (`\| count`), Without repeats by a field (`\| distinct('id')`), or both. `ResponseShapes.Split` takes a saved value apart only when writing it back gives the exact same text; anything else is shown as written. The "by" field must be a plain field name, so it can't close the quotes. A for-each step's whole result is offered only as **number of calls** (`\| count`), and only to the response: each entry also holds the call's downstream response headers | `ResponseShapes`, `SourceCatalog`, `EndpointEditor` |
 | Loop field ≠ value | A validator **warning**: a step loops over one field of each item (`orders[*].id`) but sends it as another field the item also has (`contactId`). Names the field it probably meant; never blocks | `RecipeValidator.CheckLoopField` |
 | Missing Publish button | For authors the footer says "You're signed in as an author: you can save and try it. A publisher makes it live." | `EndpointEditor` |
 | Unknown step names | The validator suggests the closest step, by display name first ("ordersFromCrm" for "Orders from CRM"), then by spelling: *'ordersFromCrm' isn't a step here. Did you mean 'getOrders' (Orders from CRM)?* | `RecipeValidator.UnknownStep` |

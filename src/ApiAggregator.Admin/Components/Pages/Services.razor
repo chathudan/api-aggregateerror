@@ -509,7 +509,7 @@ else if (_services.Count > 0)
             var (ok, message) = check.Value is { } c ? (c.Ok, c.Message) : (false, check.Failure?.Message ?? "Couldn't check the sign-in.");
             _signIns = (await Admin.GetSignInStatusAsync(_me).ValueAsync())?.ToList() ?? _signIns;
             if (ok) Toasts.Success($"{s.Name}: {message}");
-            else Toasts.Error($"{s.Name}: sign-in failed. {message}", "What does this mean?", "/help#troubleshooting");
+            else Toasts.Error($"{s.Name}: sign-in failed. {message}", "What does this mean?", "/help/troubleshooting");
         }
         finally { _checking.Remove(s.Id); }
     }

@@ -67,6 +67,14 @@ table.list input, table.list select { width: 100%; box-sizing: border-box; }
 .help .lead { color: var(--muted); font-size: 16px; }
 .help li { margin-bottom: 4px; }
 .help dt { font-weight: 500; margin-top: 10px; } .help dd { margin: 2px 0 0; color: var(--muted); }
+.help .toc a[aria-current="page"] { color: var(--text); font-weight: 500; }
+.help .toc .muted { margin-top: 8px; font-size: 12px; text-transform: uppercase; letter-spacing: .04em; }
+.help ol.steps > li { margin-bottom: 8px; }
+.help details { margin: 12px 0; } .help details summary { cursor: pointer; color: var(--accent); }
+.help-tasks { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; margin: 16px 0 8px; }
+.help-task { display: flex; flex-direction: column; gap: 4px; padding: 14px 16px; border: 1px solid var(--border); border-radius: var(--radius); text-decoration: none; color: var(--text); background: var(--surface); }
+.help-task:hover, .help-task:focus-visible { border-color: var(--accent); }
+.help-task span { color: var(--muted); font-size: 13px; }
 .help-link { font-size: 13px; font-weight: 400; color: var(--accent); margin-left: 8px; text-decoration: none; white-space: nowrap; }
 .help-link:hover { text-decoration: underline; }
 @media (max-width: 800px) { .help { grid-template-columns: 1fr; } .help .toc { position: static; } }
@@ -165,7 +173,14 @@ ul.rows a { color: var(--text); }
 .counts strong { color: var(--text); font-size: 18px; margin-right: 4px; }
 .search { max-width: 420px; }
 .inline.center { justify-content: center; }
-.inline.tight { margin-top: 0; }
+.inline.tight { margin-top: 0; flex-wrap: nowrap; }
+/* Response value + "How many" + "by": one row. The value gets the most room. */
+table.list .inline.tight > select { width: auto; min-width: 0; flex: 1 1 200px; }
+table.list .inline.tight > select:first-child { flex: 3 1 240px; }
+/* Fixed layout: long option names must not push the table past its card. */
+table.response-fields { table-layout: fixed; width: 100%; }
+table.response-fields th:first-child { width: 170px; }
+table.response-fields th:last-child { width: 90px; }
 td.nowrap { white-space: nowrap; font-variant-numeric: tabular-nums; }
 .page { max-width: 1200px; }
 
@@ -233,3 +248,15 @@ details.more .menu { position: absolute; right: 0; top: calc(100% + 4px); z-inde
 .facts { display: grid; grid-template-columns: minmax(140px, 240px) 1fr; gap: 6px 16px; margin: 8px 0; }
 .facts dt { color: var(--muted); } .facts dd { margin: 0; overflow-wrap: anywhere; }
 @media (max-width: 640px) { .facts { grid-template-columns: 1fr; } .facts dd { margin-bottom: 6px; } }
+
+/* ---- guided walkthrough (endpoint editor) */
+.card.guide { border-color: var(--accent); }
+.card.guide h2 { font-size: 16px; margin: 0; }
+.guide-steps { list-style: none; padding: 0; margin: 10px 0 0; display: flex; flex-direction: column; gap: 6px; }
+.guide-steps li { display: flex; gap: 10px; align-items: flex-start; color: var(--muted); }
+.guide-steps li.current { color: var(--text); }
+.guide-steps li.done { color: var(--muted); }
+.guide-steps .num { flex: 0 0 22px; height: 22px; border-radius: 50%; border: 1px solid var(--border); display: inline-flex; align-items: center; justify-content: center; font-size: 12px; }
+.guide-steps li.done .num { background: #e3f1e3; color: var(--ok); border-color: transparent; }
+.guide-steps li.current .num { border-color: var(--accent); color: var(--accent); }
+.guide-steps p { margin: 4px 0; }

@@ -1,0 +1,16 @@
+@* Help → Browser access (CORS). Mirrors docs/guides/for-app-developers.md#calling-from-a-browser. *@
+<p>A web app on another website, such as <code>https://portal.example.com</code>, can only read the gateway's answers if that website is on the list in <a href="/settings/browser-access">Settings → Browser access (CORS)</a>. Apps on phones and servers don't need this.</p>
+<ul>
+    <li><strong>Everyone with a role</strong> can see the list, see what browsers can send, and use <strong>Test an origin</strong>.</li>
+    <li><strong>People with the admin role</strong> can <strong>Add origin</strong> and <strong>Remove</strong> it. The gateway uses the change within a few seconds, without a restart. Every change is kept in the <strong>History</strong>, with who and when.</li>
+    <li>Origins marked <strong>Operations</strong> are set in the app settings by the platform team, and are changed there.</li>
+</ul>
+<p><strong>Writing an origin.</strong> Only the start of the address: <code>https://</code>, the host and, if it isn't the usual one, the port. No path and no slash at the end. <code>https://portal.example.com</code> is right; <code>https://portal.example.com/</code>, <code>https://portal.example.com/app</code> and <code>*</code> are refused. Outside development it must be <code>https://</code> (except <code>localhost</code>). Operations may limit which domains can be added, for example only <code>https://*.example.com</code>: the page says so when it refuses one.</p>
+<p><strong>Good to know.</strong></p>
+<ul>
+    <li>This isn't a permission. Apps still need a valid sign-in token and the endpoint's scope; it only lets the browser show the answer to the page.</li>
+    <li>Cookies are never accepted from other websites. Pages send their token in the Authorization header.</li>
+    <li>What browsers may send follows the published endpoints: publishing an endpoint with a header input allows that header straight away.</li>
+    <li>A browser may remember an answer for up to 10 minutes, so a removed website can keep working a little longer in a browser that already asked.</li>
+    <li>When a website that isn't on the list tries, the <strong>Logs</strong> page shows "Browser origin … is not allowed", with the website only.</li>
+</ul>

@@ -56,6 +56,9 @@ public sealed class SourceCatalog
             // A step that runs for each item has one { status, headers, body } per call, so its values are lists: notes[*].body.
             var each = string.IsNullOrWhiteSpace(step.ForEach) ? "" : "[*]";
             var suffix = each.Length == 0 ? "" : " (from every call)";
+            // How many calls a for-each step made, for the response only. Its whole result also holds each call's
+            // downstream headers, which apps shouldn't get by one click: the admin app always writes "| count" for it.
+            if (each.Length > 0 && beforeStep is null) options.Add(new SourceOption(step.Alias, $"{label} → number of calls", label));
             options.Add(new SourceOption($"{step.Alias}{each}.body", $"{label} → whole response{suffix}", label));
             foreach (var field in Fields(endpoint?.ResponseSchema, "", 0))
                 options.Add(new SourceOption($"{step.Alias}{each}.body.{field}", $"{label} → {field}{suffix}", label));

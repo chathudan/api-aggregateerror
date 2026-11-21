@@ -1,0 +1,67 @@
+@* Help → Add a service. Mirrors docs/guides/adding-services.md. *@
+<ol class="steps">
+    <li>Ask the service's owner for the spec address (or base address), how to sign in, and a test record. See <a href="/help/add-service#before">Before you start</a>.</li>
+    <li>Go to <a href="/services">Services</a> → <strong>Add service</strong>. Paste the spec address and choose <strong>Load</strong>: the name, address and operations are filled in. No spec? Choose <strong>Enter by hand</strong>.</li>
+    <li>Pick the sign-in that matches what the owner said (see <a href="/help/add-service#sign-in">Choose the sign-in</a>), fill it in and save.</li>
+    <li>The sign-in is checked straight away. Green under the service name means you're ready to <a href="/help/build">build an endpoint</a>.</li>
+</ol>
+<p class="hint"><strong>Practise with the sample data:</strong> Service D (billing) isn't set up yet. Load <code>http://localhost:5100/d/openapi.json</code>, keep both operations, keep <strong>API key</strong> with key name <code>X-Api-Key</code>, type the key value <code>key-d</code>, and save.</p>
+<details>
+    <summary>What this does underneath</summary>
+    <p>The service is saved with its <strong>base address</strong>: the part every endpoint path is added to. If the service's calls look like <code>https://billing.internal/api/invoices</code>, the base address is <code>https://billing.internal/api</code> and the endpoint path is <code>/invoices</code>. Passwords and keys are saved separately, as a name like <code>secret:service-d-billing-value</code>, never in the settings.</p>
+</details>
+<section id="before">
+<h2>Before you start <GuideLink Guide="adding-services#before-you-start-what-to-ask-the-service-owner" /></h2>
+<p>Ask the service's owner (the team that runs it) for:</p>
+<table class="list">
+    <thead><tr><th>What</th><th>Example</th><th>Why</th></tr></thead>
+    <tbody>
+        <tr><td>OpenAPI (Swagger) spec address, if there is one</td><td><code>https://billing.internal/swagger/v1/swagger.json</code></td><td>Fills in the endpoints for you</td></tr>
+        <tr><td>Base address</td><td><code>https://billing.internal/api</code></td><td>Where calls go</td></tr>
+        <tr><td>How to sign in, and the credentials</td><td>"API key in header X-Api-Key"</td><td>See <a href="/help/add-service#sign-in">Choose the sign-in</a></td></tr>
+        <tr><td>A test record you may use</td><td>Customer <code>C-10042</code></td><td>For <strong>Try it</strong></td></tr>
+    </tbody>
+</table>
+<p class="hint">Use test-environment addresses and test data while building. Never paste real customer or patient data into test values.</p>
+</section>
+<section id="sign-in">
+<h2>Choose the sign-in <GuideLink Guide="adding-services#pick-the-sign-in" /></h2>
+<p>Pick the card that matches what the service owner told you.</p>
+<table class="list">
+    <thead><tr><th>The owner says…</th><th>Pick</th><th>You'll need</th><th>See it in the sample data</th></tr></thead>
+    <tbody>
+        <tr><td>"It's open on the internal network" / "no auth"</td><td>No sign-in</td><td>Nothing</td><td>Service H (links)</td></tr>
+        <tr><td>"Basic auth" / "username and password on every request"</td><td>Username and password</td><td>Username, password</td><td>Service A (customers): <code>svc-a</code></td></tr>
+        <tr><td>"Call /login first, then use the session cookie" or "the login returns a token"</td><td>Log in first, then reuse the session</td><td>Login address, username, password. If the login answer contains a token, where it is (for example <code>token</code> or <code>data.accessToken</code>)</td><td>Service B (orders): a session cookie</td></tr>
+        <tr><td>"OAuth 2.0 client credentials" / "get a JWT from the token endpoint" / "Entra ID app registration"</td><td>OAuth client (JWT token)</td><td>Token address, client id, client secret, scope (if they give one)</td><td>Service C (recommendations): <code>client-c</code></td></tr>
+        <tr><td>"Send an API key" / "subscription key" / "X-Api-Key header"</td><td>API key</td><td>Key name (for example <code>X-Api-Key</code>), key value, header or query</td><td>Services E and G; Service D to practise <strong>Add service</strong></td></tr>
+        <tr><td>"Here's a long-lived token for you"</td><td>Fixed token</td><td>The token</td><td>Service I (loyalty)</td></tr>
+        <tr><td>"We accept your users' own sign-in tokens"</td><td>Use the caller's own token</td><td>Nothing. Only use this when the owner confirms it</td><td>Service J (preferences)</td></tr>
+    </tbody>
+</table>
+<p><strong>Two things at once?</strong> For example an API key <em>and</em> a login: pick the first card, then choose <strong>Combine with another sign-in step</strong> for the second. Service K (appointments) in the sample data does this: an API key, then a login that returns a token.</p>
+<p>Not sure? Ask the owner for an example request (for example a curl command or Postman collection). The headers it sends tell you which card it is.</p>
+</section>
+<section id="by-hand">
+<h2>Endpoints by hand <GuideLink Guide="adding-services#add-a-service-by-hand-no-spec" /></h2>
+<p>On the service, choose <strong>Add endpoint</strong>.</p>
+<table class="list">
+    <thead><tr><th>Field</th><th>Example</th><th>Tip</th></tr></thead>
+    <tbody>
+        <tr><td>Name</td><td>Get order lines</td><td>Shown when building endpoints; make it a clear action</td></tr>
+        <tr><td>Method</td><td>GET</td><td>As documented by the service</td></tr>
+        <tr><td>Path</td><td><code>/orders/{orderId}/lines</code></td><td>Put changing parts in braces. They become required path values</td></tr>
+        <tr><td>Other values</td><td><code>status</code> (query), <code>X-Customer-Id</code> (header)</td><td>Tick Required if the service rejects calls without it</td></tr>
+        <tr><td>Sample response</td><td><code>{ "id": "O-1", "total": 20.5 }</code></td><td>Paste a real-looking answer (no real personal data). The builder then offers these fields in its dropdowns</td></tr>
+    </tbody>
+</table>
+</section>
+<section id="secrets">
+<h2>Passwords and keys <GuideLink Guide="adding-services#secrets" /></h2>
+<ul>
+    <li>Password, secret and key boxes never show a saved value again. "Saved. Type to replace" means a value is stored.</li>
+    <li>Values are <strong>never</strong> stored in the service settings. The settings only hold a name like <code>secret:service-d-billing-value</code> that points to the real value.</li>
+    <li><strong>On your own computer (development)</strong>, typed values go into <code>secrets.local.json</code> in the config folder. That file stays on your machine and isn't shared through git.</li>
+    <li><strong>In test and production environments</strong>, the screen shows the secret's name instead of saving it. Send that name to an administrator, who adds the value to Key Vault. Never send passwords in chat or email.</li>
+</ul>
+</section>

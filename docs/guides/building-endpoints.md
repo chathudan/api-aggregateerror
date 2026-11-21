@@ -21,6 +21,12 @@ Or open the endpoint in the admin UI and choose **Try it**.
 
 ## The wizard in five steps
 
+**New to this?** On **New endpoint**, choose **Build your first endpoint with a guide** (or the same button in Help). A
+panel above the wizard walks you through a whole endpoint with the sample data, one step at a time, and ticks each step
+off as you do it. It builds the [worked example](#worked-example-notes-for-each-contact-with-an-order) below.
+
+![The guide above the wizard: every step ticked except Try it](../images/walkthrough.png)
+
 Go to **Endpoints** and choose **Create endpoint**.
 
 ![A new endpoint in the wizard: the stepper at the top, the address preview, and the sticky footer with Save draft, Try it and Publish](../images/endpoint-new.png)
@@ -453,12 +459,17 @@ If you add no fields, the answer has each step's whole body under the step's nam
 
 When a field's value is a list, a second choice appears next to it:
 
+![Response fields of contacts-unique: contacts without repeats by id, contactRows how many, uniqueContacts how many without repeats by id](../images/response-shapes.png)
+
 | You pick | The field holds | Written in the recipe as |
 |---|---|---|
 | **All of it** | the whole list | `{{crm.body.contacts}}` |
 | **How many** | the number of items | `{{crm.body.contacts \| count}}` |
 | **Without repeats**, by `id` | the list, each `id` once (the first one wins) | `{{crm.body.contacts \| distinct('id')}}` |
 | **How many, without repeats**, by `id` | the number of different `id`s | `{{crm.body.contacts \| distinct('id') \| count}}` |
+
+For a step that runs for each item, **&lt;step&gt; → number of calls** counts its calls (`{{notes | count}}`). The
+wizard offers that step's whole result only as a count, because each entry also holds the service's response headers.
 
 `contacts-unique` uses all of them. The CRM has 8 contact rows, but only 7 different contacts:
 

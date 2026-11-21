@@ -1,0 +1,40 @@
+@* Help → Combine lists. Mirrors docs/guides/combine-lists.md. *@
+<p>Use <strong>Combine lists</strong> when two services return lists of the same kind of thing, for example customers in a CRM and customers in billing, and the app should get <strong>one list with each record once</strong>. You'll find it in step 4, <strong>Response</strong>, of the endpoint builder.</p>
+<ol>
+    <li>Choose <strong>Combine lists</strong>. Give the list a name, for example <code>customers</code>.</li>
+    <li>For each list, pick it under <strong>List</strong> (the lists come from the steps you added) and pick <strong>Match on</strong>: the field that identifies a record, such as an id. Records with the same value are treated as the same record. Use <strong>Add list</strong> for more lists.</li>
+    <li>Choose <strong>Add to response</strong>, then <strong>Try it</strong>.</li>
+</ol>
+
+<h2>When the services use different ids</h2>
+<p>Often the CRM and billing don't share an id. Don't guess. Tick <strong>Different ids? Link through another list</strong> and pick a <strong>link list</strong>: a list, from one of your steps, with rows that say which id in one service is which shared id (for example <code>crmId</code> and <code>billingId</code>). Choose the link field that matches this list's id, and the link field to use.</p>
+<ul>
+    <li>Ask the owners of the services which one can provide the links, or whether there is a mapping or "cross-reference" endpoint.</li>
+    <li><strong>Never match on names or emails.</strong> Different people and customers can share them, and the wrong records would be merged. The page shows a warning under <strong>Check before publishing</strong> if you try.</li>
+</ul>
+
+<h2>Which list wins</h2>
+<p>When the same record has different values in different lists, you choose who wins:</p>
+<ul>
+    <li><strong>First list wins</strong>: the list at the top keeps its values. Later lists only fill in what's missing. Use <strong>Move up / Move down</strong> to change the order.</li>
+    <li><strong>Newest wins</strong>: the record with the later date in the field you pick is used.</li>
+    <li><strong>Choose per field</strong>: for example "plan always comes from billing", whatever the rule above says.</li>
+</ul>
+<p>Under <strong>More options</strong> you can ignore spaces and upper/lower case when matching, leave out records that have no match value, show which services each record came from, sort the list, and set the most records allowed.</p>
+
+<h2>What the counts in Try it mean</h2>
+<p>Under Try it, the line for the combined list shows counts, never the records themselves. Counts that are zero are left out.</p>
+<dl>
+    <dt>matched</dt><dd>Records that were the same as one already seen, and were merged into it.</dd>
+    <dt>unmapped</dt><dd>Records whose id isn't in the link list. They are kept on their own (or left out, if you chose that). A high number usually means the link list is incomplete or its step failed.</dd>
+    <dt>ambiguous</dt><dd>Records whose id links to two different shared ids. They are never merged, because the gateway won't guess.</dd>
+    <dt>without a key</dt><dd>Records that have no value in the match field.</dd>
+    <dt>ignored</dt><dd>Items in a list that aren't records (for example plain text).</dd>
+</dl>
+
+<h2>Duplicates inside one list</h2>
+<p>To remove repeats inside a single list, you don't need to combine. In the response, pick the list, then <strong>Without repeats</strong> by a field such as <code>id</code>: the first record for each id is kept (see <a href="/help/response">The response</a>). A step that runs once for each item already calls each unique item once; untick <strong>Call once per unique item</strong> next to the list only if the same call really must be repeated.</p>
+<p class="hint">Merging only looks at the top-level fields of a record. A nested block (such as an address) is taken whole from one list, never mixed from two.</p>
+
+<h2>Try it with the sample data</h2>
+<p>The mock services include made-up people in an Identity service, a CRM and Billing, which don't share an id. Open <strong>people-directory</strong> and choose <strong>Try it</strong>. The combined list line should read <em>identity 6, crm 8, billing 6 → 10 records (10 matched, 1 unmapped, 1 ambiguous, 1 without a key)</em>. Then open <strong>people-newest</strong> to see the newest rule change one name but not the email (Identity owns it), and <strong>contacts-unique</strong> to see 8 CRM rows become 7 and 6 orders cause only 3 notes calls. Untick <strong>Ignore upper/lower case</strong> and Try it again: one person splits into two. <code>samples/README.md</code> explains where every record ends up and why.</p>

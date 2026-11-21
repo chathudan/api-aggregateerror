@@ -89,6 +89,50 @@ public class PickerJourneyTests(StackFixture stack)
     }
 
     [UiFact]
+    public async Task Follow_the_guide_to_build_your_first_endpoint()
+    {
+        // From Help to a passing test, doing only what the guide says, with the pickers.
+        var page = await stack.OpenAsync("/help");
+        await page.GetByRole(AriaRole.Link, new() { Name = "Build your first endpoint with the guide" }).ClickAsync();
+        var guide = page.Locator(".card.guide");
+        await Expect(guide).ToContainTextAsync("(0 of 8 done)");
+        await Expect(guide.Locator("li.current")).ToContainTextAsync("Name it and give it an address");
+
+        await Type(page.GetByLabel("Name", new() { Exact = true }), "Contacts with notes");
+        await Type(page.GetByLabel("Route"), "contacts/with-notes");
+        await Expect(guide).ToContainTextAsync("(1 of 8 done)");
+
+        foreach (var summary in new[] { "List contacts", "List orders", "Notes for one contact" })
+        {
+            await page.GetByRole(AriaRole.Button, new() { Name = "Add step" }).ClickAsync();
+            await Type(page.GetByPlaceholder("Search endpoints"), summary);
+            await page.GetByRole(AriaRole.Button, new() { Name = "Add", Exact = true }).First.ClickAsync();
+        }
+        await Expect(guide).ToContainTextAsync("(4 of 8 done)");
+        await Expect(guide.Locator("li.current")).ToContainTextAsync("Call it once for each order's contact");
+
+        var notes = Step(page, 2);
+        await notes.GetByLabel("Once for each item in a list").CheckAsync();
+        await notes.GetByLabel("List that Notes for one contact goes through").SelectOptionAsync(new SelectOptionValue { Label = "List orders → each order's contactId" });
+        await Expect(guide).ToContainTextAsync("(6 of 8 done)"); // contactId ← Current item was suggested
+
+        await page.GetByRole(AriaRole.Button, new() { Name = "Add fields from List contacts" }).ClickAsync();
+        await page.GetByRole(AriaRole.Button, new() { Name = "Add fields from Notes for one contact" }).ClickAsync();
+        await page.GetByLabel("What contacts returns of the list").SelectOptionAsync(new SelectOptionValue { Label = "Without repeats" });
+        await Expect(guide).ToContainTextAsync("(7 of 8 done)"); // "by id" is picked for you
+
+        var footer = page.Locator(".sticky-footer");
+        await footer.GetByRole(AriaRole.Button, new() { Name = "Try it" }).ClickAsync();
+        await Expect(footer).ToContainTextAsync("Test passed", new() { Timeout = 15_000 });
+        await Expect(page).ToHaveURLAsync(new System.Text.RegularExpressions.Regex("/endpoints/contacts-with-notes\\?guide=first"));
+        await Expect(guide).ToContainTextAsync("(8 of 8 done)");
+        await Expect(guide).ToContainTextAsync("All done");
+        await Expect(page.Locator("#step-5 table")).ToContainTextAsync("×3"); // 6 orders, 3 contacts: 3 calls
+
+        NothingLikeAnExpressionWasTyped("listContacts", "listOrders", "notesForOneContact");
+    }
+
+    [UiFact]
     public async Task Opening_a_saved_endpoint_shows_only_its_real_problems()
     {
         // The editor used to show the problems of the empty form it starts with (no id, no route, no steps) until the

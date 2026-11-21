@@ -70,11 +70,20 @@ public static class ResponseShapes
         !string.IsNullOrWhiteSpace(field) && field.Length <= 128
         && field.Split('.').All(part => part.Length > 0 && part.All(c => char.IsLetterOrDigit(c) || c is '_' or '-' or '$'));
 
+    /// <summary>
+    /// A for-each step on its own: the list of its calls. In a response it is only ever counted ("number of calls"),
+    /// because each entry also holds the downstream service's response headers.
+    /// </summary>
+    public static bool IsCallList(Recipe recipe, string value) =>
+        TryParse(value, out var path) && path.Segments.Count == 0
+        && recipe.Steps.FirstOrDefault(s => s.Alias == path.Root) is { ForEach: { Length: > 0 } };
+
     /// <summary>True when the value is a list, so the shapes make sense: the schema says array, or the path takes every item ([*]).</summary>
     public static bool IsList(Recipe recipe, string value, ConfigSnapshot config)
     {
         if (!TryParse(value, out var path)) return false;
         if (path.Segments.Any(s => s.Kind is ValuePath.SegmentKind.Wildcard or ValuePath.SegmentKind.Slice)) return true;
+        if (IsCallList(recipe, value)) return true;
         return SourceCatalog.SchemaAt(recipe, path, config)?["type"]?.ToString() == "array";
     }
 

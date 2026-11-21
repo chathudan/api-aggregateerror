@@ -8,7 +8,7 @@ namespace ApiAggregator.UI.Tests;
 [Collection(UiCollection.Name)]
 public class PageTests(StackFixture stack)
 {
-    private static readonly string[] Pages = ["/", "/endpoints", "/endpoints/new", "/endpoints/customer-overview", "/services", "/logs", "/settings/browser-access", "/help", "/signin"];
+    private static readonly string[] Pages = ["/", "/endpoints", "/endpoints/new", "/endpoints/new?guide=first", "/endpoints/customer-overview", "/services", "/logs", "/settings/browser-access", "/help", "/help/build", "/help/add-service", "/help/troubleshooting", "/signin"];
 
     private static readonly HashSet<string> Interactive = ["textbox", "searchbox", "combobox", "checkbox", "radio", "button", "link", "spinbutton", "menuitem"];
 
@@ -111,6 +111,11 @@ public class PageTests(StackFixture stack)
 
         await Save(await stack.OpenAsync("/help"), "help", fullPage: false);
 
+        // The guided walkthrough, on the finished sample: every step ticked but Try it. And "How many" / "Without repeats".
+        var guided = await stack.OpenAsync("/endpoints/contacts-unique?guide=first");
+        await SaveElement(guided, ".card.guide", "walkthrough");
+        await SaveElement(guided, "#step-4 table.response-fields", "response-shapes");
+
         var signIn = await stack.NewAnonymousPageAsync();
         await StackFixture.GotoAsync(signIn, "/signin");
         await Save(signIn, "signin", fullPage: false);
@@ -167,10 +172,20 @@ public class PageTests(StackFixture stack)
     [UiFact]
     public async Task Every_full_guide_link_on_the_help_page_points_at_a_guide_and_heading_that_exist()
     {
-        var page = await stack.OpenAsync("/help");
-        var hrefs = await page.EvalOnSelectorAllAsync<string[]>("a[href*='/docs/guides/']", "els => els.map(e => e.getAttribute('href'))");
+        // Every help page, as listed in the Help menu.
+        var home = await stack.OpenAsync("/help");
+        var pages = (await home.EvalOnSelectorAllAsync<string[]>(".toc a", "els => els.map(e => e.getAttribute('href'))")).Distinct().ToList();
+        Assert.True(pages.Count >= 13, $"Expected every help page in the Help menu, found {pages.Count}.");
 
-        Assert.True(hrefs.Length >= 16, $"Expected a Full guide link per section, found {hrefs.Length}.");
+        var hrefs = new List<string>();
+        foreach (var path in pages)
+        {
+            var page = await stack.OpenAsync(path);
+            var links = await page.EvalOnSelectorAllAsync<string[]>("a[href*='/docs/guides/']", "els => els.map(e => e.getAttribute('href'))");
+            if (path != "/help") Assert.True(links.Length >= 1, $"{path} has no Full guide link.");
+            hrefs.AddRange(links);
+            await page.Context.CloseAsync();
+        }
         var problems = new List<string>();
         foreach (var href in hrefs.Distinct())
         {

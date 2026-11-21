@@ -66,6 +66,9 @@ public class ResponseShapesTests
 
         Assert.True(ResponseShapes.IsList(recipe, "crm.body.contacts", config));
         Assert.True(ResponseShapes.IsList(recipe, "notes[*].body", config)); // one answer per call
+        Assert.True(ResponseShapes.IsList(recipe, "notes", config));         // the calls themselves
+        Assert.True(ResponseShapes.IsCallList(recipe, "notes"));             // only ever counted
+        Assert.False(ResponseShapes.IsCallList(recipe, "notes[*].body"));
         Assert.False(ResponseShapes.IsList(recipe, "crm.status", config));
         Assert.Contains("id", ResponseShapes.ItemFields(recipe, "crm.body.contacts", config));
         Assert.Contains("notes", ResponseShapes.ItemFields(recipe, "notes[*].body", config));

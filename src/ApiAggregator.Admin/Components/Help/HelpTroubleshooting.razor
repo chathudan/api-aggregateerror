@@ -1,0 +1,24 @@
+@* Help → Fix a problem: every message, what it means and what to do. Mirrors docs/guides/troubleshooting.md. *@
+<table class="list">
+    <thead><tr><th>You see</th><th>What it means</th><th>What to do</th></tr></thead>
+    <tbody>
+        <tr><td>The secret '…' has no value</td><td>A password, key or client secret was never saved, or isn't in Key Vault</td><td>Open the service's <strong>Sign-in</strong>, type the value again and save. In test or production, ask an admin to add that secret name to Key Vault</td></tr>
+        <tr><td>Couldn't reach the sign-in address</td><td>The login or token address is wrong, or the service is down</td><td>Check the address with the owner; try it in a browser or Postman</td></tr>
+        <tr><td>Login for profile '…' failed with 401</td><td>Wrong username or password</td><td>Re-enter them under <strong>Sign-in</strong>; confirm with the owner</td></tr>
+        <tr><td>Token endpoint … answered 400 or 401</td><td>Wrong client id, client secret or scope</td><td>Re-enter them; ask the owner which scope to use</td></tr>
+        <tr><td>Login … returned no session cookie or token</td><td>The login worked but the answer wasn't what was expected</td><td>Ask where the token is in the login answer and set "Token in the login response"</td></tr>
+        <tr><td>Settings and secrets are complete. This sign-in type is checked…</td><td>Basic, API key and fixed-token sign-ins can only be proven by a real call</td><td>Build a small endpoint and use <strong>Try it</strong></td></tr>
+        <tr><td>Service … answered 401 / 403</td><td>The service rejected the credentials, or the account lacks permission</td><td>Check the sign-in; ask the owner to grant access</td></tr>
+        <tr><td>Service … answered 404</td><td>The test record doesn't exist, or the path is wrong</td><td>Try another test value; check the endpoint path</td></tr>
+        <tr><td>'x' (path) is required by … but has no value</td><td>A step value is empty</td><td>Pick something in <strong>Use value from</strong></td></tr>
+        <tr><td>… uses request input '…', which isn't declared</td><td>A value comes from an input that isn't listed in step 2</td><td>Add that input</td></tr>
+        <tr><td>Steps depend on each other in a loop</td><td>Step A uses step B and step B uses step A</td><td>Change one of the values so it comes from an earlier step or an input</td></tr>
+        <tr><td>Header '…' can't be set here</td><td>Authorization and cookies are handled by the sign-in</td><td>Set it up under the service's <strong>Sign-in</strong> instead</td></tr>
+        <tr><td>'…' isn't a step here. Did you mean '…'?</td><td>A Custom expression uses a step's display name, or an old name</td><td>Use the suggested name, or pick the value again from the list. To rename a step, change its name and choose <strong>Rename everywhere</strong></td></tr>
+        <tr><td>… sends each order's id as contactId. Did you mean each order's contactId?</td><td>A warning: the list the step goes through gives another field than the value needs, so the calls usually find nothing</td><td>Under <strong>Run this step</strong>, pick the list the message names</td></tr>
+        <tr><td>You're signed in as an author… (no <strong>Publish</strong> button)</td><td>Only publishers can publish. The top bar shows your role</td><td>Ask a publisher. On a developer machine, sign out and sign in again with <strong>Role: Publisher</strong></td></tr>
+        <tr><td>Run a successful test of this exact draft before publishing</td><td>The draft changed after the last test, or the test didn't pass</td><td>Choose <strong>Try it</strong> again, then <strong>Publish</strong></td></tr>
+        <tr><td>An app's page says <em>blocked by CORS policy</em></td><td>The website isn't on the browser access list, or is written differently (http/https, www., port)</td><td>Use <strong>Test an origin</strong> on <a href="/settings/browser-access">Settings → Browser access</a>; ask someone with the admin role to add it</td></tr>
+        <tr><td>Couldn't read that spec</td><td>The spec address is wrong, needs a sign-in, or isn't OpenAPI</td><td>Open the address in a browser; ask the owner for the JSON or YAML spec address</td></tr>
+    </tbody>
+</table>

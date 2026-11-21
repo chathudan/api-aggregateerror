@@ -285,8 +285,18 @@ public class RecipeRefactorTests
     {
         var options = new SourceCatalog().For(CrmRecipe(), null, CrmSnapshot()).Where(o => o.Group == "Notes").Select(o => (o.Expression, o.Label)).ToList();
 
+        Assert.Contains(("notes", "Notes → number of calls"), options);
         Assert.Contains(("notes[*].body", "Notes → whole response (from every call)"), options);
         Assert.Contains(("notes[*].status", "Notes → status code (from every call)"), options);
+    }
+
+    [Fact]
+    public void A_for_each_steps_calls_are_offered_to_the_response_only_never_to_another_step()
+    {
+        var recipe = CrmRecipe();
+        recipe.Steps.Add(new StepDef { Alias = "later", Endpoint = "crm/listContacts" });
+
+        Assert.DoesNotContain(new SourceCatalog().For(recipe, "later", CrmSnapshot()), o => o.Expression == "notes");
     }
 
     // ---------------------------------------------------------------- simple conditions

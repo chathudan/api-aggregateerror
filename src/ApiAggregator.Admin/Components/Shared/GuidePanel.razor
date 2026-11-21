@@ -1,0 +1,55 @@
+@* The guided walkthrough in the endpoint editor: a checklist that ticks itself off from the form. Only the current step
+   is open, with where to do it ("Show me") and, folded away, what it means underneath. *@
+<section class="card guide" aria-labelledby="guide-title">
+    <div class="header-row">
+        <h2 id="guide-title">Guide: build your first endpoint <span class="muted">(@_done of @FirstEndpointGuide.Steps.Count done)</span></h2>
+        <button class="link" @onclick="OnHide">Hide the guide</button>
+    </div>
+
+    @if (!Available)
+    {
+        <p class="issues warnings">This guide uses the sample CRM (service F), which isn't set up here. Start the sample data with <code>./scripts/dev-run.sh</code> (without <code>--real</code>) and open the guide again.</p>
+    }
+    else
+    {
+        <ol class="guide-steps">
+            @for (var i = 0; i < FirstEndpointGuide.Steps.Count; i++)
+            {
+                var step = FirstEndpointGuide.Steps[i];
+                var done = step.Done(Form, TestPassed);
+                var current = i == _current;
+                <li class="@(done ? "done" : current ? "current" : "")" aria-current="@(current ? "step" : null)">
+                    <span class="num" aria-hidden="true">@(done ? "✓" : (i + 1).ToString())</span>
+                    <div>
+                        <strong>@step.Title</strong>@if (done) { <span class="visually-hidden"> (done)</span> }
+                        @if (current)
+                        {
+                            <p>@step.Text <a href="@SectionHref(step.Section)">Show me</a></p>
+                            <details>
+                                <summary>What this does underneath</summary>
+                                <p>@step.Underneath</p>
+                            </details>
+                        }
+                    </div>
+                </li>
+            }
+        </ol>
+        @if (_current is null)
+        {
+            <p role="status"><StatusPill State="StatusPill.Kind.Ok" Text="All done" /> You built an endpoint that calls three services and gets each contact's notes once. A publisher makes it live with <strong>Publish</strong>. <a href="/help/loops" target="_blank" rel="noopener">More about running for each item</a>.</p>
+        }
+    }
+</section>
+
+@code {
+    [Parameter, EditorRequired] public RecipeForm Form { get; set; } = default!;
+    [Parameter] public bool TestPassed { get; set; }
+    [Parameter] public bool Available { get; set; }
+    [Parameter] public EventCallback OnHide { get; set; }
+    [Parameter, EditorRequired] public Func<string, string> SectionHref { get; set; } = default!;
+
+    private int _done;
+    private int? _current;
+
+    protected override void OnParametersSet() => (_done, _current) = FirstEndpointGuide.Progress(Form, TestPassed);
+}

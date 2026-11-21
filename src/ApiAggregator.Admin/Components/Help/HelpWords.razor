@@ -1,0 +1,13 @@
+@* Help → Words used here. Mirrors docs/guides/glossary.md. *@
+<dl>
+    <dt>Service</dt><dd>A backend API the gateway calls, such as billing or orders.</dd>
+    <dt>Origin</dt><dd>The start of a website's address (scheme, host, port), for example <code>https://portal.example.com</code>. Used for browser access.</dd>
+    <dt>Endpoint (of a service)</dt><dd>One operation of a service, for example <code>GET /invoices</code>.</dd>
+    <dt>Aggregated endpoint</dt><dd>What apps call. It runs several steps and returns one answer.</dd>
+    <dt>Step</dt><dd>One call to a service endpoint inside an aggregated endpoint.</dd>
+    <dt>Sign-in</dt><dd>How the gateway proves who it is to a service. Not the same as how app users, or you, sign in.</dd>
+    <dt>Author / Publisher</dt><dd>Your role in this admin app. Authors build and test; publishers also make endpoints live, roll back and delete.</dd>
+    <dt>Scope</dt><dd>A permission an app user's token must have to call an aggregated endpoint.</dd>
+    <dt>Draft / Published</dt><dd>Drafts are only for testing. Published endpoints are live for apps.</dd>
+    <dt>Correlation id</dt><dd>A code on every response that ties it to the gateway's logs.</dd>
+</dl>

@@ -1,0 +1,14 @@
+@* Help → The response. Mirrors docs/guides/building-endpoints.md#the-response. *@
+<ol class="steps">
+    <li>In step 4, <strong>Response</strong>, choose <strong>Add fields from …</strong> for a step. Each field of its answer becomes a response field.</li>
+    <li>Rename or remove fields, or <strong>Add one field</strong> and pick its value.</li>
+    <li>When the value is a list, choose what to return next to it: <strong>All of it</strong>, <strong>How many</strong>, <strong>Without repeats</strong> or <strong>How many, without repeats</strong>, by a field that tells records apart, such as <code>id</code>.</li>
+</ol>
+<p>With no fields at all, each step's whole answer is returned under its name. A step that runs for each item gives one answer per call, so its fields say <em>(from every call)</em> and are lists.</p>
+<p>For a step that runs for each item, <strong>number of calls</strong> counts its calls.</p>
+<p><code>contacts-unique</code> shows all of them: 8 contact rows (<strong>How many</strong>), 7 different contacts (<strong>How many, without repeats</strong> by <code>id</code>).</p>
+<p class="hint">"Without repeats" removes the same record listed twice. It doesn't merge two different records about the same person: for that, use <a href="/help/combine">Combine lists</a>, which never guesses.</p>
+<details>
+    <summary>What this does underneath</summary>
+    <p>A field's value is saved as <code>{{crm.body.contacts}}</code>; <strong>How many</strong> adds <code>| count</code>, and <strong>Without repeats</strong> by <code>id</code> adds <code>| distinct('id')</code>. A value written by hand in another way is shown as written and kept.</p>
+</details>

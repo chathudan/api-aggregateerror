@@ -1,0 +1,18 @@
+@* Help → Errors apps receive. Mirrors docs/guides/for-app-developers.md#error-codes. *@
+<p>When something goes wrong, apps get a <code>code</code> they can act on, plus a <code>correlationId</code>. Ask app developers for that id when they report a problem: it finds the matching gateway logs.</p>
+<table class="list">
+    <thead><tr><th>code</th><th>Meaning</th><th>Usually fixed by</th></tr></thead>
+    <tbody>
+        <tr><td><code>auth_failed</code></td><td>The gateway couldn't sign in to a service</td><td>Correcting the service's sign-in or secret</td></tr>
+        <tr><td><code>unauthorized</code> / <code>forbidden</code></td><td>The service refused the gateway's credentials</td><td>The service owner granting access</td></tr>
+        <tr><td><code>not_found</code></td><td>The record doesn't exist in a service</td><td>Nothing; it's real data</td></tr>
+        <tr><td><code>timeout</code> / <code>unreachable</code> / <code>server_error</code></td><td>A service was slow or down</td><td>The app retrying later; the service owner</td></tr>
+        <tr><td><code>invalid_input</code></td><td>The app sent a missing or wrong value</td><td>The app developer</td></tr>
+        <tr><td><code>unauthenticated</code> / <code>insufficient_scope</code></td><td>The app user isn't signed in, or lacks the endpoint's scope</td><td>The app or identity admin</td></tr>
+        <tr><td><code>bad_request</code> / <code>missing_value</code></td><td>A service refused a value, or a value needed for a call was missing</td><td>Checking the step's values with <strong>Try it</strong></td></tr>
+        <tr><td><code>rate_limited</code></td><td>Too many calls, from one app user or to a service</td><td>The app waiting and retrying</td></tr>
+        <tr><td><code>invalid_response</code> / <code>combine_failed</code></td><td>A service's answer wasn't usable, or lists couldn't be combined</td><td>The endpoint's owner; report it with the correlation id</td></tr>
+        <tr><td><code>internal_error</code></td><td>A problem in the gateway itself</td><td>The platform team</td></tr>
+    </tbody>
+</table>
+<p>When only an <strong>optional</strong> step fails, apps still get 200, with the missing parts empty and the reason under <code>_errors</code>. Try <strong>Customer summary</strong> with <code>C-30003</code> to see one.</p>
