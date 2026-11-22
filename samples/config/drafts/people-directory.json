@@ -1,0 +1,121 @@
+{
+  "id": "people-directory",
+  "name": "People directory (first list wins)",
+  "version": 2,
+  "status": "draft",
+  "method": "GET",
+  "route": "people/directory",
+  "requireAuthentication": true,
+  "requiredScope": "people.read",
+  "inputs": {},
+  "steps": [
+    {
+      "alias": "identity",
+      "displayName": "Users from Identity",
+      "endpoint": "service-e-identity/listUsers",
+      "bind": [],
+      "required": true,
+      "maxConcurrency": 4,
+      "distinct": true,
+      "cache": {
+        "enabled": false,
+        "ttlSeconds": 30,
+        "perCaller": true
+      }
+    },
+    {
+      "alias": "crm",
+      "displayName": "Contacts from CRM",
+      "endpoint": "service-f-crm/listContacts",
+      "bind": [],
+      "required": true,
+      "maxConcurrency": 4,
+      "distinct": true,
+      "cache": {
+        "enabled": false,
+        "ttlSeconds": 30,
+        "perCaller": true
+      }
+    },
+    {
+      "alias": "billing",
+      "displayName": "Accounts from Billing",
+      "endpoint": "service-g-billing/listAccounts",
+      "bind": [],
+      "required": true,
+      "maxConcurrency": 4,
+      "distinct": true,
+      "cache": {
+        "enabled": false,
+        "ttlSeconds": 30,
+        "perCaller": true
+      }
+    },
+    {
+      "alias": "links",
+      "displayName": "Account-to-user links",
+      "endpoint": "service-h-links/listLinks",
+      "bind": [],
+      "required": true,
+      "maxConcurrency": 4,
+      "distinct": true,
+      "cache": {
+        "enabled": false,
+        "ttlSeconds": 30,
+        "perCaller": true
+      }
+    }
+  ],
+  "combine": {
+    "people": {
+      "sources": [
+        {
+          "from": "identity.body.users",
+          "key": "id",
+          "name": "identity"
+        },
+        {
+          "from": "crm.body.contacts",
+          "key": "identityUserId",
+          "name": "crm"
+        },
+        {
+          "from": "billing.body.accounts",
+          "key": "accountNo",
+          "name": "billing",
+          "via": {
+            "from": "links.body.links",
+            "match": "billingAccountNo",
+            "use": "userId"
+          }
+        }
+      ],
+      "normalize": [
+        "trim",
+        "lower"
+      ],
+      "onConflict": "priority",
+      "owners": {
+        "email": "identity",
+        "plan": "billing",
+        "id": "identity"
+      },
+      "nulls": "neverOverwrite",
+      "withoutKey": "keep",
+      "trackSources": true,
+      "maxRecords": 5000,
+      "required": true
+    }
+  },
+  "response": {
+    "people": "{{combine.people}}",
+    "count": "{{combine.people | count}}",
+    "links": "{{links.body.links}}"
+  },
+  "cache": {
+    "enabled": false,
+    "ttlSeconds": 30,
+    "perCaller": true
+  },
+  "timeoutMs": 8000
+}

@@ -1,0 +1,39 @@
+{
+  "id": "my-preferences",
+  "name": "My preferences (caller's token)",
+  "version": 2,
+  "status": "draft",
+  "method": "GET",
+  "route": "me/preferences",
+  "requireAuthentication": true,
+  "requiredScope": "profile.read",
+  "inputs": {},
+  "steps": [
+    {
+      "alias": "prefs",
+      "displayName": "Get my preferences",
+      "endpoint": "service-j-preferences/getPreferences",
+      "bind": [],
+      "required": true,
+      "maxConcurrency": 4,
+      "distinct": true,
+      "cache": {
+        "enabled": false,
+        "ttlSeconds": 30,
+        "perCaller": true
+      }
+    }
+  ],
+  "combine": {},
+  "response": {
+    "subject": "{{prefs.body.subject}}",
+    "language": "{{prefs.body.language}}",
+    "contactBy": "{{prefs.body.contactBy}}"
+  },
+  "cache": {
+    "enabled": false,
+    "ttlSeconds": 30,
+    "perCaller": true
+  },
+  "timeoutMs": 5000
+}

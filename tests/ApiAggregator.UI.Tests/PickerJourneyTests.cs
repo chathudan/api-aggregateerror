@@ -243,7 +243,8 @@ public class PickerJourneyTests(StackFixture stack)
     [UiFact]
     public async Task Renaming_a_referenced_step_of_a_live_endpoint_updates_its_uses()
     {
-        // people-directory is live; its "Account-to-user links" step (links) is the mapping of a combined list.
+        // people-directory is live; its "Account-to-user links" step (links) is the mapping of a combined list, and the
+        // sample draft also returns its answer as a "links" field: two uses.
         var page = await stack.OpenAsync("/endpoints/people-directory");
         var links = Step(page, 3);
         await Expect(links.Locator(".alias-line")).ToContainTextAsync("Name in expressions: links");
@@ -251,7 +252,7 @@ public class PickerJourneyTests(StackFixture stack)
         await Type(links.GetByLabel("Step name"), "Billing links");
 
         var confirm = links.Locator(".confirm");
-        await Expect(confirm).ToContainTextAsync("Also rename it to billingLinks in expressions? 1 place in this endpoint uses it");
+        await Expect(confirm).ToContainTextAsync("Also rename it to billingLinks in expressions? 2 places in this endpoint use it");
         await Expect(confirm).ToContainTextAsync("errors[].step"); // apps see step names in error details
         await links.GetByRole(AriaRole.Button, new() { Name = "Rename everywhere" }).ClickAsync();
         await Expect(links.Locator(".alias-line")).ToContainTextAsync("Name in expressions: billingLinks");

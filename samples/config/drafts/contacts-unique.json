@@ -61,8 +61,8 @@
   "combine": {},
   "response": {
     "contactRows": "{{crm.body.contacts | count}}",
-    "uniqueContacts": "{{crm.body.contacts | distinct(\u0027id\u0027) | count}}",
-    "contacts": "{{crm.body.contacts | distinct(\u0027id\u0027)}}",
+    "uniqueContacts": "{{crm.body.contacts | distinct('id') | count}}",
+    "contacts": "{{crm.body.contacts | distinct('id')}}",
     "orderCount": "{{orders.body.orders | count}}",
     "notesCalls": "{{notes | count}}",
     "notes": "{{notes[*].body}}"
