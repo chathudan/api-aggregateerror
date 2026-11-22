@@ -1,5 +1,6 @@
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
+using ApiAggregator.Admin.Application;
 using ApiAggregator.Engine.Authoring;
 using ApiAggregator.Engine.Model;
 
@@ -96,6 +97,11 @@ public sealed class NewEndpointForm
     public List<ParamRow> Parameters { get; } = [];
     public string SampleResponse { get; set; } = "";
 
+    /// <summary>"Send a test call": a value for each path value (by name), and a JSON body for POST, PUT and PATCH.</summary>
+    public Dictionary<string, string> PathTestValues { get; } = new(StringComparer.Ordinal);
+    public string TestBody { get; set; } = "";
+    public bool HasBody => Method is "POST" or "PUT" or "PATCH";
+
     public IEnumerable<string> PathParams => AutoBinder.PathParams(Path);
 
     public IEnumerable<string> Problems(ApiService service)
@@ -107,6 +113,23 @@ public sealed class NewEndpointForm
     }
 
     public string Id => Slug.Camel(Name);
+
+    /// <summary>What a test call needs before it can be sent, in plain words.</summary>
+    public IEnumerable<string> TryProblems()
+    {
+        if (string.IsNullOrWhiteSpace(Name)) yield return "Give the endpoint a name, e.g. Get orders.";
+        if (!Path.StartsWith('/')) yield return "The path starts with /, e.g. /orders/{orderId}.";
+        if (HasBody && TestBody.Trim().Length > 0 && TryParse(TestBody) is null) yield return "The test body isn't valid JSON.";
+    }
+
+    /// <summary>The endpoint as it would be saved, with the typed test values ("path.orderId", "query.status"...).</summary>
+    public EndpointTry ToTry()
+    {
+        var values = PathParams.ToDictionary(p => $"path.{p}", p => (string?)PathTestValues.GetValueOrDefault(p), StringComparer.Ordinal);
+        foreach (var row in Parameters.Where(p => !string.IsNullOrWhiteSpace(p.Name) && !string.IsNullOrEmpty(p.TestValue)))
+            values[$"{row.In}.{row.Name.Trim()}"] = row.TestValue;
+        return new EndpointTry(ToEndpoint(), values, HasBody && TestBody.Trim().Length > 0 ? TryParse(TestBody) : null);
+    }
 
     public ApiEndpoint ToEndpoint() => new()
     {
@@ -133,6 +156,9 @@ public sealed class ParamRow
     public string Name { get; set; } = "";
     public string In { get; set; } = "query";
     public bool Required { get; set; }
+
+    /// <summary>Sent by "Send a test call" only; never saved.</summary>
+    public string TestValue { get; set; } = "";
 }
 
 public static partial class Slug

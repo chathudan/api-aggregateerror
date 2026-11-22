@@ -7,7 +7,7 @@
 
 @if (Trace.Details is { Count: > 0 } calls)
 {
-    <details class="call-details">
+    <details class="call-details" open="@Open">
         <summary>Request and response@(Trace.Calls > calls.Count ? $" (first {calls.Count} of {Trace.Calls} calls)" : calls.Count > 1 ? $" ({calls.Count} calls)" : "")</summary>
         @for (var i = 0; i < calls.Count; i++)
         {
@@ -43,6 +43,9 @@
 
     /// <summary>The test's correlation id, for the link to this step's log lines.</summary>
     [Parameter] public string? CorrelationId { get; set; }
+
+    /// <summary>Unfolded straight away, e.g. after "Send a test call", where the call is the whole point.</summary>
+    [Parameter] public bool Open { get; set; }
 
     // Characters as they are (+, é, '): the page escapes all text itself, so nothing here can become markup.
     private static readonly JsonSerializerOptions Readable = new() { WriteIndented = true, Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping };

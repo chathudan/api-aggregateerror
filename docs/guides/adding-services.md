@@ -63,6 +63,12 @@ The admin UI tests (`tests/ApiAggregator.UI.Tests`) run this walk-through in a r
 | Other values | `status` (query), `X-Customer-Id` (header) | Tick **Required** if the service rejects calls without it |
 | Sample response | `{ "orderId": "O-1", "lines": [ { "sku": "SKU-1", "qty": 1 } ] }` | Paste a realistic answer with invented data. The wizard then offers these fields in its dropdowns |
 
+**Try it before adding it.** Type a test value next to each path value (and any query or header value; a JSON body
+for POST, PUT and PATCH), then choose **Send a test call**. The service is called once, with its sign-in and the same
+checks as a real call; nothing is saved. You see whether it worked, the request that went out and the service's
+answer (under **Request and response**). **Use this answer as the sample response** fills the Sample response box, so
+the wizard knows the fields. Use test data: the answer is shown on screen, never logged or kept.
+
 In the files, that endpoint looks like this ([`samples/config/services.json`](../../samples/config/services.json)):
 
 ```json

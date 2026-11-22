@@ -36,17 +36,21 @@ public sealed class CompositionExecutor(
     private readonly EngineOptions _options = options.Value;
     private readonly ConcurrentDictionary<string, ExecutionPlan> _plans = new(StringComparer.Ordinal);
 
-    public async Task<CompositionResult> ExecuteAsync(Recipe recipe, InboundRequest inbound, CallerContext caller, ExecutionMode mode, CancellationToken ct)
+    /// <param name="config">Run against this configuration instead of the store's, e.g. one with an endpoint that isn't
+    /// saved yet (the admin app's "Send a test call"). Normally null.</param>
+    public async Task<CompositionResult> ExecuteAsync(Recipe recipe, InboundRequest inbound, CallerContext caller, ExecutionMode mode, CancellationToken ct,
+        ConfigSnapshot? config = null)
     {
         // Every log line written during this run carries these fields.
         using var scope = logger.BeginScope(new LogScope(("CorrelationId", caller.CorrelationId), ("RecipeId", recipe.Id), ("RecipeVersion", recipe.Version)));
-        return await RunAsync(recipe, inbound, caller, mode, ct);
+        return await RunAsync(recipe, inbound, caller, mode, ct, config);
     }
 
-    private async Task<CompositionResult> RunAsync(Recipe recipe, InboundRequest inbound, CallerContext caller, ExecutionMode mode, CancellationToken ct)
+    private async Task<CompositionResult> RunAsync(Recipe recipe, InboundRequest inbound, CallerContext caller, ExecutionMode mode, CancellationToken ct,
+        ConfigSnapshot? given)
     {
         var clock = Stopwatch.StartNew();
-        var config = await store.GetSnapshotAsync(ct);
+        var config = given ?? await store.GetSnapshotAsync(ct);
         logger.CompositionStarted(recipe.Id, recipe.Version, caller.Subject ?? "anonymous");
 
         // 1. inputs

@@ -3,6 +3,7 @@ using System.Text.Json.Serialization;
 using ApiAggregator.Engine.BrowserAccess;
 using ApiAggregator.Engine.Config;
 using ApiAggregator.Engine.Execution;
+using ApiAggregator.Engine.Model;
 using ApiAggregator.Engine.Validation;
 
 namespace ApiAggregator.Admin.Application;
@@ -58,6 +59,12 @@ public sealed record SignInCheck(bool Ok, string Message);
 public sealed record RecipeSummary(string Id, string Name, string Method, string Route, int? PublishedVersion, bool HasDraft, bool Deleted);
 
 public sealed record DraftDiscarded(string Id, int? LiveVersion);
+
+/// <summary>
+/// "Send a test call" for an endpoint that isn't saved yet. Values are the typed test values, keyed "path.orderId",
+/// "query.status" or "header.X-Channel"; Body is sent as the JSON body.
+/// </summary>
+public sealed record EndpointTry(ApiEndpoint? Endpoint, Dictionary<string, string?>? Values, JsonNode? Body);
 
 public sealed record TestRequest(Dictionary<string, string?>? Route, Dictionary<string, string?>? Query, Dictionary<string, string?>? Headers)
 {

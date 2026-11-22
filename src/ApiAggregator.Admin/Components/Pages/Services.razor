@@ -200,12 +200,20 @@ else if (_services.Count > 0)
                     </div>
                     @if (_newEndpoint.PathParams.Any())
                     {
-                        <p class="hint">Path values: @string.Join(", ", _newEndpoint.PathParams) (required)</p>
+                        <p class="hint">Path values: @string.Join(", ", _newEndpoint.PathParams) (required). Fill in a test value for each to send a test call.</p>
+                        <div class="grid">
+                            @foreach (var name in _newEndpoint.PathParams)
+                            {
+                                <label>Test value for @name
+                                    <input value="@_newEndpoint.PathTestValues.GetValueOrDefault(name)" @onchange="e => _newEndpoint.PathTestValues[name] = e.Value?.ToString() ?? string.Empty" placeholder="e.g. C-10042" />
+                                </label>
+                            }
+                        </div>
                     }
                     @if (_newEndpoint.Parameters.Count > 0)
                     {
                         <table class="list">
-                            <thead><tr><th scope="col">Other value</th><th scope="col">Sent as</th><th scope="col">Required</th><th scope="col"><span class="visually-hidden">Remove</span></th></tr></thead>
+                            <thead><tr><th scope="col">Other value</th><th scope="col">Sent as</th><th scope="col">Required</th><th scope="col">Test value</th><th scope="col"><span class="visually-hidden">Remove</span></th></tr></thead>
                             <tbody>
                                 @foreach (var p in _newEndpoint.Parameters)
                                 {
@@ -213,6 +221,7 @@ else if (_services.Count > 0)
                                         <td><input @bind="p.Name" placeholder="status or X-Customer-Id" aria-label="Value name" /></td>
                                         <td><select @bind="p.In" aria-label="Sent as"><option>query</option><option>header</option><option>cookie</option></select></td>
                                         <td><input type="checkbox" @bind="p.Required" aria-label="Required" /></td>
+                                        <td><input @bind="p.TestValue" placeholder="for a test call" aria-label="@($"Test value for {p.Name}")" /></td>
                                         <td><button class="link" @onclick="() => _newEndpoint.Parameters.Remove(p)">Remove</button></td>
                                     </tr>
                                 }
@@ -220,6 +229,32 @@ else if (_services.Count > 0)
                         </table>
                     }
                     <button class="link" @onclick="() => _newEndpoint.Parameters.Add(new ParamRow())">Add a query or header value</button>
+                    @if (_newEndpoint.HasBody)
+                    {
+                        <label>Test body (JSON, optional, only for a test call)
+                            <textarea rows="3" @bind="_newEndpoint.TestBody" placeholder='{ "customerId": "C-10042" }'></textarea>
+                        </label>
+                    }
+                    <div class="inline">
+                        <button class="button" disabled="@_trying" @onclick="() => TryEndpoint(s)">@(_trying ? "Calling…" : "Send a test call")</button>
+                        <span class="hint">Calls @s.Name once with its sign-in and the test values. Nothing is saved.</span>
+                    </div>
+                    @if (_tryProblems.Count > 0) { <Problems Items="_tryProblems" /> }
+                    @if (_tryResult is { } tried)
+                    {
+                        <div class="try-result" role="status">
+                            <p>
+                                <StatusPill State="@(tried.Passed ? StatusPill.Kind.Ok : StatusPill.Kind.Bad)" Text="@(tried.Passed ? "Call worked" : "Call failed")" />
+                                @if (tried.StatusCode is { } code) { <span>HTTP @(tried.Trace?.FirstOrDefault()?.HttpStatus ?? code) · @tried.DurationMs ms</span> }
+                                @if (tried.Trace?.FirstOrDefault() is { Message: { } message }) { <span> · @message</span> }
+                            </p>
+                            @if (tried.Trace?.FirstOrDefault() is { } call) { <CallDetails Trace="call" CorrelationId="@tried.CorrelationId" Open="true" /> }
+                            @if (tried.Passed && tried.Body?["call"] is { } answer)
+                            {
+                                <button class="link" @onclick="() => UseAsSample(answer)">Use this answer as the sample response</button>
+                            }
+                        </div>
+                    }
                     <label>Sample response (optional, lets the wizard offer its fields)
                         <textarea rows="5" @bind="_newEndpoint.SampleResponse" placeholder='{ "id": "O-1", "total": 20.5, "items": [ { "sku": "A" } ] }'></textarea>
                     </label>
@@ -385,6 +420,7 @@ else if (_services.Count > 0)
     private void Open(string serviceId, Panel panel)
     {
         _openFor = serviceId; _panel = panel; _problems = [];
+        _tryResult = null; _tryProblems = [];
         _newEndpoint = new NewEndpointForm();
         _candidates = null; _selected.Clear();
         _specUrl = _services?.FirstOrDefault(s => s.Id == serviceId)?.OpenApiSource ?? "";
@@ -448,6 +484,33 @@ else if (_services.Count > 0)
     }
 
     // ------------------------------------------------------------------ endpoints, sign-in, import
+
+    private TestOutcome? _tryResult;
+    private List<string> _tryProblems = [];
+    private bool _trying;
+
+    /// <summary>"Send a test call": the endpoint as typed, with its test values, against the service. Nothing is saved.</summary>
+    private async Task TryEndpoint(ApiService s)
+    {
+        _tryResult = null;
+        _tryProblems = _newEndpoint.TryProblems().ToList();
+        if (_tryProblems.Count > 0) return;
+        _trying = true;
+        try
+        {
+            var result = await Admin.TryServiceEndpointAsync(_me, s.Id, _newEndpoint.ToTry(), await User.CallerAsync());
+            if (!result.Ok) { _tryProblems = [result.Failure!.Message]; return; }
+            if (result.Value!.Issues is { Count: > 0 } issues) { _tryProblems = issues.Select(i => i.Message).ToList(); return; }
+            _tryResult = result.Value;
+        }
+        finally { _trying = false; }
+    }
+
+    private void UseAsSample(System.Text.Json.Nodes.JsonNode answer)
+    {
+        _newEndpoint.SampleResponse = CallDetails.Pretty(answer);
+        Toasts.Success("The answer is now the sample response: the wizard will offer its fields.");
+    }
 
     private async Task SaveEndpoint(ApiService s)
     {

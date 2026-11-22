@@ -79,6 +79,57 @@ public sealed class RoleTests(AdminApp app) : IClassFixture<AdminApp>
         Assert.Equal(FailureKind.BadRequest, (await Service.SaveServiceAsync(Author, service.Id, endpointOnly)).Failure?.Kind);
     }
 
+    private static CallerContext Caller() => CallerContext.Anonymous("try-1");
+
+    private static EndpointTry Try(string path, Dictionary<string, string?>? values = null, ParamDef[]? parameters = null) =>
+        new(new ApiEndpoint { Id = "tryPeople", Summary = "People (trying)", Path = path, Parameters = (parameters ?? []).ToList() }, values, null);
+
+    [Fact]
+    public async Task An_author_sends_a_test_call_to_an_endpoint_that_is_not_saved_and_nothing_is_saved()
+    {
+        var result = await Service.TryServiceEndpointAsync(Author, "people",
+            Try("/people", new() { ["query.status"] = "active" }, [new ParamDef { Name = "status", In = "query" }]), Caller());
+
+        Assert.True(result.Ok, result.Failure?.Message);
+        Assert.True(result.Value!.Passed);
+        var call = Assert.Single(Assert.Single(result.Value.Trace!).Details!);
+        Assert.Equal("GET http://people.test/api/people?status=active", call.Request);
+        Assert.NotNull(result.Value.Body?["call"]);
+
+        var people = (await app.Services.GetRequiredService<IConfigStore>().GetSnapshotAsync()).GetService("people")!;
+        Assert.DoesNotContain(people.Endpoints, e => e.Id == "tryPeople");
+    }
+
+    [Fact]
+    public async Task A_failed_test_call_shows_what_the_service_answered()
+    {
+        var result = await Service.TryServiceEndpointAsync(Author, "people", Try("/missing"), Caller());
+
+        Assert.False(result.Value!.Passed);
+        Assert.Equal(404, Assert.Single(Assert.Single(result.Value.Trace!).Details!).Status);
+    }
+
+    [Fact]
+    public async Task Test_values_are_checked_like_any_endpoint()
+    {
+        var missing = await Service.TryServiceEndpointAsync(Author, "people", Try("/people/{personId}"), Caller());
+        Assert.Contains(missing.Value!.Issues!, i => i.Message.Contains("'personId' (path) is required"));
+
+        var authorization = await Service.TryServiceEndpointAsync(Author, "people", Try("/people", new() { ["header.Authorization"] = "Bearer x" }), Caller());
+        Assert.Contains(authorization.Value!.Issues!, i => i.Message.Contains("can't be set here"));
+
+        var expression = await Service.TryServiceEndpointAsync(Author, "people", Try("/people/{personId}", new() { ["path.personId"] = "{{request.claims.sub}}" }), Caller());
+        Assert.Equal(FailureKind.BadRequest, expression.Failure?.Kind);
+    }
+
+    [Fact]
+    public async Task A_test_call_needs_the_author_role_and_a_service_that_exists()
+    {
+        var nobody = new AdminActor("nobody-1", "No Role", IsAuthor: false, IsPublisher: false);
+        Assert.Equal(FailureKind.Forbidden, (await Service.TryServiceEndpointAsync(nobody, "people", Try("/people"), Caller())).Failure?.Kind);
+        Assert.Equal(FailureKind.NotFound, (await Service.TryServiceEndpointAsync(Author, "no-such-service", Try("/people"), Caller())).Failure?.Kind);
+    }
+
     [Fact]
     public async Task Someone_without_a_role_can_do_nothing_at_all()
     {

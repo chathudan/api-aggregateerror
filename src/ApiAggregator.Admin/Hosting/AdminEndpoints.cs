@@ -70,6 +70,8 @@ internal static class AdminEndpoints
         admin.MapDelete("/recipes/{id}/draft", async (string id, AdminService s, HttpContext h, CancellationToken ct) => (await s.DiscardDraftAsync(Me(h), id, ct)).ToHttp());
         admin.MapPost("/recipes/{id}/validate", async (string id, AdminService s, HttpContext h, CancellationToken ct) => (await s.ValidateAsync(Me(h), id, ct)).ToHttp());
         admin.MapGet("/recipes/{id}/sources", async (string id, string? beforeStep, AdminService s, HttpContext h, CancellationToken ct) => (await s.GetSourcesAsync(Me(h), id, beforeStep, ct)).ToHttp());
+        admin.MapPost("/services/{id}/try", async (string id, EndpointTry body, AdminService s, HttpContext h, CancellationToken ct) =>
+            (await s.TryServiceEndpointAsync(Me(h), id, body, InboundAuth.CallerFrom(h), ct)).ToHttp());
         admin.MapPost("/recipes/{id}/test", async (string id, TestRequest body, AdminService s, HttpContext h, CancellationToken ct) =>
             (await s.TestAsync(Me(h), id, body, InboundAuth.CallerFrom(h), ct)).ToHttp());
         admin.MapPost("/recipes/{id}/publish", async (string id, AdminService s, HttpContext h, CancellationToken ct) => (await s.PublishAsync(Me(h), id, ct)).ToHttp())

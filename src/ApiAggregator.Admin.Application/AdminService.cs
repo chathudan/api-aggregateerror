@@ -324,6 +324,48 @@ public sealed class AdminService(
         return new TestOutcome(passed, result.StatusCode, result.DurationMs, result.Partial, result.Trace, result.Body, caller.CorrelationId, null, validation.Warnings);
     }
 
+    /// <summary>
+    /// Calls a service endpoint once before it's saved ("Send a test call" on Add an endpoint), with the service's sign-in
+    /// and every rule a real call has: the endpoint checks, escaping, the same-host rule, timeouts and size limits. It runs
+    /// against a copy of the configuration with the endpoint added; nothing is saved. The answer and each call's details
+    /// (ADR 0016) are shown to the author only; logs name the call without values.
+    /// </summary>
+    public async Task<AdminResult<TestOutcome>> TryServiceEndpointAsync(AdminActor actor, string serviceId, EndpointTry request, CallerContext caller, CancellationToken ct = default)
+    {
+        if (NeedsAuthor(actor) is { } no) return no;
+        var config = await store.GetSnapshotAsync(ct);
+        if (config.GetService(serviceId) is not { } service) return Refuse.NotFound($"Service '{serviceId}' not found.");
+        if (request.Endpoint is not { } endpoint || string.IsNullOrWhiteSpace(endpoint.Id) || !endpoint.Path.StartsWith('/'))
+            return Refuse.BadRequest("Give the endpoint a name and a path that starts with /, e.g. /orders/{orderId}.");
+        var values = (request.Values ?? []).Where(v => !string.IsNullOrEmpty(v.Value)).ToList();
+        // Test values are sent as typed: never read as {{ }} expressions.
+        if (values.Any(v => v.Value!.Contains("{{")))
+            return Refuse.BadRequest("Test values are sent as typed, so they can't contain {{ }}.");
+
+        // The service as it would be with this endpoint, in a copy of the configuration only.
+        var trial = JsonSerializer.Deserialize<ApiService>(JsonSerializer.Serialize(service, AggregatorJson.Options), AggregatorJson.Options)!;
+        trial.Endpoints.RemoveAll(e => e.Id.Equals(endpoint.Id, StringComparison.OrdinalIgnoreCase));
+        trial.Endpoints.Add(endpoint);
+        var withEndpoint = new ConfigSnapshot(config.Services.Select(s => s.Id == service.Id ? trial : s), config.AuthProfiles, [], config.Version + "+try");
+
+        // One step that sends exactly the typed values.
+        var bind = values.Select(v => new BindingDef { To = v.Key, Template = JsonValue.Create(v.Value) }).ToList();
+        if (request.Body is not null) bind.Add(new BindingDef { To = "body", Template = request.Body.DeepClone() });
+        var recipe = new Recipe
+        {
+            Id = "try-" + service.Id, Name = $"Test call to {endpoint.Summary ?? endpoint.Id}", Route = "try", RequireAuthentication = false,
+            Steps = [new StepDef { Alias = "call", DisplayName = endpoint.Summary ?? endpoint.Id, Endpoint = $"{service.Id}/{endpoint.Id}", Bind = bind }]
+        };
+
+        // The same checks as any endpoint: required values, valid targets, blocked headers (Authorization, Cookie, Host...).
+        var validation = RecipeValidator.Validate(recipe, withEndpoint);
+        if (!validation.IsValid) return new TestOutcome(false, null, null, null, null, null, null, validation.Issues, null);
+
+        var result = await executor.ExecuteAsync(recipe, new InboundRequest(), caller, ExecutionMode.AdminTest, ct, withEndpoint);
+        return new TestOutcome(result.StatusCode == 200 && !result.Partial, result.StatusCode, result.DurationMs, result.Partial, result.Trace,
+            result.Body, caller.CorrelationId, null, null);
+    }
+
     public async Task<AdminResult<PublishResult>> PublishAsync(AdminActor actor, string id, CancellationToken ct = default)
     {
         if (NeedsPublisher(actor) is { } no) return no;
