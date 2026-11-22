@@ -277,3 +277,11 @@ fieldset.add-value > legend { font-size: 13px; color: var(--muted); padding: 0; 
 fieldset.add-value .inline.tight { margin-top: 4px; flex-wrap: wrap; }
 fieldset.add-value select { flex: 0 1 260px; min-width: 0; }
 fieldset.add-value input { flex: 1 1 200px; min-width: 0; max-width: 320px; }
+
+/* Try it: each call's request and answer (CallDetails) */
+tr.call-details-row > td { padding-top: 0; }
+details.call-details > summary { cursor: pointer; color: var(--accent); font-size: 13px; }
+details.call-details .call { border-left: 3px solid var(--border); padding: 4px 0 4px 12px; margin: 8px 0; }
+details.call-details .call h4 { margin: 4px 0; font-size: 13px; font-weight: 500; }
+details.call-details .call p { margin: 4px 0; overflow-wrap: anywhere; }
+details.call-details pre.json { max-height: 320px; overflow: auto; }

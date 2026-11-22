@@ -460,11 +460,15 @@ else if (IsNew)
                                 @if (t.ErrorCode is not null) { <span class="tag" title="@(t.Retryable ? "Worth trying again later" : "Trying again won't help")">@t.ErrorCode</span> }
                             </td>
                         </tr>
+                        @if (t.Details is { Count: > 0 })
+                        {
+                            <tr class="call-details-row"><td colspan="6"><CallDetails Trace="t" CorrelationId="@_test.CorrelationId" /></td></tr>
+                        }
                     }
                 </tbody>
             </table>
         }
-        @if (_test.Body is not null) { <pre class="json">@_test.Body.ToJsonString(new JsonSerializerOptions { WriteIndented = true })</pre> }
+        @if (_test.Body is not null) { <pre class="json">@CallDetails.Pretty(_test.Body)</pre> }
     }
 
 </section>

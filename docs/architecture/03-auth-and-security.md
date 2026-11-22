@@ -121,7 +121,9 @@ Design choices that help:
 - Cache entries are kept per caller and expire.
 - Cache keys are hashed.
 - Logs record which recipe ran and who called it, never the values.
-- Admin traces mask query values.
+- Admin test runs (Try it) show each call's full request and the service's answer to the author, including query
+  values, and never log or store them ([ADR 0016](../adr/0016-try-it-shows-each-call.md)). Sign-in headers never
+  appear. The step summary line and the command line keep query values masked.
 - History records **who** changed an endpoint as an id (`sub`) and, since ADR 0014, the display name from their sign-in (the `name` claim; check your provider doesn't put an email there), and holds no request data.
 - Use identifiers in headers or bodies rather than query strings where you can.
 

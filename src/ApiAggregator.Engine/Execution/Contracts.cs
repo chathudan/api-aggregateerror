@@ -25,9 +25,9 @@ public sealed class ExecutionMode
 public enum StepOutcome { Succeeded, Failed, Skipped }
 
 /// <summary>
-/// What happened in one step. Safe to show to the caller: no secrets, no downstream bodies.
-/// Message is the caller-facing text. Detail is the internal reason and is only filled when
-/// ExecutionMode.IncludeRequestDetails is on (admin "Try it"), never for gateway callers.
+/// What happened in one step. Message is the caller-facing text. Detail (the internal reason) and Details (each call's
+/// request and response) are only filled when ExecutionMode.IncludeRequestDetails is on (admin "Try it", ADR 0016):
+/// never for gateway callers, never logged or stored. Request is the call with query values masked.
 /// </summary>
 public sealed record StepTrace(
     string Alias,
@@ -42,7 +42,31 @@ public sealed record StepTrace(
     string? ErrorCode = null,
     string? ServiceId = null,
     bool Retryable = false,
-    string? Detail = null);
+    string? Detail = null,
+    IReadOnlyList<CallDetail>? Details = null);
+
+/// <summary>
+/// One downstream call as admin "Try it" shows it (ADR 0016): the full address, the headers, cookies and body the
+/// recipe sent, and the service's answer. Sign-in headers are added after this is taken, so keys, tokens and session
+/// cookies never appear; Set-Cookie is never kept. Bodies over <see cref="CallDetail.MaxBodyChars"/> are cut.
+/// </summary>
+public sealed record CallDetail(string Request, JsonObject? RequestHeaders, JsonNode? RequestBody, int? Status, JsonNode? Response, bool Truncated)
+{
+    public const int MaxBodyChars = 64 * 1024;
+
+    /// <summary>For-each steps keep the first ones only.</summary>
+    public const int MaxCallsShown = 20;
+
+    /// <summary>A body as it's shown: itself, or its first 64 K characters as text when it's bigger.</summary>
+    public static JsonNode? Cap(JsonNode? body, ref bool truncated)
+    {
+        if (body is null) return null;
+        var text = body.ToJsonString();
+        if (text.Length <= MaxBodyChars) return body;
+        truncated = true;
+        return JsonValue.Create(text[..MaxBodyChars] + "…");
+    }
+}
 
 public sealed class CompositionResult
 {

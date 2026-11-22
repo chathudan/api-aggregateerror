@@ -32,7 +32,7 @@ Go through each item against the diff. For every "no", fix it or explain why in 
 
 ## Logging and data
 - [ ] Logs contain ids, statuses and timings, never values or tokens
-- [ ] Admin traces mask query values
+- [ ] Call details (ADR 0016) only in admin test runs (`IncludeRequestDetails`), never logged or stored, never with sign-in headers; summary lines keep query values masked
 - [ ] Personal or health data handling changes are flagged for privacy review (`docs/architecture/03-auth-and-security.md`)
 
 ## Tests and docs

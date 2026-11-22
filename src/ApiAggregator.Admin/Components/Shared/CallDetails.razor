@@ -1,0 +1,51 @@
+@using System.Text.Encodings.Web
+@using System.Text.Json
+@using System.Text.Json.Nodes
+@using ApiAggregator.Engine.Execution
+@* One step's calls as Try it shows them (ADR 0016): the request the recipe sent and what the service answered. Folded
+   until opened. Sign-in headers are never part of it. Nothing here is logged or stored. *@
+
+@if (Trace.Details is { Count: > 0 } calls)
+{
+    <details class="call-details">
+        <summary>Request and response@(Trace.Calls > calls.Count ? $" (first {calls.Count} of {Trace.Calls} calls)" : calls.Count > 1 ? $" ({calls.Count} calls)" : "")</summary>
+        @for (var i = 0; i < calls.Count; i++)
+        {
+            var call = calls[i];
+            <div class="call">
+                @if (calls.Count > 1) { <h4>Call @(i + 1)</h4> }
+                <p><code>@call.Request</code> @if (call.Status is { } status) { <span class="tag">HTTP @status</span> }</p>
+                @if (call.RequestHeaders is { Count: > 0 } headers)
+                {
+                    <p class="muted">Headers sent <span class="hint">(sign-in headers are added after this and never shown)</span></p>
+                    <pre class="json">@Pretty(headers)</pre>
+                }
+                @if (call.RequestBody is not null)
+                {
+                    <p class="muted">Body sent</p>
+                    <pre class="json">@Pretty(call.RequestBody)</pre>
+                }
+                <p class="muted">Answer</p>
+                @if (call.Response is null) { <p class="hint">Empty.</p> }
+                else { <pre class="json">@Pretty(call.Response)</pre> }
+                @if (call.Truncated) { <p class="hint">Cut at 64 KB to keep the page fast.</p> }
+            </div>
+        }
+        @if (!string.IsNullOrEmpty(CorrelationId))
+        {
+            <p><a href="@($"/logs?correlation={Uri.EscapeDataString(CorrelationId)}&step={Uri.EscapeDataString(Trace.Alias)}")">Logs for this step</a></p>
+        }
+    </details>
+}
+
+@code {
+    [Parameter, EditorRequired] public StepTrace Trace { get; set; } = default!;
+
+    /// <summary>The test's correlation id, for the link to this step's log lines.</summary>
+    [Parameter] public string? CorrelationId { get; set; }
+
+    // Characters as they are (+, é, '): the page escapes all text itself, so nothing here can become markup.
+    private static readonly JsonSerializerOptions Readable = new() { WriteIndented = true, Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping };
+
+    internal static string Pretty(JsonNode node) => node.ToJsonString(Readable);
+}

@@ -320,6 +320,7 @@ public sealed class CompositionExecutor(
             {
                 var single = await CallAsync(call, scope, caller, mode, token);
                 run = StepRun.Ok(step, single.Output, single.Status, clock, 1, single.FromCache, single.Request, serviceId);
+                if (single.Detail is { } detail) run = run with { Trace = run.Trace with { Details = [detail] } };
             }
             else
             {
@@ -341,6 +342,8 @@ public sealed class CompositionExecutor(
 
                 run = StepRun.Ok(step, new JsonArray(outputs.Select(o => (JsonNode?)o.Output).ToArray()),
                     outputs.Length > 0 ? outputs.Max(o => o.Status) : 200, clock, outputs.Length, outputs.All(o => o.FromCache), outputs.FirstOrDefault()?.Request, serviceId);
+                if (mode.IncludeRequestDetails)
+                    run = run with { Trace = run.Trace with { Details = outputs.Select(o => o.Detail).OfType<CallDetail>().Take(CallDetail.MaxCallsShown).ToList() } };
             }
 
             logger.StepSucceeded(step.Alias, serviceId, endpointId, callTemplate, run.Trace.HttpStatus, run.Trace.DurationMs, run.Trace.Calls, run.Trace.FromCache);
@@ -352,7 +355,9 @@ public sealed class CompositionExecutor(
             if (ex is AuthFailedException) logger.DownstreamAuthFailed(profileId ?? "none", serviceId, ex.Message);
             // The internal detail is always logged; whether the trace shows it depends on the mode.
             logger.StepFailed(step.Alias, serviceId, endpointId, callTemplate, failure.Code, failure.Status, clock.ElapsedMilliseconds, failure.Detail ?? failure.Message);
-            return StepRun.Fail(step, failure, serviceId, mode, clock);
+            var failed = StepRun.Fail(step, failure, serviceId, mode, clock);
+            // Try it: the call that failed, with what the service answered.
+            return ex is DownstreamException { Call: { } call } ? failed with { Trace = failed.Trace with { Details = [call] } } : failed;
         }
     }
 
@@ -397,7 +402,8 @@ public sealed class CompositionExecutor(
             if (cache.TryGet(stepKey, out var hit))
             {
                 logger.ResponseCacheHit("step", call.Step.Alias);
-                return new CallResult(JsonNode.Parse(hit)!.AsObject(), 200, true, described);
+                var cached = JsonNode.Parse(hit)!.AsObject();
+                return new CallResult(cached, 200, true, described, mode.IncludeRequestDetails ? Detail(built, 200, cached) : null);
             }
         }
 
@@ -422,7 +428,11 @@ public sealed class CompositionExecutor(
 
             var status = (int)response.StatusCode;
             if (!response.IsSuccessStatusCode)
-                throw new DownstreamException(DownstreamErrorCode.ForStatus(status), $"{Name(call.Service)} answered {status}.", status);
+                throw new DownstreamException(DownstreamErrorCode.ForStatus(status), $"{Name(call.Service)} answered {status}.", status)
+                {
+                    // Try it shows what the service said; apps never get it (the error body for callers is built separately).
+                    Call = mode.IncludeRequestDetails ? Detail(built, status, new JsonObject { ["status"] = status, ["body"] = await ReadErrorBodyAsync(response, stepTimeout.Token) }) : null
+                };
 
             var output = new JsonObject
             {
@@ -434,8 +444,35 @@ public sealed class CompositionExecutor(
             if (stepKey is not null)
                 cache.Set(stepKey, Encoding.UTF8.GetBytes(output.ToJsonString()), TimeSpan.FromSeconds(call.Step.Cache.TtlSeconds));
 
-            return new CallResult(output, status, false, described);
+            return new CallResult(output, status, false, described, mode.IncludeRequestDetails ? Detail(built, status, output) : null);
         }
+    }
+
+    /// <summary>What Try it shows for one call (ADR 0016). Copies, so the step's own output is never changed.</summary>
+    private static CallDetail Detail(BuiltRequest built, int status, JsonObject output)
+    {
+        var truncated = false;
+        var requestBody = CallDetail.Cap(built.Body?.DeepClone(), ref truncated);
+        var response = CallDetail.Cap(output.DeepClone(), ref truncated);
+        return new CallDetail(built.DescribeFull(), built.DescribeHeaders(), requestBody, status, response, truncated);
+    }
+
+    /// <summary>A failed call's answer, for Try it only: at most 64 K characters, as JSON when it is JSON, else as text.</summary>
+    private static async Task<JsonNode?> ReadErrorBodyAsync(HttpResponseMessage response, CancellationToken ct)
+    {
+        try
+        {
+            await using var stream = await response.Content.ReadAsStreamAsync(ct);
+            var buffer = new char[CallDetail.MaxBodyChars + 1];
+            using var reader = new StreamReader(stream);
+            var read = await reader.ReadBlockAsync(buffer.AsMemory(), ct);
+            if (read == 0) return null;
+            var text = new string(buffer, 0, Math.Min(read, CallDetail.MaxBodyChars));
+            if (read > CallDetail.MaxBodyChars) return JsonValue.Create(text + "…");
+            try { return JsonNode.Parse(text); }
+            catch (JsonException) { return JsonValue.Create(text); }
+        }
+        catch (Exception ex) when (ex is IOException or HttpRequestException) { return null; } // the failure itself is what matters
     }
 
     private async Task<JsonNode?> ReadBodyAsync(HttpResponseMessage response, string serviceName, CancellationToken ct)
@@ -503,13 +540,16 @@ public sealed class CompositionExecutor(
         public bool Failed => Records is null;
     }
 
-    private sealed record CallResult(JsonObject Output, int Status, bool FromCache, string? Request);
+    private sealed record CallResult(JsonObject Output, int Status, bool FromCache, string? Request, CallDetail? Detail);
 
     /// <summary>A downstream call that came back unusable. Message is caller-safe; Detail is internal.</summary>
     private sealed class DownstreamException(string code, string message, int status, string? detail = null) : Exception(message)
     {
         public string Code { get; } = code;
         public int Status { get; } = status;
+
+        /// <summary>Admin test runs only: the request and the service's answer, for Try it.</summary>
+        public CallDetail? Call { get; init; }
         public string? Detail { get; } = detail;
     }
 

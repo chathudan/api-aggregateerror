@@ -27,7 +27,20 @@ public sealed class BuiltRequest
     public string Fingerprint() =>
         $"{Method} {Uri}\n{string.Join("\n", Headers.Select(h => $"{h.Key}:{h.Value}"))}\n{string.Join(";", Cookies.Select(c => $"{c.Key}={c.Value}"))}\n{Body?.ToJsonString()}";
 
-    /// <summary>For admin traces: method + URL with query VALUES masked.</summary>
+    /// <summary>The call as admin Try it shows it in a step's details (ADR 0016): method and the full address.</summary>
+    public string DescribeFull() => $"{Method} {Uri.AbsoluteUri}";
+
+    /// <summary>The recipe's headers and cookies for this call. Sign-in headers are added later and never appear here.</summary>
+    public JsonObject? DescribeHeaders()
+    {
+        if (Headers.Count == 0 && Cookies.Count == 0) return null;
+        var headers = new JsonObject();
+        foreach (var (name, value) in Headers) headers[name] = value;
+        if (Cookies.Count > 0) headers["Cookie"] = string.Join("; ", Cookies.Select(c => $"{c.Key}={c.Value}"));
+        return headers;
+    }
+
+    /// <summary>For admin traces' summary line (and the CLI): method + URL with query VALUES masked.</summary>
     public string Describe()
     {
         var query = string.IsNullOrEmpty(Uri.Query)

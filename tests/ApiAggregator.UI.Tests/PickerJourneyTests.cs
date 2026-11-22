@@ -149,6 +149,28 @@ public class PickerJourneyTests(StackFixture stack)
     }
 
     [UiFact]
+    public async Task Try_it_shows_each_calls_request_and_answer_and_links_to_the_steps_logs()
+    {
+        var page = await stack.OpenAsync("/endpoints/contacts-unique");
+        var footer = page.Locator(".sticky-footer");
+        await footer.GetByRole(AriaRole.Button, new() { Name = "Try it" }).ClickAsync();
+        await Expect(footer).ToContainTextAsync("Test passed", new() { Timeout = 15_000 });
+
+        // The notes step runs once per contact with an order: three calls, each with what was sent and the answer.
+        var notes = page.Locator("details.call-details", new() { HasTextString = "(3 calls)" });
+        await notes.Locator("summary").ClickAsync();
+        await Expect(notes.Locator(".call")).ToHaveCountAsync(3);
+        await Expect(notes).ToContainTextAsync("/f/contacts/c-101/notes");
+        await Expect(notes).ToContainTextAsync("HTTP 200");
+        await Expect(notes.Locator(".call").First).ToContainTextAsync("Answer");
+
+        var logs = notes.GetByRole(AriaRole.Link, new() { Name = "Logs for this step" });
+        Assert.Contains("&step=notes", await logs.GetAttributeAsync("href"));
+        await logs.ClickAsync();
+        await Expect(page.Locator(".tag.chip", new() { HasTextString = "Step: notes" })).ToBeVisibleAsync();
+    }
+
+    [UiFact]
     public async Task A_whole_json_body_opens_and_splits_into_one_value_per_field()
     {
         // An endpoint written before body fields had rows of their own: one JSON body ("to": "body", nothing after it),

@@ -14,9 +14,12 @@ every error body. When an app reports a problem, ask for it.
 2. Paste the id into the search box, or click the short id on any row. Only that request's lines remain:
    the call, each step that failed, and why.
 3. Click a line to see its details: the step, the service, the error code and the internal reason. Each
-   step's line names the service endpoint it called, its HTTP status and how long it took.
+   step's line names the call by its method and path, e.g. `GET /contacts/{contactId}` (the template, never the
+   values), its HTTP status and how long it took.
 
-After a **Try it** run, **See logs for this test** does the same for the test.
+After a **Try it** run, **See logs for this test** does the same for the test, and **Logs for this step** (under a
+step's **Request and response**) shows one step's lines. To see the actual values a call sent and what the service
+answered, open **Request and response** in Try it: logs never hold them.
 
 ![Logs: live lines from the gateway and the admin app, filtered by level and correlation id](../images/logs.png)
 

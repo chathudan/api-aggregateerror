@@ -23,7 +23,12 @@ stateDiagram-v2
 In step 5 of the wizard, check the test values next to each input (step 2), then choose **Try it**. The
 draft runs against the services for real, with no cache, and you see:
 
-- every call: its status, how long it took, and its address (query values are shown as `…`);
+- every call: its status, how long it took, and its address (query values are shown as `…` on this line);
+- **Request and response** under each step: the full address with every value, the headers and body the endpoint
+  sent, and what the service answered, so you can check each call and not only the combined answer. A failed call
+  shows the service's own answer, which usually says why. Sign-in headers are never shown, very large answers are cut
+  at 64 KB, and a step that runs for each item shows its first 20 calls. **Logs for this step** opens that step's log
+  lines. None of this is logged or kept ([ADR 0016](../adr/0016-try-it-shows-each-call.md));
 - the combined answer, exactly as an app would get it;
 - for a combined list, the counts line (see [Combine lists](combine-lists.md#what-try-it-shows));
 - **See logs for this test**, which opens **Logs** filtered to this run's correlation id.
