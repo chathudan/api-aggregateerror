@@ -283,6 +283,8 @@ public sealed class CompositionExecutor(
         var endpointId = slash > 0 ? step.Endpoint[(slash + 1)..] : "";
         var serviceName = config.GetService(serviceId) is { } known ? Name(known) : $"Service '{serviceId}'";
         string? profileId = null;
+        // What the step calls, for the log: method and path template only ("GET /contacts/{contactId}"), no values.
+        var callTemplate = config.FindEndpoint(step.Endpoint, out _) is { } target ? $"{target.Method.ToUpperInvariant()} {target.Path}" : "unknown endpoint";
 
         using var stepScope = logger.BeginScope(new LogScope(("Step", step.Alias), ("ServiceId", serviceId)));
 
@@ -341,7 +343,7 @@ public sealed class CompositionExecutor(
                     outputs.Length > 0 ? outputs.Max(o => o.Status) : 200, clock, outputs.Length, outputs.All(o => o.FromCache), outputs.FirstOrDefault()?.Request, serviceId);
             }
 
-            logger.StepSucceeded(step.Alias, serviceId, endpointId, run.Trace.HttpStatus, run.Trace.DurationMs, run.Trace.Calls, run.Trace.FromCache);
+            logger.StepSucceeded(step.Alias, serviceId, endpointId, callTemplate, run.Trace.HttpStatus, run.Trace.DurationMs, run.Trace.Calls, run.Trace.FromCache);
             return run;
         }
         catch (Exception ex) when (IsStepFailure(ex, callerToken))
@@ -349,7 +351,7 @@ public sealed class CompositionExecutor(
             var failure = Classify(ex, serviceName);
             if (ex is AuthFailedException) logger.DownstreamAuthFailed(profileId ?? "none", serviceId, ex.Message);
             // The internal detail is always logged; whether the trace shows it depends on the mode.
-            logger.StepFailed(step.Alias, serviceId, endpointId, failure.Code, failure.Status, clock.ElapsedMilliseconds, failure.Detail ?? failure.Message);
+            logger.StepFailed(step.Alias, serviceId, endpointId, callTemplate, failure.Code, failure.Status, clock.ElapsedMilliseconds, failure.Detail ?? failure.Message);
             return StepRun.Fail(step, failure, serviceId, mode, clock);
         }
     }

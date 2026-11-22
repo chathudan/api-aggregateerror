@@ -94,7 +94,7 @@ on the console outside Development, ready for Azure Monitor, Seq, Elastic or Lok
 | 1001 CompositionCompleted | Information | It finished with 200 | Status, DurationMs, Steps, FromCache, Partial |
 | 1002 CompositionFailed | Warning | 4xx/5xx result | Status, ErrorCode, RootCauses |
 | 1003 InputRejected | Information | 400 | ErrorCount (no values) |
-| 1100 / 1101 / 1102 | Information / **Warning** / Debug | Step succeeded / **failed** / skipped | Step, ServiceId, EndpointId, ErrorCode, HttpStatus, DurationMs, Calls, Detail |
+| 1100 / 1101 / 1102 | Information / **Warning** / Debug | Step succeeded / **failed** / skipped | Step, ServiceId, EndpointId, Call (method and path **template**, e.g. `GET /contacts/{contactId}`, never the filled-in address), ErrorCode, HttpStatus, DurationMs, Calls, Detail |
 | 1200 DownstreamAuthFailed | Warning | Sign-in to a service failed | ProfileId, ServiceId, Reason |
 | 1201 / 1202 | Information | Credential obtained / invalidated | CacheKey or ProfileId, ExpiresAt or Reason |
 | 1300 ResponseCacheHit | Debug | Served from cache | Level, RecipeOrStep |

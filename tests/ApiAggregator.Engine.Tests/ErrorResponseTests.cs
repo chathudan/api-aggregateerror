@@ -244,6 +244,18 @@ public class ErrorResponseTests
     // ---------------------------------------------------------------- logging
 
     [Fact]
+    public async Task Step_log_lines_name_the_call_by_its_template_and_never_the_values()
+    {
+        var recipe = AbcRecipe();
+        var logger = new CapturingLogger<CompositionExecutor>();
+        await Run(recipe, Healthy(), logger: logger);
+
+        var line = Assert.Single(logger.Entries, e => e.Event.Id == 1100 && e.Message.StartsWith("Step a "));
+        Assert.Contains("(GET /customers/{customerId})", line.Message);
+        Assert.DoesNotContain(logger.Entries, e => e.Message.Contains("C-1")); // the customer id that was sent
+    }
+
+    [Fact]
     public async Task Auth_failure_is_logged_as_StepFailed_and_no_log_line_contains_the_secret()
     {
         var recipe = AbcRecipe();

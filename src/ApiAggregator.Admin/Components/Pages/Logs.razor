@@ -38,6 +38,10 @@
         {
             <span class="tag chip">Correlation: @_correlation <button class="chip-x" title="Show all requests again" @onclick="ClearCorrelation">×</button></span>
         }
+        @if (!string.IsNullOrEmpty(_step))
+        {
+            <span class="tag chip">Step: @_step <button class="chip-x" title="Show every step again" @onclick="ClearStep">×</button></span>
+        }
         <span class="@StatusClass(_gateway)">Gateway: @_gateway.Text</span>
         <span class="@StatusClass(_admin)">Admin: @_admin.Text</span>
     </div>
@@ -102,6 +106,9 @@
     /// <summary>Pre-sets the correlation filter, e.g. from the "See logs for this test" link.</summary>
     [SupplyParameterFromQuery(Name = "correlation")] public string? CorrelationFromQuery { get; set; }
 
+    /// <summary>Pre-sets the step filter, e.g. from "Logs for this step" in Try it (with the test's correlation id).</summary>
+    [SupplyParameterFromQuery(Name = "step")] public string? StepFromQuery { get; set; }
+
     /// <summary>Pre-sets the level filter: "warn" (warnings and errors) or "error", e.g. from the Home page.</summary>
     [SupplyParameterFromQuery(Name = "level")] public string? LevelFromQuery { get; set; }
 
@@ -126,6 +133,7 @@
     private string LevelFilter { get => _levelFilter; set { _levelFilter = value; Refilter(); } }
     private string Search { get => _search; set { _search = value; Refilter(); } }
     private string? _correlation;
+    private string? _step;
     private bool _paused;
     private int _newWhilePaused;
     private SourceStatus _gateway = new(false, "connecting…");
@@ -137,6 +145,7 @@
     protected override void OnParametersSet()
     {
         if (!string.IsNullOrEmpty(CorrelationFromQuery)) _correlation = CorrelationFromQuery;
+        if (!string.IsNullOrEmpty(StepFromQuery)) _step = StepFromQuery;
         if (LevelFromQuery is "warn" or "error") _levelFilter = LevelFromQuery;
         Refilter();
     }
@@ -226,6 +235,7 @@
         if (_levelFilter == "warn" && e.Level is not ("Warning" or "Error" or "Critical")) return false;
         if (_levelFilter == "error" && e.Level is not ("Error" or "Critical")) return false;
         if (!string.IsNullOrEmpty(_correlation) && e.CorrelationId != _correlation) return false;
+        if (!string.IsNullOrEmpty(_step) && e.Step != _step) return false;
 
         if (string.IsNullOrWhiteSpace(_search)) return true;
         var text = _search.Trim();
@@ -253,6 +263,7 @@
 
     private void SetCorrelation(string id) { _correlation = id; Refilter(); }
     private void ClearCorrelation() { _correlation = null; Refilter(); }
+    private void ClearStep() { _step = null; Refilter(); }
 
     private static string StatusClass(SourceStatus s) => s.Ok ? "ok-inline" : s.Text.StartsWith("connecting") ? "status" : "bad-inline";
 

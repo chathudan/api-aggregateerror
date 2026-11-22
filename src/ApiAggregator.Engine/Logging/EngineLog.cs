@@ -32,13 +32,14 @@ internal static partial class EngineLog
     // ---- steps
 
     // Information, so the Logs page shows which service endpoint each step called, its HTTP status and time.
+    // {Call} is the endpoint's method and path TEMPLATE ("GET /contacts/{contactId}"), never the filled-in address.
     [LoggerMessage(EventId = 1100, Level = LogLevel.Information,
-        Message = "Step {Step} succeeded: service {ServiceId}, endpoint {EndpointId}, HTTP {HttpStatus}, {DurationMs} ms, {Calls} call(s), fromCache {FromCache}")]
-    public static partial void StepSucceeded(this ILogger logger, string step, string serviceId, string endpointId, int? httpStatus, long durationMs, int calls, bool fromCache);
+        Message = "Step {Step} succeeded: service {ServiceId}, endpoint {EndpointId} ({Call}), HTTP {HttpStatus}, {DurationMs} ms, {Calls} call(s), fromCache {FromCache}")]
+    public static partial void StepSucceeded(this ILogger logger, string step, string serviceId, string endpointId, string call, int? httpStatus, long durationMs, int calls, bool fromCache);
 
     [LoggerMessage(EventId = 1101, Level = LogLevel.Warning,
-        Message = "Step {Step} failed: service {ServiceId}, endpoint {EndpointId}, {ErrorCode}, HTTP {HttpStatus}, {DurationMs} ms. {Detail}")]
-    public static partial void StepFailed(this ILogger logger, string step, string serviceId, string endpointId, string errorCode, int? httpStatus, long durationMs, string? detail);
+        Message = "Step {Step} failed: service {ServiceId}, endpoint {EndpointId} ({Call}), {ErrorCode}, HTTP {HttpStatus}, {DurationMs} ms. {Detail}")]
+    public static partial void StepFailed(this ILogger logger, string step, string serviceId, string endpointId, string call, string errorCode, int? httpStatus, long durationMs, string? detail);
 
     [LoggerMessage(EventId = 1102, Level = LogLevel.Debug,
         Message = "Step {Step} skipped: {Reason}")]
