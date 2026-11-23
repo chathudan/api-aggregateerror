@@ -15,7 +15,9 @@ else
   mode="sample data: samples/config"
 fi
 
-dotnet build ApiAggregator.sln -v quiet
+# No shared compiler/MSBuild servers: one left running from another session (a sandbox, an IDE, an agent) can lack
+# access to this folder and fail the build with "CS1504 ... .editorconfig ... Access ... denied".
+dotnet build ApiAggregator.sln -v quiet --disable-build-servers
 
 pids=()
 trap 'kill "${pids[@]}" 2>/dev/null' EXIT INT TERM
