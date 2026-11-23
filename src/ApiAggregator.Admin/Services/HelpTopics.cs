@@ -35,6 +35,7 @@ public static class HelpTopics
         ["before"] = "add-service#before",
         ["sign-in"] = "add-service#sign-in",
         ["secrets"] = "add-service#secrets",
+        ["certificate"] = "add-service#certificate",
         ["add-endpoint"] = "add-service#by-hand",
         ["signing-in"] = "start#roles",
         ["history"] = "publish#history",

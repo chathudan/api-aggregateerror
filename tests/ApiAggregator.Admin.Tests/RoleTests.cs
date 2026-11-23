@@ -5,9 +5,11 @@ using System.Security.Claims;
 using System.Text.Json;
 using ApiAggregator.Admin.Application;
 using ApiAggregator.Admin.Hosting;
+using ApiAggregator.Admin.Services;
 using ApiAggregator.Engine.Auth;
 using ApiAggregator.Engine.Config;
 using ApiAggregator.Engine.Model;
+using ApiAggregator.Engine.Validation;
 using ApiAggregator.TestSupport;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -77,6 +79,95 @@ public sealed class RoleTests(AdminApp app) : IClassFixture<AdminApp>
             Endpoints = [new ApiEndpoint { Id = "get", Path = "/x", AuthProfileId = "missing-signin" }]
         };
         Assert.Equal(FailureKind.BadRequest, (await Service.SaveServiceAsync(Author, service.Id, endpointOnly)).Failure?.Kind);
+    }
+
+    // ---------------------------------------------------------------- service certificates (ADR 0018)
+
+    private static ApiService SelfSigned(string id, ServiceCertificates certificates, string baseUrl = "https://selfsigned.test/api") => new()
+    {
+        Id = id, Name = "Self-signed", BaseUrl = baseUrl, Certificates = certificates,
+        Endpoints = [new ApiEndpoint { Id = "get", Path = "/x" }]
+    };
+
+    [Fact]
+    public async Task A_service_trusting_its_own_certificate_by_fingerprint_is_saved_and_kept()
+    {
+        var fingerprint = string.Join(':', Enumerable.Repeat("3F", 32));
+        var result = await Service.SaveServiceAsync(Author, "pinned", SelfSigned("pinned", new ServiceCertificates { Trusted = [fingerprint] }));
+
+        Assert.True(result.Ok, result.Failure?.Message);
+        var saved = (await app.Services.GetRequiredService<IConfigStore>().GetSnapshotAsync()).GetService("pinned");
+        Assert.Equal([fingerprint], saved?.Certificates?.Trusted);
+    }
+
+    [Fact]
+    public void Renaming_a_service_or_changing_its_endpoints_keeps_its_certificate_settings()
+    {
+        var service = SelfSigned("keep", new ServiceCertificates { Trusted = [new string('B', 64)] });
+
+        Assert.Same(service.Certificates, service.With(name: "New name").Certificates);
+        Assert.Same(service.Certificates, service.With(endpoints: []).Certificates);
+        Assert.Null(service.With(clearCertificates: true).Certificates);
+    }
+
+    [Fact]
+    public async Task Accepting_any_certificate_is_refused_outside_development()
+    {
+        // AdminApp runs as Production.
+        var result = await Service.SaveServiceAsync(Author, "any-cert", SelfSigned("any-cert", new ServiceCertificates { AcceptAny = true }));
+
+        Assert.Equal(FailureKind.BadRequest, result.Failure?.Kind);
+        Assert.StartsWith("Accepting any certificate is allowed only in Development.", result.Failure?.Message);
+        Assert.Null((await app.Services.GetRequiredService<IConfigStore>().GetSnapshotAsync()).GetService("any-cert"));
+        Assert.False(Service.GetCapabilities(Author).Value?.CanAcceptAnyCertificate);
+    }
+
+    [Fact]
+    public async Task A_fingerprint_that_is_not_one_is_refused_with_how_to_get_it()
+    {
+        var result = await Service.SaveServiceAsync(Author, "bad-pin", SelfSigned("bad-pin", new ServiceCertificates { Trusted = ["copy-paste-mistake"] }));
+
+        Assert.Equal(FailureKind.BadRequest, result.Failure?.Kind);
+        Assert.Equal("'copy-paste-mistake' isn't a SHA-256 fingerprint. Use Read certificate to get it: 64 characters, 0-9 and A-F (colons are fine).", result.Failure?.Message);
+    }
+
+    [Fact]
+    public async Task Reading_a_certificate_needs_the_author_role_and_an_https_service()
+    {
+        var nobody = new AdminActor("nobody", null, IsAuthor: false, IsPublisher: false);
+        Assert.Equal(FailureKind.Forbidden, (await Service.ReadServiceCertificateAsync(nobody, "people")).Failure?.Kind);
+
+        // people.test is plain http: nothing is connected to.
+        var plain = await Service.ReadServiceCertificateAsync(Author, "people");
+        Assert.Equal(FailureKind.BadRequest, plain.Failure?.Kind);
+        Assert.Equal("people uses a plain http address, which has no certificate. Certificates only apply to https.", plain.Failure?.Message);
+
+        // Through /admin/* the same way, and only for a saved service (it can't be pointed at any address).
+        var client = app.ClientWithToken("aggregator.author");
+        Assert.Equal(HttpStatusCode.NotFound, (await client.GetAsync("/admin/services/no-such-service/certificate")).StatusCode);
+    }
+
+    [Fact]
+    public async Task Reading_a_self_signed_certificate_shows_its_fingerprint_and_that_trusting_it_counts()
+    {
+        var server = new SelfSignedServer();
+        await server.InitializeAsync();
+        try
+        {
+            var display = CertificateRules.Display(server.Fingerprint);
+            await Service.SaveServiceAsync(Author, "read-cert", SelfSigned("read-cert", new ServiceCertificates(), server.Url));
+
+            var first = (await Service.ReadServiceCertificateAsync(Author, "read-cert")).Value!;
+            Assert.Equal("CN=localhost", first.Subject);
+            Assert.Equal(display, first.Fingerprint);
+            Assert.False(first.TrustedByMachine);
+            Assert.False(first.TrustedByService);
+            Assert.Equal("No authority this machine trusts signed it (a test server's own certificate looks like this).", first.Problem);
+
+            await Service.SaveServiceAsync(Author, "read-cert", SelfSigned("read-cert", new ServiceCertificates { Trusted = [display] }, server.Url));
+            Assert.True((await Service.ReadServiceCertificateAsync(Author, "read-cert")).Value!.TrustedByService);
+        }
+        finally { await server.DisposeAsync(); }
     }
 
     private static CallerContext Caller() => CallerContext.Anonymous("try-1");

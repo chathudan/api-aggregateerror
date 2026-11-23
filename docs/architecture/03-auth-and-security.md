@@ -70,6 +70,7 @@ puts a password, secret, token or key value in plain text.
 | Header injection (CR/LF) | Rejected; 4 KB limit; security headers can't be bound | `RequestBuilder`, `RecipeValidator` |
 | Session leakage between users | `UseCookies = false` (no shared cookie jar); per-caller cache keys | `ServiceCollectionExtensions`, `CacheKeys` |
 | Credential replay to another host | `AllowAutoRedirect = false` | `ServiceCollectionExtensions` |
+| Talking to the wrong server over https | The machine's certificate checks, always. Beyond them only what a service names: an exact certificate by SHA-256 fingerprint (any environment), or "accept any" (Development only; refused when saved and ignored when loaded elsewhere). Per host name, because connections are shared per host. Applies to service calls, sign-in calls and spec downloads ([ADR 0018](../adr/0018-service-certificates.md)) | `DownstreamCertificates`, `CertificateRules` |
 | ReDoS in input patterns | Non-backtracking regex engine (time grows linearly with the input, no limit needed); patterns it can't run (lookarounds, backreferences) get a 250 ms limit. Values are at most 200 characters by default | `InputBinder`, `RecipeValidator` |
 | Huge or slow downstream responses | 5 MB cap, per-step and per-recipe timeouts | `CompositionExecutor` |
 | Fan-out amplification | `forEach` capped at 100 items with bounded concurrency; 25 steps max | `CompositionExecutor`, `RecipeValidator` |

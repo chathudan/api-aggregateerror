@@ -57,6 +57,14 @@ switch (args[0])
             if (!result.IsValid) failed++;
         }
         foreach (var (where, message) in SignInReferences.All(snapshot)) { Console.WriteLine($"FAIL {where}: {message}"); failed++; }
+        // Certificate settings (ADR 0018). "Accept any certificate" is a note here, not a failure: the files may be for
+        // Development, where it's allowed. The admin app refuses it elsewhere, and the gateway ignores it there.
+        foreach (var service in snapshot.Services.OrderBy(s => s.Id))
+        {
+            foreach (var problem in CertificateRules.Problems(service, isDevelopment: true)) { Console.WriteLine($"FAIL services.{service.Id}: {problem}"); failed++; }
+            if (service.Certificates?.AcceptAny == true)
+                Console.WriteLine($"NOTE services.{service.Id}: accepts any certificate. Honoured only in Development; elsewhere its certificate is checked as usual.");
+        }
         var auth = host.Services.GetRequiredService<DownstreamAuthenticator>();
         foreach (var profile in snapshot.AuthProfiles)
             foreach (var problem in auth.Check(profile)) { Console.WriteLine($"FAIL auth-profile {profile.Id}: {problem}"); failed++; }

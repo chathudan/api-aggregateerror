@@ -212,6 +212,7 @@ here (401). Roles are checked by the endpoint policy and again by `AdminService`
 |---|---|---|
 | `GET /admin/services`, `PUT /admin/services/{id}` | author | List and save services |
 | `GET /admin/services/{id}/usage` | author | Published and draft endpoints that call the service |
+| `GET /admin/services/{id}/certificate` | author | The certificate the saved service's https address presents: subject, issuer, dates, SHA-256 fingerprint, whether the machine or the service's settings trust it, and why not in plain English. A TLS handshake only, nothing sent; only a saved service's own address (ADR 0018). Trusting it is a `PUT /admin/services/{id}` with `certificates.trusted` |
 | `POST /admin/services/{id}/try` `{ "endpoint", "values", "body" }` | author | "Send a test call": calls an endpoint that isn't saved yet once, with the service's sign-in, through the executor against a copy of the configuration (all the usual checks; `values` keyed `path.x`, `query.x`, `header.X`, never read as `{{ }}`). Returns the test outcome with the call's details (ADR 0016). Saves nothing |
 | `DELETE /admin/services/{id}` | author | Delete a service. 409 with the endpoint list while a published one uses it |
 | `POST /admin/services/{id}/openapi/preview` · `/import` | author | OpenAPI import |

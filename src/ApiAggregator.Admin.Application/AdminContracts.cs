@@ -47,7 +47,16 @@ public sealed record ServiceDeleted(string Id, List<RecipeRef> DraftsAffected);
 public sealed record AuthKindInfo(string Kind, IReadOnlyList<string> RequiredSettings);
 
 /// <summary>What this person may do on this installation. Pages use it to hide buttons; the service checks anyway.</summary>
-public sealed record Capabilities(bool SampleData, bool CanPublish, bool RequireTestBeforePublish, bool CanSaveSecrets, IReadOnlyList<AuthKindInfo> AuthKinds);
+public sealed record Capabilities(bool SampleData, bool CanPublish, bool RequireTestBeforePublish, bool CanSaveSecrets, IReadOnlyList<AuthKindInfo> AuthKinds,
+    bool CanAcceptAnyCertificate = false);
+
+/// <summary>
+/// The certificate a service presents (ADR 0018), for a person to compare with the one its owner gives them before
+/// trusting it. <see cref="Problem"/> says in plain English why the machine doesn't trust it; null when it does.
+/// </summary>
+public sealed record ServiceCertificate(
+    string Subject, string Issuer, DateTimeOffset ValidFrom, DateTimeOffset ValidUntil, string Fingerprint,
+    bool TrustedByMachine, bool TrustedByService, string? Problem);
 
 public enum SignInState { NotChecked, SignedIn, SettingsOk, Failed }
 

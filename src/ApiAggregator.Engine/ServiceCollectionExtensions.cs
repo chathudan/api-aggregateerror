@@ -7,6 +7,8 @@ using ApiAggregator.Engine.Routing;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 
 namespace ApiAggregator.Engine;
 
@@ -38,23 +40,30 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IAuthStep, SessionLoginStep>();
         services.AddSingleton<DownstreamAuthenticator>();
 
+        // "Accept any certificate" is honoured only in Development (ADR 0018). Without a host environment (a bare
+        // container in a test) it counts as not Development.
+        services.TryAddSingleton(sp => new DownstreamCertificates(
+            sp.GetService<IHostEnvironment>()?.IsDevelopment() == true, sp.GetService<ILogger<DownstreamCertificates>>()));
+
         services.AddSingleton<CompositionExecutor>();
         services.AddSingleton<RecipeRouter>();
 
         // Security-relevant handler settings for every downstream call:
         //  - UseCookies = false: no shared cookie jar, so one user's session can never leak to another.
         //  - AllowAutoRedirect = false: credentials are never replayed to a redirect target.
-        //  - PooledConnectionLifetime: picks up DNS changes; connections are reused for speed.
+        //  - PooledConnectionLifetime: picks up DNS changes (and certificate settings); connections are reused for speed.
+        //  - SslOptions: the machine's trusted authorities, plus only what a service's certificate settings name (ADR 0018).
         foreach (var name in new[] { EngineHttpClients.Downstream, EngineHttpClients.Auth })
         {
             services.AddHttpClient(name)
-                .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler
+                .ConfigurePrimaryHttpMessageHandler(sp => new SocketsHttpHandler
                 {
                     UseCookies = false,
                     AllowAutoRedirect = false,
                     AutomaticDecompression = DecompressionMethods.All,
                     PooledConnectionLifetime = TimeSpan.FromMinutes(5),
-                    ConnectTimeout = TimeSpan.FromSeconds(5)
+                    ConnectTimeout = TimeSpan.FromSeconds(5),
+                    SslOptions = { RemoteCertificateValidationCallback = sp.GetRequiredService<DownstreamCertificates>().Check }
                 })
                 .ConfigureHttpClient(c => c.Timeout = Timeout.InfiniteTimeSpan) // the engine applies per-step timeouts
                 // The default HttpClient logging writes full URLs (including query values) at Information.

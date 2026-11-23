@@ -182,7 +182,9 @@ public static partial class Slug
         return spaced.Length == 0 ? id : char.ToUpperInvariant(spaced[0]) + spaced[1..];
     }
 
-    public static ApiService With(this ApiService s, List<ApiEndpoint>? endpoints = null, string? authProfileId = null, bool clearAuth = false, string? name = null) => new()
+    /// <summary>A copy with some parts changed. Every other setting is kept (add new ApiService properties here).</summary>
+    public static ApiService With(this ApiService s, List<ApiEndpoint>? endpoints = null, string? authProfileId = null, bool clearAuth = false, string? name = null,
+        ServiceCertificates? certificates = null, bool clearCertificates = false) => new()
     {
         Id = s.Id,
         Name = name ?? s.Name,
@@ -190,6 +192,7 @@ public static partial class Slug
         AuthProfileId = clearAuth ? null : authProfileId ?? s.AuthProfileId,
         TimeoutMs = s.TimeoutMs,
         OpenApiSource = s.OpenApiSource,
+        Certificates = clearCertificates ? null : certificates ?? s.Certificates,
         Endpoints = endpoints ?? s.Endpoints
     };
 

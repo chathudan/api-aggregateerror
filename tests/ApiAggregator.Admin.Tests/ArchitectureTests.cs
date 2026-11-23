@@ -17,7 +17,7 @@ public sealed class ArchitectureTests
     private static readonly Type[] Forbidden =
     [
         typeof(IConfigStore), typeof(FileConfigStore), typeof(CompositionExecutor), typeof(DownstreamAuthenticator),
-        typeof(ISecretResolver), typeof(OpenApiImporter)
+        typeof(ISecretResolver), typeof(OpenApiImporter), typeof(DownstreamCertificates)
     ];
 
     [Fact]

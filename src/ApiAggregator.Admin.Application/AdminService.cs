@@ -31,6 +31,7 @@ public sealed class AdminService(
     ISecretResolver secrets,
     ISecretWriter secretWriter,
     AdminOptions options,
+    DownstreamCertificates certificates,
     ILogger<AdminService> log)
 {
     private readonly ConcurrentDictionary<string, string> _passedTests = new(); // recipe id -> hash of the draft that last passed Try it
@@ -71,6 +72,8 @@ public sealed class AdminService(
             return Refuse.BadRequest("Base URL must be an http or https address.");
         if (string.IsNullOrWhiteSpace(service.Name) || service.Name.Length > 100 || service.Name.Any(char.IsControl))
             return Refuse.BadRequest("Give the service a name of up to 100 characters.");
+        if (CertificateRules.Problems(service, options.IsDevelopment).FirstOrDefault() is { } certificateProblem)
+            return Refuse.BadRequest(certificateProblem);
 
         // A sign-in that doesn't exist would leave the service called without credentials: refuse it here.
         var config = await store.GetSnapshotAsync(ct);
@@ -80,6 +83,43 @@ public sealed class AdminService(
 
         await store.SaveServiceAsync(service, ct);
         return service;
+    }
+
+    /// <summary>
+    /// The certificate the service's base address presents, to compare with the one its owner gives before trusting it
+    /// (ADR 0018). Only a saved service's own address, so this can't be pointed anywhere else. Nothing is sent to it.
+    /// </summary>
+    public async Task<AdminResult<ServiceCertificate>> ReadServiceCertificateAsync(AdminActor actor, string id, CancellationToken ct = default)
+    {
+        if (NeedsAuthor(actor) is { } no) return no;
+        var service = (await store.GetSnapshotAsync(ct)).GetService(id);
+        if (service is null) return Refuse.NotFound($"Service '{id}' not found.");
+        var name = string.IsNullOrWhiteSpace(service.Name) ? service.Id : service.Name;
+        if (!Uri.TryCreate(service.BaseUrl, UriKind.Absolute, out var address) || address.Scheme != Uri.UriSchemeHttps)
+            return Refuse.BadRequest($"{name} uses a plain http address, which has no certificate. Certificates only apply to https.");
+
+        try
+        {
+            var (certificate, errors) = await CertificateReader.ReadAsync(address, ct);
+            using (certificate)
+            {
+                var fingerprint = CertificateRules.Fingerprint(certificate);
+                var certs = service.Certificates;
+                var trustedByService = certs is not null
+                    && ((certs.AcceptAny && options.IsDevelopment) || certs.Trusted.Any(t => CertificateRules.Normalize(t) == fingerprint));
+                log.LogInformation("Certificate of service {ServiceId} read by {Subject}", id, actor.Subject);
+                return new ServiceCertificate(certificate.Subject, certificate.Issuer, certificate.NotBefore, certificate.NotAfter,
+                    CertificateRules.Display(fingerprint), errors == System.Net.Security.SslPolicyErrors.None, trustedByService,
+                    CertificateReader.Problem(certificate, errors, address.IdnHost, DateTimeOffset.Now));
+            }
+        }
+        catch (Exception ex) when (ex is System.Net.Sockets.SocketException or IOException or System.Security.Authentication.AuthenticationException
+                                       || (ex is OperationCanceledException && !ct.IsCancellationRequested))
+        {
+            // The type only: connection messages can name internal addresses, and there's nothing in them a person can act on.
+            log.LogInformation("Couldn't read the certificate of service {ServiceId}: {Error}", id, ex.GetType().Name);
+            return Refuse.BadRequest($"Couldn't read the certificate of {address.Authority}. Check the base address, and that the service is running and answers https.");
+        }
     }
 
     /// <summary>Which aggregated endpoints call this service. Shown before deleting it.</summary>
@@ -115,6 +155,7 @@ public sealed class AdminService(
     public async Task<AdminResult<ImportPreview>> PreviewOpenApiAsync(AdminActor actor, OpenApiImportRequest request, CancellationToken ct = default)
     {
         if (NeedsAuthor(actor) is { } no) return no;
+        certificates.Use(await store.GetSnapshotAsync(ct)); // a spec on a service's host gets its certificate settings
         try { return await importer.PreviewAsync(request, ct); }
         catch (OpenApiImportException ex) { return Refuse.BadRequest(ex.Message); }
     }
@@ -124,6 +165,7 @@ public sealed class AdminService(
         if (NeedsAuthor(actor) is { } no) return no;
         var service = (await store.GetSnapshotAsync(ct)).GetService(id);
         if (service is null) return Refuse.NotFound($"Service '{id}' not found. Create it first.");
+        certificates.Use(await store.GetSnapshotAsync(ct));
         try
         {
             var updated = await importer.ImportAsync(service, request, ct);
@@ -150,7 +192,9 @@ public sealed class AdminService(
             options.RequireTestBeforePublish,
             // Development: secret values may be stored. Elsewhere the UI shows the secret NAME to put in Key Vault.
             options.CanSaveSecrets,
-            AuthKinds());
+            AuthKinds(),
+            // Accepting any certificate from a service is a Development-only setting (ADR 0018).
+            CanAcceptAnyCertificate: options.IsDevelopment);
     }
 
     public AdminResult<IReadOnlyList<AuthKindInfo>> GetAuthKinds(AdminActor actor) =>
@@ -629,6 +673,7 @@ public sealed class AdminService(
     {
         // The address to try: a service that uses this sign-in, itself or for one of its endpoints.
         var service = config.Services.FirstOrDefault(s => s.AuthProfileId == profile.Id || s.Endpoints.Any(e => e.AuthProfileId == profile.Id));
+        certificates.Use(config); // a sign-in address on a service's host gets that service's certificate settings (ADR 0018)
         using var probe = new HttpRequestMessage(HttpMethod.Get, service?.BaseUrl ?? "http://localhost/");
         var signsInOnline = profile.Steps.Any(s => s.Kind is "SessionLogin" or "OAuthClientCredentials");
         try

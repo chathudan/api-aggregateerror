@@ -75,6 +75,20 @@ internal static partial class EngineLog
         Message = "Configuration reload failed; still serving the previous version")]
     public static partial void ConfigReloadFailed(this ILogger logger, Exception exception);
 
+    // ---- service certificates (ADR 0018). Service ids and host names come from the configuration, not from requests.
+
+    [LoggerMessage(EventId = 1410, Level = LogLevel.Warning,
+        Message = "Service {ServiceId} is set to accept any certificate from {Host}. That is honoured only in Development, so its certificate is checked as usual")]
+    public static partial void AcceptAnyCertificateIgnored(this ILogger logger, string serviceId, string host);
+
+    [LoggerMessage(EventId = 1411, Level = LogLevel.Warning,
+        Message = "Service {ServiceId} accepts any certificate from {Host} (Development only). Calls to it can be intercepted")]
+    public static partial void AcceptAnyCertificateInUse(this ILogger logger, string serviceId, string host);
+
+    [LoggerMessage(EventId = 1412, Level = LogLevel.Warning,
+        Message = "The certificate of {Host} isn't trusted ({Errors}) and no service trusts it by fingerprint")]
+    public static partial void CertificateRefused(this ILogger logger, string host, string errors);
+
     // ---- combine (merging records from several steps). Counts only: record values can be personal data.
 
     [LoggerMessage(EventId = 1500, Level = LogLevel.Information,

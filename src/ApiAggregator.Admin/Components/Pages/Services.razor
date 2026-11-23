@@ -123,6 +123,8 @@ else if (_services.Count > 0)
                         <code>@s.BaseUrl</code> ·
                         @(profile is null ? "No sign-in" : string.Join(" + ", profile.Steps.Select(st => SignInKinds.Get(st.Kind).Title)))
                         @if (SignInDisplay.Ago(signIn.CheckedAt) is { Length: > 0 } ago) { <span> · @ago</span> }
+                        @if (s.Certificates is { AcceptAny: true }) { <span> · Accepts any certificate (Development only)</span> }
+                        else if (s.Certificates is { Trusted.Count: > 0 } own) { <span> · Trusts @own.Trusted.Count certificate@(own.Trusted.Count == 1 ? "" : "s") of its own</span> }
                     </p>
                 </div>
                 <div class="inline">
@@ -133,6 +135,7 @@ else if (_services.Count > 0)
                         <summary class="button">More<span class="visually-hidden"> actions for @s.Name</span></summary>
                         <div class="menu">
                             <button class="link" @onclick="() => Open(s.Id, Panel.Import)">Import from OpenAPI</button>
+                            <button class="link" @onclick="() => Open(s.Id, Panel.Certificate)">Certificate</button>
                             <button class="link" @onclick="() => OpenRename(s)">Rename</button>
                             <button class="link danger-text" @onclick="() => OpenDelete(s)">Delete service</button>
                         </div>
@@ -325,6 +328,68 @@ else if (_services.Count > 0)
                 </div>
             }
 
+            @* --- certificate (ADR 0018) *@
+            @if (_openFor == s.Id && _panel == Panel.Certificate)
+            {
+                var trusted = s.Certificates?.Trusted ?? [];
+                <div class="panel">
+                    <h3>Certificate of @s.Name <HelpLink Topic="certificate" /></h3>
+                    @if (!s.BaseUrl.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
+                    {
+                        <p class="muted">@s.Name uses a plain http address, which has no certificate. Nothing to set here.</p>
+                    }
+                    else
+                    {
+                        <p class="hint">A service whose certificate comes from an authority this machine trusts needs nothing here. A test server often signs its own: read it, compare the fingerprint with the one the service's owner gives you, then trust it.</p>
+                        <button class="button" disabled="@_busy" @onclick="() => ReadCertificate(s)">@(_busy ? "Reading…" : "Read certificate")</button>
+                        @if (_certificate is { } c)
+                        {
+                            <dl class="facts" role="status">
+                                <dt>Issued to</dt><dd>@c.Subject</dd>
+                                <dt>Issued by</dt><dd>@c.Issuer</dd>
+                                <dt>Valid</dt><dd>@c.ValidFrom.ToString("yyyy-MM-dd") to @c.ValidUntil.ToString("yyyy-MM-dd")</dd>
+                                <dt>SHA-256 fingerprint</dt><dd><code>@c.Fingerprint</code></dd>
+                                <dt>Trusted</dt>
+                                <dd>
+                                    @if (c.TrustedByMachine) { <StatusPill State="StatusPill.Kind.Ok" Text="By this machine" /> <span>Nothing to do.</span> }
+                                    else if (c.TrustedByService) { <StatusPill State="StatusPill.Kind.Ok" Text="By this service's settings" /> <span>@c.Problem</span> }
+                                    else { <StatusPill State="StatusPill.Kind.Warn" Text="Not trusted" /> <span>@c.Problem</span> }
+                                </dd>
+                            </dl>
+                            @if (!c.TrustedByMachine && !c.TrustedByService)
+                            {
+                                <div class="inline">
+                                    <button class="button primary" @onclick="() => TrustCertificate(s, c.Fingerprint)">Trust this certificate</button>
+                                    <span class="hint">Only if the fingerprint matches the one the service's owner gave you. Otherwise someone may be in between.</span>
+                                </div>
+                            }
+                        }
+                        @if (trusted.Count > 0)
+                        {
+                            <h4>Certificates this service trusts</h4>
+                            <ul>
+                                @foreach (var f in trusted)
+                                {
+                                    <li><code>@(CertificateRules.Normalize(f) is { } n ? CertificateRules.Display(n) : f)</code>
+                                        <button class="link" @onclick="() => UntrustCertificate(s, f)">Remove<span class="visually-hidden"> this certificate</span></button></li>
+                                }
+                            </ul>
+                            <p class="hint">When the server gets a new certificate, trust the new one before removing the old.</p>
+                        }
+                        @if (_canAcceptAny || s.Certificates?.AcceptAny == true)
+                        {
+                            <label class="check">
+                                <input type="checkbox" checked="@(s.Certificates?.AcceptAny == true)" disabled="@(!_canAcceptAny)" @onchange="e => SetAcceptAny(s, (bool)e.Value!)" />
+                                Accept any certificate from @(new Uri(s.BaseUrl).Host) (Development only)
+                            </label>
+                            <p class="hint">For a test server on your own machine only: anyone in between could read and change the calls. Outside Development it can't be saved, and the gateway ignores it.</p>
+                        }
+                    }
+                    <Problems Items="_problems" />
+                    <button class="link" @onclick="Close">Close</button>
+                </div>
+            }
+
             @* --- import *@
             @if (_openFor == s.Id && _panel == Panel.Import)
             {
@@ -360,7 +425,7 @@ else if (_services.Count > 0)
 }
 
 @code {
-    private enum Panel { None, Endpoint, SignIn, Import, Rename, Delete }
+    private enum Panel { None, Endpoint, SignIn, Import, Rename, Delete, Certificate }
 
     /// <summary>"/services?add=1" opens Add service straight away (the Home page's quick action).</summary>
     [SupplyParameterFromQuery(Name = "add")] public int? AddFromQuery { get; set; }
@@ -369,7 +434,8 @@ else if (_services.Count > 0)
     private List<AuthProfile> _profiles = [];
     private List<SignInStatus> _signIns = [];
     private AdminActor _me = AdminActor.Anonymous;
-    private bool _canSaveSecrets;
+    private bool _canSaveSecrets, _canAcceptAny;
+    private ServiceCertificate? _certificate;
     private NewServiceForm? _newService;
     private int _stage = 1;
     private NewEndpointForm _newEndpoint = new();
@@ -391,7 +457,9 @@ else if (_services.Count > 0)
     protected override async Task OnInitializedAsync()
     {
         _me = await User.ActorAsync();
-        _canSaveSecrets = Admin.GetCapabilities(_me).Value?.CanSaveSecrets == true;
+        var capabilities = Admin.GetCapabilities(_me).Value;
+        _canSaveSecrets = capabilities?.CanSaveSecrets == true;
+        _canAcceptAny = capabilities?.CanAcceptAnyCertificate == true;
         await Reload();
         if (AddFromQuery == 1) StartNewService();
     }
@@ -421,6 +489,7 @@ else if (_services.Count > 0)
     {
         _openFor = serviceId; _panel = panel; _problems = [];
         _tryResult = null; _tryProblems = [];
+        _certificate = null;
         _newEndpoint = new NewEndpointForm();
         _candidates = null; _selected.Clear();
         _specUrl = _services?.FirstOrDefault(s => s.Id == serviceId)?.OpenApiSource ?? "";
@@ -618,6 +687,44 @@ else if (_services.Count > 0)
         Close();
         _expanded.Add(s.Id);
         await Reload();
+    }
+
+    // ------------------------------------------------------------------ certificate (ADR 0018)
+
+    private async Task ReadCertificate(ApiService s)
+    {
+        _busy = true;
+        try
+        {
+            var result = await Admin.ReadServiceCertificateAsync(_me, s.Id);
+            _certificate = result.Value;
+            _problems = result.Value is null ? [result.Failure?.Message ?? "Couldn't read the certificate."] : [];
+        }
+        finally { _busy = false; }
+    }
+
+    private Task TrustCertificate(ApiService s, string fingerprint) =>
+        SaveCertificates(s, (s.Certificates?.Trusted ?? []).Append(fingerprint).Distinct().ToList(), s.Certificates?.AcceptAny == true,
+            $"{s.Name} now trusts this certificate. New calls use it straight away.");
+
+    private Task UntrustCertificate(ApiService s, string fingerprint) =>
+        SaveCertificates(s, (s.Certificates?.Trusted ?? []).Where(f => f != fingerprint).ToList(), s.Certificates?.AcceptAny == true,
+            $"Removed. {s.Name} no longer trusts that certificate (connections already open close within 5 minutes).");
+
+    private Task SetAcceptAny(ApiService s, bool on) =>
+        SaveCertificates(s, s.Certificates?.Trusted ?? [], on,
+            on ? $"{s.Name} accepts any certificate, in Development only." : $"{s.Name}'s certificate is checked again.");
+
+    private async Task SaveCertificates(ApiService s, List<string> trusted, bool acceptAny, string done)
+    {
+        var updated = trusted.Count == 0 && !acceptAny
+            ? s.With(clearCertificates: true)
+            : s.With(certificates: new ServiceCertificates { Trusted = trusted, AcceptAny = acceptAny });
+        if (await SaveServiceAsync(updated) is { } error) { _problems = [error]; return; }
+        _problems = [];
+        Toasts.Success(done);
+        await Reload();
+        if (_certificate is not null) await ReadCertificate(_services!.First(x => x.Id == s.Id));
     }
 
     // ------------------------------------------------------------------ rename, delete

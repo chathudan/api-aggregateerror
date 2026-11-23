@@ -16,6 +16,7 @@ using ApiAggregator.Engine;
 using ApiAggregator.Engine.Authoring;
 using ApiAggregator.Engine.BrowserAccess;
 using ApiAggregator.Engine.Config;
+using ApiAggregator.Engine.Execution;
 using ApiAggregator.Engine.Logging.Live;
 using ApiAggregator.Hosting;
 
@@ -40,7 +41,13 @@ builder.Services.AddAggregatorEngine(builder.Configuration);
 builder.Services.AddSingleton<SourceCatalog>();
 builder.Services.AddSingleton<OpenApiImporter>();
 builder.Services.AddHttpClient(OpenApiImporter.HttpClientName)
-    .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler { AllowAutoRedirect = false, UseCookies = false })
+    // The same certificate rules as the calls to services (ADR 0018): a spec on a service's host gets its settings.
+    .ConfigurePrimaryHttpMessageHandler(sp => new SocketsHttpHandler
+    {
+        AllowAutoRedirect = false,
+        UseCookies = false,
+        SslOptions = { RemoteCertificateValidationCallback = sp.GetRequiredService<DownstreamCertificates>().Check }
+    })
     .ConfigureHttpClient(c => c.Timeout = TimeSpan.FromSeconds(10))
     .RemoveAllLoggers(); // no default HttpClient logging: it would write full URLs (see ServiceCollectionExtensions)
 builder.Services.AddSingleton<ISecretWriter, LocalSecretWriter>();

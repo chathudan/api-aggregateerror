@@ -328,6 +328,38 @@ sign-in that doesn't exist is never called without credentials instead: the admi
 **Check before publishing** and `aggregator validate` report it, and if it still happens the step fails with
 `auth_failed`.
 
+## A test server with its own certificate
+
+Calls to an `https://` service check its certificate, as a browser does. Test and development servers often have a
+certificate they signed themselves (or one for another name), so every call fails with
+**"… couldn't be reached securely."** Production services normally need nothing here.
+
+To trust such a certificate, open **More › Certificate** on the service:
+
+1. Choose **Read certificate**. It shows who the certificate is issued to, by whom, its dates and its **SHA-256
+   fingerprint**. Nothing is sent to the service.
+2. Ask the service's owner for the fingerprint (`openssl x509 -noout -fingerprint -sha256 -in cert.pem` prints it)
+   and compare. **Only if they match**, choose **Trust this certificate**. If they don't, someone may be in between:
+   don't trust it, tell the owner.
+3. New calls use it straight away; no restart.
+
+Only that exact certificate is accepted, and only for that service's host name, so this is safe in every
+environment. When the server gets a new certificate, trust the new one **before** you remove the old one, or calls
+fail in between. Up to 10 certificates per service. In the service settings it looks like this:
+
+```json
+{ "id": "orders-test", "baseUrl": "https://orders-test.internal/api",
+  "certificates": { "trusted": [ "3F:A1:…:9C" ] } }
+```
+
+**Accept any certificate** is offered only in Development, for a test server on your own machine. Anyone in between
+could read and change those calls, so the admin app refuses to save it elsewhere, and the gateway ignores it there
+(it logs a warning, and checks the certificate as usual). `aggregator validate` prints a `NOTE` for it.
+
+A spec on such a server can't be read until its certificate is trusted: add the service with **Enter by hand**, trust
+its certificate, then use **More › Import from OpenAPI**. A sign-in address (login or token) on the same host uses the
+same settings. The design is in [ADR 0018](../adr/0018-service-certificates.md).
+
 ## Secrets
 
 Passwords, keys, client secrets and tokens are **never** stored in `auth-profiles.json`. The file holds

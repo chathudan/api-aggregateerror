@@ -76,6 +76,7 @@ public sealed class OpenApiImporter(IHttpClientFactory httpClientFactory, IConfi
             AuthProfileId = service.AuthProfileId,
             TimeoutMs = service.TimeoutMs,
             OpenApiSource = request.Url ?? "uploaded",
+            Certificates = service.Certificates,
             Endpoints = endpoints.Values.OrderBy(e => e.Path).ThenBy(e => e.Method).ToList()
         };
     }
@@ -96,6 +97,13 @@ public sealed class OpenApiImporter(IHttpClientFactory httpClientFactory, IConfi
             var client = httpClientFactory.CreateClient(HttpClientName);
             byte[] bytes;
             try { bytes = await client.GetByteArrayAsync(url, ct); }
+            catch (HttpRequestException ex) when (ex.HttpRequestError == HttpRequestError.SecureConnectionError)
+            {
+                // ADR 0018: the admin app trusts the same certificates as the services it knows, nothing more.
+                throw new OpenApiImportException(
+                    "The spec's address has a certificate this app doesn't trust. If it's a test server with its own certificate: add the service "
+                    + "with Enter by hand, trust its certificate (More › Certificate), then use More › Import from OpenAPI.", ex);
+            }
             catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException && !ct.IsCancellationRequested)
             {
                 // A wrong address, a sign-in page, a redirect (never followed) or a timeout: say so, never the response.

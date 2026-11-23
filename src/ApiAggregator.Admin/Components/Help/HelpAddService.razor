@@ -59,6 +59,17 @@
 </table>
 <p><strong>Try it before adding it:</strong> type test values next to the path values (and any query or header values), then choose <strong>Send a test call</strong>. The service is called once with its sign-in; nothing is saved. <strong>Use this answer as the sample response</strong> fills the sample for you.</p>
 </section>
+<section id="certificate">
+<h2>A test server with its own certificate <GuideLink Guide="adding-services#a-test-server-with-its-own-certificate" /></h2>
+<p>A service on <code>https://</code> whose certificate no trusted authority signed fails with "couldn't be reached securely". To trust it, open <strong>More › Certificate</strong> on the service:</p>
+<ol>
+    <li>Choose <strong>Read certificate</strong>. It shows who the certificate is for, its dates and its <strong>SHA-256 fingerprint</strong>.</li>
+    <li>Compare the fingerprint with the one the service's owner gives you. Only if they match, choose <strong>Trust this certificate</strong>.</li>
+    <li>When the server gets a new certificate, trust the new one before you remove the old one.</li>
+</ol>
+<p>Only that exact certificate is trusted, for that service's host, so this works in every environment. <strong>Accept any certificate</strong> is offered only in Development, for a test server on your own machine: anyone in between could read and change the calls.</p>
+</section>
+
 <section id="secrets">
 <h2>Passwords and keys <GuideLink Guide="adding-services#secrets" /></h2>
 <ul>

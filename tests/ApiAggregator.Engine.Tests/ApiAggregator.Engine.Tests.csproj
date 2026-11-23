@@ -13,6 +13,8 @@
     <ProjectReference Include="../../src/ApiAggregator.Engine/ApiAggregator.Engine.csproj" />
     <!-- The mock services' people data, so SampleDataTests use exactly what QA sees on :5100. -->
     <Compile Include="../../samples/MockServices/PeopleSamples.cs" Link="Samples/PeopleSamples.cs" />
+    <!-- An https server with its own certificate, for the certificate tests (ADR 0018). -->
+    <Compile Include="../Shared/SelfSignedServer.cs" Link="Shared/SelfSignedServer.cs" />
   </ItemGroup>
   <ItemGroup>
     <Using Include="Xunit" />

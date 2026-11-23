@@ -27,6 +27,9 @@ service (Basic, session login, OAuth/JWT, API key, pass-through) in any combinat
 - **No CR/LF** in header or cookie values. `Authorization`, `Cookie`, `Host` and hop-by-hop headers
   can't be bound (`RecipeValidator.BlockedHeaders`).
 - Downstream HttpClients use `UseCookies = false` and `AllowAutoRedirect = false` (`ServiceCollectionExtensions`).
+- **Certificates are always checked** (ADR 0018). The only exceptions are a service's own settings: an exact
+  certificate by SHA-256 fingerprint, or "accept any", which is honoured **only in Development** (refused when saved,
+  ignored when loaded elsewhere). Never a global "skip certificate checks" switch (`DownstreamCertificates`).
 - **Secrets only as `secret:<name>` references.** Never log, return or cache secret values per user.
   The admin app may *store* a value only in Development (`secrets.local.json` in the config folder, git-ignored) and never returns one.
 - **Caching is off by default and per caller by default.** Keys are hashed and include the recipe
@@ -61,8 +64,8 @@ If a change touches any of these, run the `security-review` skill and add or adj
 | `…/Model` | `Recipe`, `StepDef`, `BindingDef`, `ApiService`, `ApiEndpoint`, `AuthProfile` (init-only) |
 | `…/Expressions` | `ValuePath` (path language), `Transforms`, `Template` (`{{ }}`), `Scope` |
 | `…/Planning` | `ExecutionPlanner`: infers dependencies, groups steps into parallel levels |
-| `…/Validation` | `RecipeValidator`: all plain-English checks |
-| `…/Execution` | `InputBinder`, `RequestBuilder`, `CompositionExecutor`, `Conditions`, `ResponseCache` |
+| `…/Validation` | `RecipeValidator`: all plain-English checks; `CertificateRules` (service certificate settings) |
+| `…/Execution` | `InputBinder`, `RequestBuilder`, `CompositionExecutor`, `Conditions`, `ResponseCache`, `DownstreamCertificates` (TLS check per service host, ADR 0018) |
 | `…/Auth` | `IAuthStep` + `Steps/*`, `DownstreamAuthenticator`, `DownstreamCredentialCache` |
 | `…/Config` | `IConfigStore`, `FileConfigStore` (published / drafts / history / `cors.json`), `RecipeHistoryEntry` (ADR 0012), `ConfigSnapshot` |
 | `…/BrowserAccess` | `OriginRules`, `BrowserAccessPolicy` (CORS for `/bff/*`, ADR 0015): shared by the gateway, the admin app and the CLI |

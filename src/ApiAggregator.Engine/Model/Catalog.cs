@@ -19,7 +19,29 @@ public sealed class ApiService
     /// <summary>Where the endpoints came from: "manual" or the OpenAPI spec URL.</summary>
     public string? OpenApiSource { get; init; }
 
+    /// <summary>
+    /// Certificates to accept from this service beyond the ones the machine trusts, for test servers that signed their
+    /// own (ADR 0018). Null: the usual checks only.
+    /// </summary>
+    public ServiceCertificates? Certificates { get; init; }
+
     public List<ApiEndpoint> Endpoints { get; init; } = [];
+}
+
+/// <summary>
+/// How the gateway checks an https service's certificate when no authority the machine trusts signed it (ADR 0018).
+/// The rule covers the base address's host name: connections are shared per host.
+/// </summary>
+public sealed class ServiceCertificates
+{
+    /// <summary>
+    /// SHA-256 fingerprints of the exact certificates to accept, e.g. "3F:A1:…" (64 hex digits; colons, spaces and
+    /// case don't matter). Allowed everywhere: only that one certificate is accepted, so it's as strict as a normal check.
+    /// </summary>
+    public List<string> Trusted { get; init; } = [];
+
+    /// <summary>Accept any certificate from this host. Development only: elsewhere it is refused when saved and ignored when loaded.</summary>
+    public bool AcceptAny { get; init; }
 }
 
 public sealed class ApiEndpoint

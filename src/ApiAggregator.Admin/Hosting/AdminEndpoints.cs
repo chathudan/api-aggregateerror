@@ -46,6 +46,7 @@ internal static class AdminEndpoints
         // ------------------------------------------------------------ services and endpoints
         admin.MapGet("/services", async (AdminService s, HttpContext h, CancellationToken ct) => (await s.GetServicesAsync(Me(h), ct)).ToHttp());
         admin.MapPut("/services/{id}", async (string id, ApiService body, AdminService s, HttpContext h, CancellationToken ct) => (await s.SaveServiceAsync(Me(h), id, body, ct)).ToHttp());
+        admin.MapGet("/services/{id}/certificate", async (string id, AdminService s, HttpContext h, CancellationToken ct) => (await s.ReadServiceCertificateAsync(Me(h), id, ct)).ToHttp());
         admin.MapGet("/services/{id}/usage", async (string id, AdminService s, HttpContext h, CancellationToken ct) => (await s.GetServiceUsageAsync(Me(h), id, ct)).ToHttp());
         admin.MapDelete("/services/{id}", async (string id, AdminService s, HttpContext h, CancellationToken ct) => (await s.DeleteServiceAsync(Me(h), id, ct)).ToHttp());
         admin.MapPost("/services/{id}/openapi/preview", async (string id, OpenApiImportRequest body, AdminService s, HttpContext h, CancellationToken ct) => (await s.PreviewOpenApiAsync(Me(h), body, ct)).ToHttp());
