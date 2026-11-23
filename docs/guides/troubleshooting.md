@@ -155,7 +155,7 @@ warning and doesn't block publishing.
 | Service … answered 400, code `bad_request` | The service didn't like a value, often a missing required one | Compare the call's address in **Try it** with the owner's example request |
 | … didn't answer in time., code `timeout` | The service is slow, or the step's timeout is too short | Try again; ask the owner; raise the service's timeout |
 | … couldn't be reached., code `unreachable` | Wrong base address, or the service is down or not reachable from the gateway | Check the base address and the network path |
-| … couldn't be reached securely., code `unreachable` | The service's certificate isn't trusted: often a test server that signed its own, or a certificate for another name | On **Services**, **More › Certificate**: read it, compare the fingerprint with the owner's, then trust it ([how](adding-services.md#a-test-server-with-its-own-certificate)) |
+| … couldn't be reached securely., code `unreachable` | The base address says `https://` but the service uses plain http, or its certificate isn't trusted: often a test server that signed its own, or one for another name | Check `http://` vs `https://` first. Otherwise, on **Services**, **More › Certificate**: read it, compare the fingerprint with the owner's, then trust it ([how](adding-services.md#a-test-server-with-its-own-certificate)) |
 | … returned an invalid response. / The response from … was too large. | The answer isn't JSON, or is over 5 MB | Check the endpoint; ask for paging |
 | Not run because '…' failed. [dependency_failed] | An earlier step it needs failed | Fix that step first |
 | Condition not met. (skipped) | **Only run when** was false | Not a problem. Check the condition if you expected it to run |
@@ -168,7 +168,9 @@ warning and doesn't block publishing.
 | That doesn't look like an OpenAPI or Swagger document. | The address returns something else, often a web page. Ask the owner for the JSON or YAML spec address |
 | Importing from '…' isn't allowed. Ask an admin to add it to Admin:OpenApiAllowedHosts. | As it says |
 | Give either a spec URL (http/https) or the spec text. | Paste the address, or the spec itself |
-| The spec's address has a certificate this app doesn't trust. … | Add the service with **Enter by hand**, trust its certificate (**More › Certificate**), then **More › Import from OpenAPI** |
+| … doesn't answer https. If the service uses plain http, write the address with http://… | The address starts with `https://` but the service (for example the local gateway or mocks) uses plain http. Change it to `http://` |
+| The certificate of … isn't trusted. … | Its certificate is shown under the address. Compare the fingerprint with the owner's; only if they match, choose **Trust this certificate and load** |
+| The certificate of … isn't the one you trusted: it may have changed. … | The server now presents another certificate (renewed, or someone in between). Ask the owner for the new fingerprint before trusting it |
 | … isn't a SHA-256 fingerprint. | Use **Read certificate** rather than typing it: 64 characters, 0-9 and A-F |
 | Accepting any certificate is allowed only in Development. … | Trust the exact certificate instead, or ask the owner for one signed by your organisation's authority |
 | Couldn't read the certificate of …. | The base address is wrong, the service is down, or it doesn't answer https |

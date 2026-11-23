@@ -12,3 +12,5 @@ appsettings.*.local.json
 .env
 secrets/
 bench-results/
+# The mock services' self-signed test certificate (samples/MockServices/MockCertificate.cs)
+samples/MockServices/certs/

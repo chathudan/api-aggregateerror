@@ -334,7 +334,13 @@ Calls to an `https://` service check its certificate, as a browser does. Test an
 certificate they signed themselves (or one for another name), so every call fails with
 **"… couldn't be reached securely."** Production services normally need nothing here.
 
-To trust such a certificate, open **More › Certificate** on the service:
+**While adding a service from its spec**, choosing **Load** on such an address shows its certificate instead of the
+operations: who it's issued to, by whom, its dates and its SHA-256 fingerprint. Compare the fingerprint with the
+owner's (below), then choose **Trust this certificate and load**. The spec loads, and when the service's base address
+is on the same host, the certificate is saved with the service, so its calls work too. **More › Import from OpenAPI**
+on an existing service offers the same for one import.
+
+**For a service you already added**, open **More › Certificate** on the service:
 
 1. Choose **Read certificate**. It shows who the certificate is issued to, by whom, its dates and its **SHA-256
    fingerprint**. Nothing is sent to the service.
@@ -356,8 +362,20 @@ fail in between. Up to 10 certificates per service. In the service settings it l
 could read and change those calls, so the admin app refuses to save it elsewhere, and the gateway ignores it there
 (it logs a warning, and checks the certificate as usual). `aggregator validate` prints a `NOTE` for it.
 
-A spec on such a server can't be read until its certificate is trusted: add the service with **Enter by hand**, trust
-its certificate, then use **More › Import from OpenAPI**. A sign-in address (login or token) on the same host uses the
+**Try it with the mocks.** With `./scripts/dev-run.sh` running, the mock services also answer on
+`https://localhost:5101` with a self-signed certificate. The mocks print its fingerprint when they start
+("Mock https certificate (self-signed) SHA-256 fingerprint: …"): that is what the owner would give you.
+1. **Add service › From an OpenAPI spec** with `https://localhost:5101/d/openapi.json`, then **Load**. Its certificate is
+   shown, marked **Not trusted**.
+2. Compare the fingerprint with the one the mocks printed, then choose **Trust this certificate and load**.
+3. Carry on as usual: the base address `https://localhost:5101/d` is filled in; the sign-in is an API key,
+   `X-Api-Key` = `key-d`. **More › Certificate** on the new service shows the certificate as trusted, and its
+   endpoints work in **Try it**.
+
+The certificate is kept in `samples/MockServices/certs/` (git-ignored), so the fingerprint stays the same across
+restarts; delete that folder for a new one.
+
+A sign-in address (login or token) on the same host uses the
 same settings. The design is in [ADR 0018](../adr/0018-service-certificates.md).
 
 ## Secrets

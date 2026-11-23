@@ -38,6 +38,10 @@ Either way, a server in between could read and change calls that carry credentia
   sent, and only a saved service's own address can be read. It shows the subject, issuer, dates, fingerprint and why
   the machine doesn't trust it. The person compares the fingerprint with the one the owner gives them before choosing
   **Trust this certificate**.
+- **Trust while adding.** When a spec's https address fails because nothing trusts its certificate, the preview
+  answers with that certificate. The person compares it, and the request is sent again with `trustedCertificate`:
+  a one-off client accepts exactly that certificate for that host, for that download only. The Add service form
+  saves it with the new service when its base address is on the same host.
 - **A plain message.** A failed TLS check is 502 `unreachable` for apps. The step message is "… couldn't be reached
   securely.", and the detail (Try it, logs) says how to fix it.
 

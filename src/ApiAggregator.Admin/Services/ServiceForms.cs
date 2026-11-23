@@ -19,6 +19,21 @@ public sealed class NewServiceForm
     public string? SuggestedSignIn { get; set; }
     public SignInForm SignIn { get; } = new();
 
+    /// <summary>The spec address's certificate, when loading failed because nothing trusts it (shown to check and trust).</summary>
+    public ServiceCertificate? Untrusted { get; set; }
+
+    /// <summary>A certificate the person checked and trusted for the spec's host (ADR 0018). Saved with the service when its base address is on that host.</summary>
+    public string? TrustedCertificate { get; set; }
+    public string? TrustedHost { get; set; }
+
+    /// <summary>The trusted fingerprint, if it is for this address's host.</summary>
+    public string? TrustFor(string? url) =>
+        TrustedCertificate is not null && Uri.TryCreate(url, UriKind.Absolute, out var u) && u.Scheme == Uri.UriSchemeHttps
+        && string.Equals(u.Host, TrustedHost, StringComparison.OrdinalIgnoreCase) ? TrustedCertificate : null;
+
+    /// <summary>What the new service trusts: the checked certificate, when its base address is on the same https host.</summary>
+    public ServiceCertificates? Certificates() => TrustFor(BaseUrl) is { } fingerprint ? new ServiceCertificates { Trusted = [fingerprint] } : null;
+
     public string Id => Slug.From(Name);
 
     /// <summary>Stage 1 (where it is): with a spec, it has to be loaded first.</summary>

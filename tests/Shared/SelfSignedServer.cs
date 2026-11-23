@@ -32,6 +32,11 @@ public sealed class SelfSignedServer : IAsyncLifetime
         builder.WebHost.ConfigureKestrel(k => k.Listen(IPAddress.Loopback, 0, l => l.UseHttps(certificate)));
         _app = builder.Build();
         _app.MapGet("/ping", () => Results.Json(new { ok = true }));
+        // A small spec, for importing from a server with its own certificate.
+        _app.MapGet("/openapi.json", () => Results.Text("""
+            { "openapi": "3.0.1", "info": { "title": "Self-signed", "version": "1" },
+              "paths": { "/ping": { "get": { "operationId": "ping", "responses": { "200": { "description": "OK" } } } } } }
+            """, "application/json"));
         await _app.StartAsync();
         Port = new Uri(_app.Services.GetRequiredService<IServer>().Features.Get<IServerAddressesFeature>()!.Addresses.First()).Port;
     }

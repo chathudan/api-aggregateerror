@@ -28,6 +28,7 @@ dotnet run --no-build --project src/ApiAggregator.Admin       & pids+=($!)
 
 echo
 echo "  Mock services  http://localhost:5100/_stats"
+echo "                 https://localhost:5101 (self-signed: try More › Certificate in the admin app)"
 echo "  Gateway        http://localhost:5200/bff/openapi.json"
 echo "  Admin app      http://localhost:5300   ($mode; sign in with any name, pick author or publisher)"
 echo "  Admin API      http://localhost:5300/admin/recipes (bearer token: http://localhost:5300/dev/token)"

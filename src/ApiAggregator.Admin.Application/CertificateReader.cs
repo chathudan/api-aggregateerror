@@ -30,6 +30,12 @@ internal static class CertificateReader
         return (X509CertificateLoader.LoadCertificate(remote.GetRawCertData()), errors);
     }
 
+    /// <summary>The certificate as a person sees it, to compare with the owner's before trusting it.</summary>
+    public static ServiceCertificate Describe(X509Certificate2 certificate, SslPolicyErrors errors, string host, bool trustedByService) => new(
+        certificate.Subject, certificate.Issuer, certificate.NotBefore, certificate.NotAfter,
+        ApiAggregator.Engine.Validation.CertificateRules.Display(ApiAggregator.Engine.Validation.CertificateRules.Fingerprint(certificate)),
+        errors == SslPolicyErrors.None, trustedByService, Problem(certificate, errors, host, DateTimeOffset.Now));
+
     /// <summary>Why the machine doesn't trust it, in plain English; null when it does.</summary>
     public static string? Problem(X509Certificate2 certificate, SslPolicyErrors errors, string host, DateTimeOffset now)
     {

@@ -68,6 +68,8 @@
     <li>When the server gets a new certificate, trust the new one before you remove the old one.</li>
 </ol>
 <p>Only that exact certificate is trusted, for that service's host, so this works in every environment. <strong>Accept any certificate</strong> is offered only in Development, for a test server on your own machine: anyone in between could read and change the calls.</p>
+<p><strong>While adding a service from its spec</strong>, <strong>Load</strong> on such an address shows its certificate. Compare the fingerprint, then choose <strong>Trust this certificate and load</strong>: it is saved with the service when its base address is on the same host.</p>
+<p><strong>Try it:</strong> the sample services also answer on <code>https://localhost:5101</code> with a certificate they signed themselves (they print its fingerprint when they start). Add a service from <code>https://localhost:5101/d/openapi.json</code>, trust its certificate when it's shown, and use the API key <code>X-Api-Key</code> = <code>key-d</code>.</p>
 </section>
 
 <section id="secrets">

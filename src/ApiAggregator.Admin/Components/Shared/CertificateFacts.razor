@@ -1,0 +1,28 @@
+@* A server's certificate as a person checks it before trusting it (ADR 0018): who it's for, by whom, its dates, its
+   fingerprint, and whether it's trusted. The trust button is shown only when it isn't, with the reminder to compare. *@
+<dl class="facts" role="status">
+    <dt>Issued to</dt><dd>@Certificate.Subject</dd>
+    <dt>Issued by</dt><dd>@Certificate.Issuer</dd>
+    <dt>Valid</dt><dd>@Certificate.ValidFrom.ToString("yyyy-MM-dd") to @Certificate.ValidUntil.ToString("yyyy-MM-dd")</dd>
+    <dt>SHA-256 fingerprint</dt><dd><code>@Certificate.Fingerprint</code></dd>
+    <dt>Trusted</dt>
+    <dd>
+        @if (Certificate.TrustedByMachine) { <StatusPill State="StatusPill.Kind.Ok" Text="By this machine" /> <span>Nothing to do.</span> }
+        else if (Certificate.TrustedByService) { <StatusPill State="StatusPill.Kind.Ok" Text="By this service's settings" /> <span>@Certificate.Problem</span> }
+        else { <StatusPill State="StatusPill.Kind.Warn" Text="Not trusted" /> <span>@Certificate.Problem</span> }
+    </dd>
+</dl>
+@if (!Certificate.TrustedByMachine && !Certificate.TrustedByService && OnTrust.HasDelegate)
+{
+    <div class="inline">
+        <button class="button primary" disabled="@Busy" @onclick="OnTrust">@TrustText</button>
+        <span class="hint">Only if the fingerprint matches the one the service's owner gave you. Otherwise someone may be in between.</span>
+    </div>
+}
+
+@code {
+    [Parameter, EditorRequired] public ServiceCertificate Certificate { get; set; } = default!;
+    [Parameter] public EventCallback OnTrust { get; set; }
+    [Parameter] public string TrustText { get; set; } = "Trust this certificate";
+    [Parameter] public bool Busy { get; set; }
+}

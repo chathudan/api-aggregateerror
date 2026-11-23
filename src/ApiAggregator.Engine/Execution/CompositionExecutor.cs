@@ -411,7 +411,7 @@ public sealed class CompositionExecutor(
         // A certificate the gateway doesn't accept: said plainly, because the fix is a setting, not the network (ADR 0018).
         HttpRequestException { HttpRequestError: HttpRequestError.SecureConnectionError } => new StepFailure(DownstreamErrorCode.Unreachable,
             $"{serviceName} couldn't be reached securely.", null,
-            "The secure connection failed: the certificate isn't trusted, or is for another name. For a test server with its own certificate, trust it on the Services page (More › Certificate).", 1),
+            "The secure connection failed: the address may not answer https (check http:// vs https:// in the base address), or its certificate isn't trusted or is for another name. For a test server with its own certificate, trust it on the Services page (More › Certificate).", 1),
         HttpRequestException h => new StepFailure(DownstreamErrorCode.Unreachable, $"{serviceName} couldn't be reached.", null, $"Connection problem: {h.HttpRequestError}.", 1),
         // Only the type in the detail: these messages can quote bytes of the service's answer, which must never be logged.
         IOException io => new StepFailure(DownstreamErrorCode.Unreachable, $"{serviceName}'s answer was cut off.", null, $"Connection broke while reading the answer ({io.GetType().Name}).", 1),

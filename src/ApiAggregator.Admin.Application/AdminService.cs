@@ -108,9 +108,7 @@ public sealed class AdminService(
                 var trustedByService = certs is not null
                     && ((certs.AcceptAny && options.IsDevelopment) || certs.Trusted.Any(t => CertificateRules.Normalize(t) == fingerprint));
                 log.LogInformation("Certificate of service {ServiceId} read by {Subject}", id, actor.Subject);
-                return new ServiceCertificate(certificate.Subject, certificate.Issuer, certificate.NotBefore, certificate.NotAfter,
-                    CertificateRules.Display(fingerprint), errors == System.Net.Security.SslPolicyErrors.None, trustedByService,
-                    CertificateReader.Problem(certificate, errors, address.IdnHost, DateTimeOffset.Now));
+                return CertificateReader.Describe(certificate, errors, address.IdnHost, trustedByService);
             }
         }
         catch (Exception ex) when (ex is System.Net.Sockets.SocketException or IOException or System.Security.Authentication.AuthenticationException
@@ -118,7 +116,7 @@ public sealed class AdminService(
         {
             // The type only: connection messages can name internal addresses, and there's nothing in them a person can act on.
             log.LogInformation("Couldn't read the certificate of service {ServiceId}: {Error}", id, ex.GetType().Name);
-            return Refuse.BadRequest($"Couldn't read the certificate of {address.Authority}. Check the base address, and that the service is running and answers https.");
+            return Refuse.BadRequest($"Couldn't read the certificate of {address.Authority}. Check the base address (does the service use http:// rather than https://?), and that the service is running.");
         }
     }
 
@@ -157,8 +155,12 @@ public sealed class AdminService(
         if (NeedsAuthor(actor) is { } no) return no;
         certificates.Use(await store.GetSnapshotAsync(ct)); // a spec on a service's host gets its certificate settings
         try { return await importer.PreviewAsync(request, ct); }
-        catch (OpenApiImportException ex) { return Refuse.BadRequest(ex.Message); }
+        catch (OpenApiImportException ex) { return ImportRefused(ex); }
     }
+
+    /// <summary>The importer's plain message, with the certificate when that is the reason (the page offers to trust it).</summary>
+    private static AdminFailure ImportRefused(OpenApiImportException ex) =>
+        ex.Certificate is { } certificate ? Refuse.BadRequest(ex.Message, ("certificate", certificate)) : Refuse.BadRequest(ex.Message);
 
     public async Task<AdminResult<ApiService>> ImportOpenApiAsync(AdminActor actor, string id, OpenApiImportRequest request, CancellationToken ct = default)
     {
@@ -172,7 +174,7 @@ public sealed class AdminService(
             await store.SaveServiceAsync(updated, ct);
             return updated;
         }
-        catch (OpenApiImportException ex) { return Refuse.BadRequest(ex.Message); }
+        catch (OpenApiImportException ex) { return ImportRefused(ex); }
     }
 
     /// <summary>For endpoints added by hand: a sample response becomes a schema (drives the wizard's dropdowns).</summary>

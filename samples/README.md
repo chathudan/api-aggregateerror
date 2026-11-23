@@ -1,7 +1,9 @@
 # Sample services and data
 
 `samples/MockServices` runs fake downstream services on **http://localhost:5100** (started by
-`scripts/dev-run.sh`). Everything here is **test data**: invented people, `example.com` emails and
+`scripts/dev-run.sh`). The same services also answer on **https://localhost:5101**, with a certificate they signed
+themselves, to try trusting a test server's own certificate (see
+[adding services](../docs/guides/adding-services.md#a-test-server-with-its-own-certificate)). Everything here is **test data**: invented people, `example.com` emails and
 `555-01xx` phone numbers, which are reserved for fiction. Never put real customer or patient data here.
 
 | Path | Service | Sign-in | Used by |

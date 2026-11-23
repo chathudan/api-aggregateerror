@@ -39,7 +39,16 @@
                     <label class="grow">Spec address <input @bind="ns.SpecUrl" placeholder="https://orders.internal/swagger/v1/swagger.json" /></label>
                     <button class="button" disabled="@_busy" @onclick="LoadSpec">@(_busy ? "Loading…" : "Load")</button>
                 </div>
-                <p class="hint">Try it with the sample billing service: <code>http://localhost:5100/d/openapi.json</code></p>
+                <p class="hint">Try it with the sample billing service: <code>http://localhost:5100/d/openapi.json</code> (or <code>https://localhost:5101/d/openapi.json</code>, a test server with its own certificate)</p>
+                @if (ns.Untrusted is { } untrusted)
+                {
+                    <h3>The certificate of this address</h3>
+                    <CertificateFacts Certificate="untrusted" TrustText="Trust this certificate and load" Busy="_busy" OnTrust="TrustAndLoad" />
+                }
+                else if (ns.TrustFor(ns.SpecUrl) is not null)
+                {
+                    <p class="hint">You trusted this host's certificate. It is saved with the service when its base address is on the same host.</p>
+                }
             }
         }
         else if (_stage == 2)
@@ -344,25 +353,7 @@ else if (_services.Count > 0)
                         <button class="button" disabled="@_busy" @onclick="() => ReadCertificate(s)">@(_busy ? "Reading…" : "Read certificate")</button>
                         @if (_certificate is { } c)
                         {
-                            <dl class="facts" role="status">
-                                <dt>Issued to</dt><dd>@c.Subject</dd>
-                                <dt>Issued by</dt><dd>@c.Issuer</dd>
-                                <dt>Valid</dt><dd>@c.ValidFrom.ToString("yyyy-MM-dd") to @c.ValidUntil.ToString("yyyy-MM-dd")</dd>
-                                <dt>SHA-256 fingerprint</dt><dd><code>@c.Fingerprint</code></dd>
-                                <dt>Trusted</dt>
-                                <dd>
-                                    @if (c.TrustedByMachine) { <StatusPill State="StatusPill.Kind.Ok" Text="By this machine" /> <span>Nothing to do.</span> }
-                                    else if (c.TrustedByService) { <StatusPill State="StatusPill.Kind.Ok" Text="By this service's settings" /> <span>@c.Problem</span> }
-                                    else { <StatusPill State="StatusPill.Kind.Warn" Text="Not trusted" /> <span>@c.Problem</span> }
-                                </dd>
-                            </dl>
-                            @if (!c.TrustedByMachine && !c.TrustedByService)
-                            {
-                                <div class="inline">
-                                    <button class="button primary" @onclick="() => TrustCertificate(s, c.Fingerprint)">Trust this certificate</button>
-                                    <span class="hint">Only if the fingerprint matches the one the service's owner gave you. Otherwise someone may be in between.</span>
-                                </div>
-                            }
+                            <CertificateFacts Certificate="c" OnTrust="() => TrustCertificate(s, c.Fingerprint)" />
                         }
                         @if (trusted.Count > 0)
                         {
@@ -399,6 +390,11 @@ else if (_services.Count > 0)
                         <label class="grow">Spec address <input @bind="_specUrl" placeholder="https://service/openapi.json" /></label>
                         <button class="button" @onclick="() => Preview(s)">Load operations</button>
                     </div>
+                    @if (_importUntrusted is { } untrusted)
+                    {
+                        <CertificateFacts Certificate="untrusted" TrustText="Trust it for this import and load" OnTrust="TrustImportAndLoad" />
+                        <p class="hint">To trust it for the service's own calls too, use <strong>More › Certificate</strong>.</p>
+                    }
                     @if (_candidates is not null)
                     {
                         <p class="hint">Existing endpoints with the same id are updated, not duplicated.</p>
@@ -436,6 +432,8 @@ else if (_services.Count > 0)
     private AdminActor _me = AdminActor.Anonymous;
     private bool _canSaveSecrets, _canAcceptAny;
     private ServiceCertificate? _certificate;
+    private ServiceCertificate? _importUntrusted; // More › Import: the spec address's certificate, when nothing trusts it
+    private string? _importTrust;                 // ...and the one the person trusted for that import
     private NewServiceForm? _newService;
     private int _stage = 1;
     private NewEndpointForm _newEndpoint = new();
@@ -489,7 +487,7 @@ else if (_services.Count > 0)
     {
         _openFor = serviceId; _panel = panel; _problems = [];
         _tryResult = null; _tryProblems = [];
-        _certificate = null;
+        _certificate = null; _importUntrusted = null; _importTrust = null;
         _newEndpoint = new NewEndpointForm();
         _candidates = null; _selected.Clear();
         _specUrl = _services?.FirstOrDefault(s => s.Id == serviceId)?.OpenApiSource ?? "";
@@ -509,13 +507,24 @@ else if (_services.Count > 0)
         _busy = true;
         try
         {
-            var (preview, previewError) = await PreviewAsync(ns.SpecUrl);
+            var (preview, previewError, certificate) = await PreviewAsync(ns.SpecUrl, ns.TrustFor(ns.SpecUrl));
+            ns.Untrusted = certificate;
             if (preview is null) { _problems = [previewError ?? "Couldn't read that spec. Check the address."]; return; }
             ns.ApplyPreview(preview);
             _problems = [];
             _stage = 2; // loaded: straight on to the name and the operations
         }
         finally { _busy = false; }
+    }
+
+    /// <summary>The person compared the fingerprint and trusts it: load with it, and keep it for the new service.</summary>
+    private async Task TrustAndLoad()
+    {
+        var ns = _newService!;
+        if (ns.Untrusted is null || !Uri.TryCreate(ns.SpecUrl, UriKind.Absolute, out var url)) return;
+        ns.TrustedCertificate = ns.Untrusted.Fingerprint;
+        ns.TrustedHost = url.Host;
+        await LoadSpec();
     }
 
     private void Next()
@@ -539,9 +548,14 @@ else if (_services.Count > 0)
             var profile = ns.SignIn.ToProfile($"{ns.Id}-signin", ns.Id, ns.Name, out var secrets);
             if (await SaveSignInParts(profile, secrets) is { } error) { _problems = [error]; return; }
 
-            var service = new ApiService { Id = ns.Id, Name = ns.Name.Trim(), BaseUrl = ns.BaseUrl.Trim(), AuthProfileId = profile?.Id, TimeoutMs = ns.TimeoutMs, OpenApiSource = ns.FromSpec ? ns.SpecUrl : null };
+            var service = new ApiService
+            {
+                Id = ns.Id, Name = ns.Name.Trim(), BaseUrl = ns.BaseUrl.Trim(), AuthProfileId = profile?.Id, TimeoutMs = ns.TimeoutMs,
+                OpenApiSource = ns.FromSpec ? ns.SpecUrl : null,
+                Certificates = ns.Certificates() // the certificate checked while loading the spec, when the service is on that host
+            };
             if (await SaveServiceAsync(service) is { } saveError) { _problems = [saveError]; return; }
-            if (ns.FromSpec && await ImportAsync(service.Id, ns.SpecUrl, ns.Selected.ToArray()) is { } importError) { _problems = [importError]; return; }
+            if (ns.FromSpec && await ImportAsync(service.Id, ns.SpecUrl, ns.Selected.ToArray(), ns.TrustFor(ns.SpecUrl)) is { } importError) { _problems = [importError]; return; }
 
             Toasts.Success($"{service.Name} added{(ns.FromSpec ? $" with {ns.Selected.Count} endpoint(s)" : ". Add its endpoints next")}.");
             _newService = null;
@@ -671,9 +685,17 @@ else if (_services.Count > 0)
         else Toasts.Error($"{failed} sign-in{(failed == 1 ? "" : "s")} failed. Each one is marked Failed, with the reason.");
     }
 
+    private async Task TrustImportAndLoad()
+    {
+        _importTrust = _importUntrusted?.Fingerprint;
+        var service = _services?.FirstOrDefault(x => x.Id == _openFor);
+        if (service is not null) await Preview(service);
+    }
+
     private async Task Preview(ApiService s)
     {
-        var (preview, previewError) = await PreviewAsync(_specUrl);
+        var (preview, previewError, certificate) = await PreviewAsync(_specUrl, _importTrust);
+        _importUntrusted = certificate;
         _candidates = (preview?["endpoints"] as JsonArray)?.Where(n => n is not null).Select(n => n!).ToList();
         _problems = _candidates is null ? [previewError ?? "Couldn't read that spec."] : [];
         foreach (var c in _candidates ?? []) _selected.Add(c["operationId"]!.ToString());
@@ -681,7 +703,7 @@ else if (_services.Count > 0)
 
     private async Task Import(ApiService s)
     {
-        var error = await ImportAsync(s.Id, _specUrl, _selected.ToArray());
+        var error = await ImportAsync(s.Id, _specUrl, _selected.ToArray(), _importTrust);
         if (error is not null) { _problems = [error]; return; }
         Toasts.Success($"Imported {_selected.Count} operation(s) into {s.Name}.");
         Close();
@@ -765,15 +787,18 @@ else if (_services.Count > 0)
 
     private Task<string?> SaveServiceAsync(ApiService service) => Admin.SaveServiceAsync(_me, service.Id, service).ErrorAsync();
 
-    private Task<string?> ImportAsync(string serviceId, string url, string[] operationIds) =>
-        Admin.ImportOpenApiAsync(_me, serviceId, new OpenApiImportRequest(url, null, operationIds)).ErrorAsync();
+    private Task<string?> ImportAsync(string serviceId, string url, string[] operationIds, string? trustedCertificate = null) =>
+        Admin.ImportOpenApiAsync(_me, serviceId, new OpenApiImportRequest(url, null, operationIds, trustedCertificate)).ErrorAsync();
 
-    /// <summary>The spec's preview as JSON (camelCase), as the add-service form reads it; or the reason it couldn't be read.</summary>
-    private async Task<(JsonNode? Preview, string? Error)> PreviewAsync(string url)
+    /// <summary>
+    /// The spec's preview as JSON (camelCase), as the add-service form reads it; or the reason it couldn't be read, with
+    /// the address's certificate when nothing trusts it (so the person can check and trust it, ADR 0018).
+    /// </summary>
+    private async Task<(JsonNode? Preview, string? Error, ServiceCertificate? Certificate)> PreviewAsync(string url, string? trustedCertificate = null)
     {
-        var result = await Admin.PreviewOpenApiAsync(_me, new OpenApiImportRequest(url, null, null));
-        return result.Value is { } preview
-            ? (JsonSerializer.SerializeToNode(preview, new JsonSerializerOptions(JsonSerializerDefaults.Web)), null)
-            : (null, result.Failure?.Message);
+        var result = await Admin.PreviewOpenApiAsync(_me, new OpenApiImportRequest(url, null, null, trustedCertificate));
+        if (result.Value is { } preview) return (JsonSerializer.SerializeToNode(preview, new JsonSerializerOptions(JsonSerializerDefaults.Web)), null, null);
+        var certificate = result.Failure?.Extra?.FirstOrDefault(e => e.Key == "certificate").Value as ServiceCertificate;
+        return (null, result.Failure?.Message, certificate);
     }
 }

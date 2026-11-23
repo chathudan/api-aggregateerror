@@ -170,6 +170,83 @@ public sealed class RoleTests(AdminApp app) : IClassFixture<AdminApp>
         finally { await server.DisposeAsync(); }
     }
 
+    [Fact]
+    public async Task An_https_spec_address_on_a_plain_http_server_says_to_use_http_not_to_trust_a_certificate()
+    {
+        // A plain http server (like the local gateway on :5200), asked for https://.
+        var listener = new System.Net.Sockets.TcpListener(IPAddress.Loopback, 0);
+        listener.Start();
+        var port = ((IPEndPoint)listener.LocalEndpoint).Port;
+        var answering = Task.Run(async () =>
+        {
+            for (var i = 0; i < 4; i++) // the download (with its retries) and the handshake check
+            {
+                try
+                {
+                    using var client = await listener.AcceptTcpClientAsync();
+                    var stream = client.GetStream();
+                    await stream.ReadAsync(new byte[1024]);
+                    await stream.WriteAsync("HTTP/1.1 400 Bad Request\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"u8.ToArray());
+                }
+                catch (Exception) { return; } // listener stopped
+            }
+        });
+
+        try
+        {
+            var result = await Service.PreviewOpenApiAsync(Author, new OpenApiImportRequest($"https://127.0.0.1:{port}/bff/openapi.json", null, null));
+
+            Assert.Equal(FailureKind.BadRequest, result.Failure?.Kind);
+            Assert.Equal($"127.0.0.1:{port} doesn't answer https. If the service uses plain http, write the address with http://, for example http://127.0.0.1:{port}/bff/openapi.json.",
+                result.Failure?.Message);
+        }
+        finally { listener.Stop(); await answering; }
+    }
+
+    [Fact]
+    public async Task A_spec_on_a_server_with_its_own_certificate_loads_once_that_exact_certificate_is_trusted()
+    {
+        var server = new SelfSignedServer();
+        await server.InitializeAsync();
+        try
+        {
+            var spec = server.Url + "openapi.json";
+
+            // Nothing trusts it: refused, with the certificate to check.
+            var refused = await Service.PreviewOpenApiAsync(Author, new OpenApiImportRequest(spec, null, null));
+            Assert.Equal($"The certificate of localhost:{server.Port} isn't trusted. If it's a test server with its own certificate, compare its fingerprint with the one the owner gives you, then trust it.",
+                refused.Failure?.Message);
+            var shown = Assert.IsType<ServiceCertificate>(refused.Failure!.Extra!.Single(e => e.Key == "certificate").Value);
+            Assert.Equal(CertificateRules.Display(server.Fingerprint), shown.Fingerprint);
+
+            // Trusted after checking: it loads.
+            var loaded = await Service.PreviewOpenApiAsync(Author, new OpenApiImportRequest(spec, null, null, shown.Fingerprint));
+            Assert.True(loaded.Ok, loaded.Failure?.Message);
+            Assert.Equal("ping", Assert.Single(loaded.Value!.Endpoints).OperationId);
+
+            // Another certificate's fingerprint doesn't let it through.
+            var other = await Service.PreviewOpenApiAsync(Author, new OpenApiImportRequest(spec, null, null, new string('A', 64)));
+            Assert.StartsWith($"The certificate of localhost:{server.Port} isn't the one you trusted", other.Failure?.Message);
+        }
+        finally { await server.DisposeAsync(); }
+    }
+
+    [Fact]
+    public void A_certificate_trusted_while_loading_the_spec_is_saved_only_for_a_service_on_the_same_https_host()
+    {
+        var form = new NewServiceForm
+        {
+            SpecUrl = "https://localhost:5101/d/openapi.json", TrustedCertificate = new string('C', 64), TrustedHost = "localhost",
+            BaseUrl = "https://localhost:5101/d"
+        };
+        Assert.Equal([new string('C', 64)], form.Certificates()?.Trusted);
+
+        form.BaseUrl = "https://billing.internal/api";
+        Assert.Null(form.Certificates());
+        form.BaseUrl = "http://localhost:5100/d";
+        Assert.Null(form.Certificates());
+    }
+
     private static CallerContext Caller() => CallerContext.Anonymous("try-1");
 
     private static EndpointTry Try(string path, Dictionary<string, string?>? values = null, ParamDef[]? parameters = null) =>

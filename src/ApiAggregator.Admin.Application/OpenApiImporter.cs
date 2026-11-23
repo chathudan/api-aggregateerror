@@ -1,6 +1,7 @@
 using System.Text;
 using System.Text.Json.Nodes;
 using ApiAggregator.Engine.Model;
+using ApiAggregator.Engine.Validation;
 using Microsoft.OpenApi.Models;
 using Microsoft.OpenApi.Readers;
 using Microsoft.OpenApi.Writers;
@@ -10,10 +11,18 @@ using Microsoft.Extensions.Configuration;
 namespace ApiAggregator.Admin.Application;
 
 /// <summary>A spec couldn't be read or isn't allowed. The message is plain English and safe to show.</summary>
-public sealed class OpenApiImportException(string message, Exception? inner = null) : Exception(message, inner);
+public sealed class OpenApiImportException(string message, Exception? inner = null) : Exception(message, inner)
+{
+    /// <summary>The certificate the spec's address presented, when it is the reason (ADR 0018): shown so a person can trust it.</summary>
+    public ServiceCertificate? Certificate { get; init; }
+}
 
-/// <summary>Either a URL to fetch the spec from, or the spec text itself (JSON or YAML).</summary>
-public sealed record OpenApiImportRequest(string? Url, string? Spec, string[]? OperationIds);
+/// <summary>
+/// Either a URL to fetch the spec from, or the spec text itself (JSON or YAML). <see cref="TrustedCertificate"/>: the
+/// SHA-256 fingerprint of a certificate the person has checked and trusts for this download (a test server that
+/// signed its own, ADR 0018). Only that exact certificate, only for the URL's host.
+/// </summary>
+public sealed record OpenApiImportRequest(string? Url, string? Spec, string[]? OperationIds, string? TrustedCertificate = null);
 
 public sealed record EndpointCandidate(string OperationId, string Method, string Path, string? Summary, string[] Tags, ParamDef[] Parameters);
 
@@ -94,15 +103,28 @@ public sealed class OpenApiImporter(IHttpClientFactory httpClientFactory, IConfi
         else if (Uri.TryCreate(request.Url, UriKind.Absolute, out var url) && url.Scheme is "http" or "https")
         {
             EnsureAllowedHost(url);
-            var client = httpClientFactory.CreateClient(HttpClientName);
+            var pinned = request.TrustedCertificate is null ? null : CertificateRules.Normalize(request.TrustedCertificate)
+                ?? throw new OpenApiImportException("That isn't a SHA-256 fingerprint. Use the one shown for the certificate: 64 characters, 0-9 and A-F.");
+            using var oneOff = pinned is null ? null : PinnedClient(url, pinned);
+            var client = oneOff ?? httpClientFactory.CreateClient(HttpClientName);
             byte[] bytes;
             try { bytes = await client.GetByteArrayAsync(url, ct); }
             catch (HttpRequestException ex) when (ex.HttpRequestError == HttpRequestError.SecureConnectionError)
             {
-                // ADR 0018: the admin app trusts the same certificates as the services it knows, nothing more.
+                // Two different problems fail the same way: an address that doesn't speak https at all (often http://
+                // typed as https://), and a certificate this app doesn't trust. A handshake on its own tells them apart.
+                if (!await AnswersHttpsAsync(url, ct))
+                    throw new OpenApiImportException(
+                        $"{url.Authority} doesn't answer https. If the service uses plain http, write the address with http://, for example http://{url.Authority}{url.AbsolutePath}.", ex);
+                // ADR 0018: the admin app trusts the same certificates as the services it knows, plus one a person checked
+                // for this download. Show the certificate, so they can compare it with the owner's and trust it.
                 throw new OpenApiImportException(
-                    "The spec's address has a certificate this app doesn't trust. If it's a test server with its own certificate: add the service "
-                    + "with Enter by hand, trust its certificate (More › Certificate), then use More › Import from OpenAPI.", ex);
+                    pinned is null
+                        ? $"The certificate of {url.Authority} isn't trusted. If it's a test server with its own certificate, compare its fingerprint with the one the owner gives you, then trust it."
+                        : $"The certificate of {url.Authority} isn't the one you trusted: it may have changed. Compare its fingerprint with the owner's again.", ex)
+                {
+                    Certificate = await DescribeAsync(url, ct)
+                };
             }
             catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException && !ct.IsCancellationRequested)
             {
@@ -121,6 +143,61 @@ public sealed class OpenApiImporter(IHttpClientFactory httpClientFactory, IConfi
             var warnings = diagnostic.Errors.Select(e => $"{e.Pointer}: {e.Message}").ToArray();
             if (doc?.Paths is null) throw new OpenApiImportException("That doesn't look like an OpenAPI or Swagger document.");
             return (doc, warnings);
+        }
+    }
+
+    /// <summary>
+    /// A client for one download that accepts the machine's trusted certificates plus exactly this one for this host.
+    /// The same settings as the shared client otherwise: no redirects, no cookies.
+    /// </summary>
+    private static HttpClient PinnedClient(Uri url, string fingerprint)
+    {
+        var handler = new SocketsHttpHandler
+        {
+            AllowAutoRedirect = false,
+            UseCookies = false,
+            ConnectTimeout = TimeSpan.FromSeconds(5),
+            SslOptions =
+            {
+                RemoteCertificateValidationCallback = (sender, certificate, _, errors) =>
+                    errors == System.Net.Security.SslPolicyErrors.None
+                    || (certificate is not null
+                        && sender is System.Net.Security.SslStream { TargetHostName: var host }
+                        && string.Equals(host.Trim('[', ']'), url.IdnHost.Trim('[', ']'), StringComparison.OrdinalIgnoreCase)
+                        && CertificateRules.Fingerprint(certificate) == fingerprint)
+            }
+        };
+        return new HttpClient(handler) { Timeout = TimeSpan.FromSeconds(10) };
+    }
+
+    /// <summary>The address's certificate for a person to check, or null when it can't be read.</summary>
+    private static async Task<ServiceCertificate?> DescribeAsync(Uri url, CancellationToken ct)
+    {
+        try
+        {
+            var (certificate, errors) = await CertificateReader.ReadAsync(url, ct);
+            using (certificate) return CertificateReader.Describe(certificate, errors, url.IdnHost, trustedByService: false);
+        }
+        catch (Exception ex) when (ex is IOException or System.Net.Sockets.SocketException or System.Security.Authentication.AuthenticationException
+                                       || (ex is OperationCanceledException && !ct.IsCancellationRequested))
+        {
+            return null;
+        }
+    }
+
+    /// <summary>Whether the address completes a TLS handshake (whatever its certificate). Nothing is sent.</summary>
+    private static async Task<bool> AnswersHttpsAsync(Uri url, CancellationToken ct)
+    {
+        try
+        {
+            var (certificate, _) = await CertificateReader.ReadAsync(url, ct);
+            certificate.Dispose();
+            return true;
+        }
+        catch (Exception ex) when (ex is IOException or System.Net.Sockets.SocketException or System.Security.Authentication.AuthenticationException
+                                       || (ex is OperationCanceledException && !ct.IsCancellationRequested))
+        {
+            return false;
         }
     }
 

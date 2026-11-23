@@ -15,6 +15,8 @@
 //   /h  Links     - billing account -> user   - no auth (internal)
 //   /bench/sNN  any number of generic services for the benchmark, with faults switched on by POST /_chaos/sNN
 // GET /_stats shows how many times each endpoint was called (handy for checking the cache).
+// Every service also answers on https://localhost:5101 (dev-run.sh) with a self-signed certificate, to try trusting a
+// test server's own certificate (More › Certificate in the admin app, ADR 0018). See MockCertificate.cs.
 // Test data only. No real customer or patient data belongs here.
 
 using System.Collections.Concurrent;
@@ -24,6 +26,9 @@ using System.Text.Json;
 using MockServices;
 
 var builder = WebApplication.CreateBuilder(args);
+// Only used when an https address is configured (launchSettings.json): the tests and the demo run plain http.
+builder.WebHost.ConfigureKestrel(k => k.ConfigureHttpsDefaults(https =>
+    https.ServerCertificate = MockCertificate.LoadOrCreate(builder.Environment.ContentRootPath)));
 var app = builder.Build();
 
 var calls = new ConcurrentDictionary<string, int>();
