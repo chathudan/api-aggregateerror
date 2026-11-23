@@ -44,6 +44,34 @@ public class ErrorResponseTests
 
     // ---------------------------------------------------------------- downstream sign-in
 
+    [Theory]
+    [InlineData("{ \"tier\": \"gold\" } { \"tier\": \"silver\" }", 502)] // two values: not one JSON answer
+    [InlineData("{ \"tier\": \"gold\" }   \n", 200)]                        // trailing whitespace is fine
+    public async Task An_answer_must_be_exactly_one_JSON_value(string text, int status)
+    {
+        var result = await Run(AbcRecipe(), Healthy().OnRaw("b.test/api/orders", text, "application/json"));
+
+        Assert.Equal(status, result.StatusCode);
+        if (status == 502) Assert.Equal("invalid_response", result.ErrorCode);
+    }
+
+    [Fact]
+    public async Task An_answer_cut_off_mid_way_is_a_502_or_a_partial_answer_never_a_500_and_its_bytes_are_never_logged()
+    {
+        var logger = new CapturingLogger<CompositionExecutor>();
+        var required = await Run(AbcRecipe(), Healthy().OnCutOff("b.test/api/orders"), logger: logger);
+
+        Assert.Equal(502, required.StatusCode);
+        Assert.Equal("unreachable", required.ErrorCode);
+        Assert.DoesNotContain("SECRET-PATIENT-NAME", required.Body!.ToJsonString());
+
+        var optional = await Run(AbcRecipe(cRequired: false), Healthy().OnCutOff("c.test/api/recommendations"), logger: logger);
+        Assert.Equal(200, optional.StatusCode);
+        Assert.True(optional.Partial);
+
+        Assert.DoesNotContain(logger.Entries, e => e.Message.Contains("SECRET-PATIENT-NAME"));
+    }
+
     [Fact]
     public async Task Failed_login_gives_502_auth_failed_and_no_secret_in_the_body()
     {

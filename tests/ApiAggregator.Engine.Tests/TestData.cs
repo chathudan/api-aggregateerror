@@ -208,6 +208,39 @@ internal sealed class FakeDownstream : HttpMessageHandler, IHttpClientFactory
         return this;
     }
 
+    /// <summary>Starts an answer, then the connection breaks while it's being read (with answer bytes in the message, as .NET does).</summary>
+    public FakeDownstream OnCutOff(string hostAndPath)
+    {
+        _routes[hostAndPath] = _ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StreamContent(new CutOffStream()) { Headers = { ContentType = new("application/json") } }
+        };
+        return this;
+    }
+
+    private sealed class CutOffStream : Stream
+    {
+        private bool _sentFirst;
+        public override int Read(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+        public override ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken ct = default)
+        {
+            if (_sentFirst) throw new IOException("Received an invalid chunk terminator: 'SECRET-PATIENT-NAME'.");
+            _sentFirst = true;
+            var start = "{\"name\":\"SECRET-PATIENT-NAME"u8;
+            start.CopyTo(buffer.Span);
+            return ValueTask.FromResult(start.Length);
+        }
+        public override bool CanRead => true;
+        public override bool CanSeek => false;
+        public override bool CanWrite => false;
+        public override long Length => throw new NotSupportedException();
+        public override long Position { get => 0; set => throw new NotSupportedException(); }
+        public override void Flush() { }
+        public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+        public override void SetLength(long value) => throw new NotSupportedException();
+        public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+    }
+
     /// <summary>Answers with an exact body text (e.g. broken JSON).</summary>
     public FakeDownstream OnRaw(string hostAndPath, string text, string contentType)
     {

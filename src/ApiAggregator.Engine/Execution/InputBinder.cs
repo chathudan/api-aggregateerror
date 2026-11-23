@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Globalization;
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
@@ -12,7 +13,14 @@ namespace ApiAggregator.Engine.Execution;
 /// </summary>
 public static class InputBinder
 {
-    private static readonly TimeSpan RegexTimeout = TimeSpan.FromMilliseconds(50);
+    // Input patterns, parsed once each. Bounded: cleared if config edits ever pile up more than this many patterns.
+    private static readonly ConcurrentDictionary<string, Regex> Patterns = new(StringComparer.Ordinal);
+    private const int MaxCachedPatterns = 1000;
+
+    // Only for patterns the non-backtracking engine can't run (lookarounds, backreferences). Generous, because the
+    // clock also runs during garbage collections and while the thread waits for a CPU: the benchmark caught a 50 ms
+    // limit turning valid values into 400s under load.
+    private static readonly TimeSpan BacktrackingTimeout = TimeSpan.FromMilliseconds(250);
 
     /// <summary>Builds the "request" object used by expressions: request.route.*, request.query.*, request.header.*, request.claims.*</summary>
     public static (JsonObject Request, List<string> Errors) Bind(Recipe recipe, InboundRequest inbound, CallerContext caller)
@@ -61,6 +69,20 @@ public static class InputBinder
         return (request, errors);
     }
 
+    /// <summary>
+    /// The pattern as a Regex. Non-backtracking when possible: its time grows linearly with the input, so a pattern can't
+    /// be made to run for ages (ReDoS) and needs no time limit.
+    /// </summary>
+    private static Regex Pattern(string pattern)
+    {
+        if (Patterns.TryGetValue(pattern, out var cached)) return cached;
+        if (Patterns.Count >= MaxCachedPatterns) Patterns.Clear();
+        Regex regex;
+        try { regex = new Regex(pattern, RegexOptions.CultureInvariant | RegexOptions.NonBacktracking); }
+        catch (NotSupportedException) { regex = new Regex(pattern, RegexOptions.CultureInvariant, BacktrackingTimeout); }
+        return Patterns.GetOrAdd(pattern, regex);
+    }
+
     private static string? Lookup(IReadOnlyDictionary<string, string?> values, string name)
     {
         if (values.TryGetValue(name, out var v)) return v;
@@ -81,7 +103,7 @@ public static class InputBinder
         {
             try
             {
-                if (!Regex.IsMatch(raw, def.Pattern, RegexOptions.CultureInvariant, RegexTimeout))
+                if (!Pattern(def.Pattern).IsMatch(raw))
                     return (null, $"'{name}' is not in the expected format.");
             }
             catch (RegexMatchTimeoutException) { return (null, $"'{name}' is not in the expected format."); }

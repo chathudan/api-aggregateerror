@@ -4,12 +4,13 @@
 
 | Technique | Where |
 |---|---|
-| Independent steps run in parallel; levels come from a plan that's cached per published recipe version (a draft under **Try it** is planned afresh each time, because it keeps its version number while it is edited) | `ExecutionPlanner`, `CompositionExecutor` |
+| Independent steps run in parallel; levels come from a plan that's cached per published recipe version, for the current config version only, so the cache never grows with publishes (a draft under **Try it** is planned afresh each time, because it keeps its version number while it is edited) | `ExecutionPlanner`, `CompositionExecutor` |
 | Pooled, reused connections (`SocketsHttpHandler`, 5-minute connection lifetime) | `ServiceCollectionExtensions` |
 | `ResponseHeadersRead` and streaming reads with a byte cap | `CompositionExecutor.ReadBodyAsync` |
 | Parsed expressions cached; no reflection, no dynamic code | `ValuePath` |
-| Config snapshot swapped atomically; zero I/O between reload checks | `FileConfigStore` |
-| Route table rebuilt only when the config changes | `RecipeRouter` |
+| Config snapshot swapped atomically; zero I/O between reload checks. One request looks at the files while the others keep using the current config | `FileConfigStore` |
+| Route table rebuilt only when the config changes. Routes grouped by method and segment count, literal words compared before the framework's matcher, so thousands of endpoints cost microseconds per request | `RecipeRouter` |
+| OpenAPI document built once per config version, for at most two addresses | `OpenApiSpecCache` |
 | Downstream sign-in cached with single flight | `DownstreamCredentialCache` |
 | Optional response and step caches, bounded memory | `MemoryResponseCache` |
 
@@ -64,6 +65,9 @@ flowchart LR
 | `Aggregator:Engine:MaxForEachItems` | 100 | Fan-out cap |
 | `Aggregator:Engine:CacheSizeMb` | 256 | Memory for the response and step caches |
 | `Gateway:RequestsPerMinutePerCaller` | 600 | Rate limit |
+| `Gateway:MaxConcurrentRequests` | 1000 | `/bff` requests answered at once; more get 503 `overloaded` ([ADR 0017](../adr/0017-overload-protection-and-per-service-circuits.md)) |
+| `Gateway:MaxCallsInFlightPerService` | 200 | Calls to one service at once (a bulkhead); more fail at once with 502 `unreachable` |
+| `Gateway:Diagnostics:Enabled`, `AllowForcedGc` | false, false | `GET /_admin/runtime` runtime numbers; forced GC for the benchmark (Development only) |
 | `Gateway:OpenApi:Enabled` | true | Serves `/bff/openapi.json` (and `/bff/docs`); false gives 404 |
 | `Gateway:OpenApi:IncludeInternalDetails` | false | List internal service names in the spec (Development only in practice) |
 | `Gateway:ApiDocs:Enabled` | true in Development, else false | Swagger UI page at `/bff/docs` |
@@ -75,7 +79,8 @@ flowchart LR
 | `Admin:OpenApiAllowedHosts` | [] | Optional import allow-list |
 
 **Request pipeline (gateway):** correlation id → request log → security headers → exception handler → routing →
-CORS → authentication → authorization → rate limiter → endpoint. Preflights stop at CORS (204), so they need no
+CORS → overload limit (`/bff` only: 503 `overloaded` beyond `Gateway:MaxConcurrentRequests`) → authentication →
+authorization → rate limiter → endpoint. Preflights stop at CORS (204), so they need no
 token and don't count towards the rate limit. CORS headers are added as the response starts, so every error keeps
 them. The admin app has no CORS middleware.
 
@@ -126,7 +131,10 @@ editor (`PageLogScope`).
 ## Availability and disaster recovery
 
 - A broken config file never takes the gateway down. It keeps serving the last good snapshot and
-  logs an error.
+  logs an error. Two files with the same id count as broken ("Two endpoints use the id …").
+- A broken service affects only the endpoints that need it: its own circuit breaker opens, its failures are 502/504
+  (optional steps are left out), and other services carry on. Too much traffic gets a quick 503 `overloaded`.
+  The [benchmark](../guides/benchmarking.md) checks all of this ([ADR 0017](../adr/0017-overload-protection-and-per-service-circuits.md)).
 - History plus rollback make a bad publish reversible in seconds.
 - Back up the config store (files or PostgreSQL) and Key Vault. The gateway itself has no state.
 - Set recovery point and recovery time objectives (RPO/RTO) with the service owners. The aggregator

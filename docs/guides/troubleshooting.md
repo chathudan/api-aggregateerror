@@ -184,7 +184,9 @@ warning and doesn't block publishing.
 | 502 `auth_failed` | **Services**: the sign-in pill, then **Check sign-in** | Fixing the sign-in or secret ([above](#sign-in-problems)) |
 | 502 `not_found`, `bad_request` | The logs for the correlation id: which step and which service | Usually real data. Otherwise the endpoint's set-up |
 | 502/504 `server_error`, `unreachable`, `timeout` | The service's own health | The service owner. The app should retry later |
-| 429 `rate_limited` | Whether one user or app is calling in a loop | The app developer |
+| 502 `unreachable` right away, logs say "The call wasn't made: BrokenCircuitException" | That service failed many calls in a row, so the gateway stopped calling it for a few seconds (its circuit breaker). Other services aren't affected | The service owner. Calls resume by themselves once the service answers again |
+| 429 `rate_limited` | Whether one user or app is calling in a loop. Many different callers without a token getting it at once: the gateway sees them all as one address (see [Operations](operations.md#overload-and-broken-services)) | The app developer, or the platform team enabling forwarded headers |
+| 503 `overloaded` | The gateway's limit of requests at once (`Gateway:MaxConcurrentRequests`) was reached, usually because a slow service is holding requests | The platform team: scale out, or find the slow service in the logs (`StepFailed`, `timeout`) |
 | 500 `internal_error` | The gateway logs for the correlation id | The platform team |
 | The browser console says *blocked by CORS policy* (the web app gets no answer at all) | **Settings → Browser access (CORS)**: **Test an origin** with the page's origin. The Logs page shows "Browser origin … is not allowed" | Someone with the admin role adding the origin, written exactly (`https`, `www.`, port). See [Calling from a browser](for-app-developers.md#calling-from-a-browser) |
 

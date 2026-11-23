@@ -11,3 +11,4 @@ appsettings.*.local.json
 *.local.json
 .env
 secrets/
+bench-results/

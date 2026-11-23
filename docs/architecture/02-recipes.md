@@ -54,8 +54,8 @@ erDiagram
 }
 ```
 
-Types: `string`, `int`, `number`, `bool`, `date`. Checks: `required`, `pattern` (with a 50 ms regex
-timeout), `enum`, `min`/`max`, `maxLength` (default 200), and no control characters. Anything the
+Types: `string`, `int`, `number`, `bool`, `date`. Checks: `required`, `pattern` (run by the non-backtracking
+regex engine, so it can't be made slow; ADR 0017), `enum`, `min`/`max`, `maxLength` (default 200), and no control characters. Anything the
 caller sends that is not declared is **ignored and never forwarded**. This rule exists to stop
 parameter smuggling.
 

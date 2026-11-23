@@ -26,14 +26,15 @@ internal static partial class GatewayLog
 
 /// <summary>
 /// Writes ONE log line per request. The endpoint is the recipe id (or the route pattern), never the raw
-/// path: paths contain ids that can be personal data. Health checks and the live-log endpoint are skipped (they are polled constantly).
+/// path: paths contain ids that can be personal data. Health checks and the /_admin endpoints (live logs, runtime numbers) are skipped (they are polled constantly).
 /// </summary>
 internal sealed class RequestLogMiddleware(RequestDelegate next, ILogger<RequestLogMiddleware> logger)
 {
     public async Task InvokeAsync(HttpContext http)
     {
-        // Health checks run every few seconds, and the Logs page polls /_admin/logs: logging either would fill the log with itself.
-        if (http.Request.Path.StartsWithSegments("/health") || http.Request.Path.StartsWithSegments("/_admin/logs"))
+        // Health checks run every few seconds, the Logs page polls /_admin/logs and the benchmark polls /_admin/runtime:
+        // logging them would fill the log with itself.
+        if (http.Request.Path.StartsWithSegments("/health") || http.Request.Path.StartsWithSegments("/_admin"))
         {
             await next(http);
             return;

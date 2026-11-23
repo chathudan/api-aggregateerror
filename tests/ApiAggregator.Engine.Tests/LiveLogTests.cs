@@ -64,6 +64,23 @@ public class LiveLogTests
     }
 
     [Fact]
+    public async Task Every_reader_waiting_is_woken_also_after_many_lines_with_nobody_waiting()
+    {
+        var buffer = new LiveLogBuffer(10);
+        for (var i = 0; i < 100; i++) buffer.Add(Entry()); // nobody waits: nothing to wake
+        var latest = buffer.LatestSeq;
+
+        var first = buffer.WaitForNewAsync(latest, TimeSpan.FromSeconds(10), CancellationToken.None);
+        var second = buffer.WaitForNewAsync(latest, TimeSpan.FromSeconds(10), CancellationToken.None);
+        Assert.False(first.IsCompleted || second.IsCompleted);
+
+        buffer.Add(Entry());
+
+        var both = Task.WhenAll(first, second);
+        Assert.True(ReferenceEquals(await Task.WhenAny(both, Task.Delay(TimeSpan.FromSeconds(5))), both));
+    }
+
+    [Fact]
     public async Task Waiting_returns_straight_away_when_newer_lines_already_exist()
     {
         var buffer = new LiveLogBuffer(10);

@@ -1,3 +1,5 @@
+using System.Buffers;
+using System.IO.Pipelines;
 using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Net;
@@ -34,7 +36,11 @@ public sealed class CompositionExecutor(
     ILogger<CompositionExecutor> logger)
 {
     private readonly EngineOptions _options = options.Value;
-    private readonly ConcurrentDictionary<string, ExecutionPlan> _plans = new(StringComparer.Ordinal);
+    // Plans for the current config version only. Replaced as a whole when the config changes, so plans of old versions
+    // don't pile up (each publish would otherwise keep a plan per endpoint forever).
+    private volatile PlanCache _plans = new("", new ConcurrentDictionary<string, ExecutionPlan>(StringComparer.Ordinal));
+
+    private sealed record PlanCache(string ConfigVersion, ConcurrentDictionary<string, ExecutionPlan> Plans);
 
     /// <param name="config">Run against this configuration instead of the store's, e.g. one with an endpoint that isn't
     /// saved yet (the admin app's "Send a test call"). Normally null.</param>
@@ -85,9 +91,7 @@ public sealed class CompositionExecutor(
         // 3. steps
         // A published version never changes, so its plan is worked out once. A draft under "Try it" keeps its version
         // number while it is edited (steps added, renamed...), so it is planned afresh every time (cheap: no I/O).
-        var plan = mode.UseCache
-            ? _plans.GetOrAdd($"{recipe.Id}:{recipe.Version}:{config.Version}", _ => ExecutionPlanner.Plan(recipe))
-            : ExecutionPlanner.Plan(recipe);
+        var plan = mode.UseCache ? PlansFor(config.Version).GetOrAdd($"{recipe.Id}:{recipe.Version}", _ => ExecutionPlanner.Plan(recipe)) : ExecutionPlanner.Plan(recipe);
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
         timeout.CancelAfter(recipe.TimeoutMs);
 
@@ -335,7 +339,8 @@ public sealed class CompositionExecutor(
                 if (items.Count > _options.MaxForEachItems)
                     throw new BindingException($"For-each has {items.Count} items; the limit is {_options.MaxForEachItems}.");
 
-                using var gate = new SemaphoreSlim(step.MaxConcurrency);
+                // The validator keeps this between 1 and 32; a hand-edited file could say 0 (waits forever) or less (throws).
+                using var gate = new SemaphoreSlim(Math.Clamp(step.MaxConcurrency, 1, 32));
                 var tasks = items.Select(async (item, index) =>
                 {
                     await gate.WaitAsync(token);
@@ -371,10 +376,22 @@ public sealed class CompositionExecutor(
         return StepRun.Skip(step, reason, clock);
     }
 
+    /// <summary>The plan cache for this config version, starting a new one when the version changes.</summary>
+    private ConcurrentDictionary<string, ExecutionPlan> PlansFor(string configVersion)
+    {
+        var current = _plans;
+        if (current.ConfigVersion == configVersion) return current.Plans;
+        var fresh = new PlanCache(configVersion, new ConcurrentDictionary<string, ExecutionPlan>(StringComparer.Ordinal));
+        _plans = fresh; // two requests may both swap at a version change: harmless, the loser's plans are just rebuilt
+        return fresh.Plans;
+    }
+
     /// <summary>The exceptions that mean "this step failed". Anything else is a bug and is allowed to surface.</summary>
     private static bool IsStepFailure(Exception ex, CancellationToken callerToken) => ex switch
     {
         DownstreamException or BindingException or AuthFailedException or FormatException or HttpRequestException => true,
+        // The connection broke while the answer was being read (HttpIOException and the like). Found by the benchmark.
+        IOException => true,
         // A cancellation we didn't ask for is a step or recipe timeout. If the caller hung up, let it propagate.
         OperationCanceledException => !callerToken.IsCancellationRequested,
         _ => false
@@ -390,6 +407,8 @@ public sealed class CompositionExecutor(
         BindingException or FormatException => new StepFailure(DownstreamErrorCode.MissingValue, ex.Message, null, null, 0),
         AuthFailedException => new StepFailure(DownstreamErrorCode.AuthFailed, $"The gateway couldn't sign in to {serviceName}.", null, ex.Message, 0),
         HttpRequestException h => new StepFailure(DownstreamErrorCode.Unreachable, $"{serviceName} couldn't be reached.", null, $"Connection problem: {h.HttpRequestError}.", 1),
+        // Only the type in the detail: these messages can quote bytes of the service's answer, which must never be logged.
+        IOException io => new StepFailure(DownstreamErrorCode.Unreachable, $"{serviceName}'s answer was cut off.", null, $"Connection broke while reading the answer ({io.GetType().Name}).", 1),
         OperationCanceledException => new StepFailure(DownstreamErrorCode.Timeout, $"{serviceName} didn't answer in time.", null, null, 1),
         _ => throw new InvalidOperationException("Not a step failure.") // IsStepFailure keeps us from getting here
     };
@@ -418,6 +437,7 @@ public sealed class CompositionExecutor(
         for (var attempt = 0; ; attempt++)
         {
             using var message = built.ToHttpRequestMessage();
+            message.Options.Set(EngineHttpClients.ServiceId, call.Service.Id);
             message.Headers.TryAddWithoutValidation("X-Correlation-Id", caller.CorrelationId);
             await authenticator.ApplyAsync(call.Profile, message, caller, stepTimeout.Token);
 
@@ -484,27 +504,49 @@ public sealed class CompositionExecutor(
         if (response.Content.Headers.ContentLength > _options.MaxResponseBytes)
             throw new DownstreamException(DownstreamErrorCode.InvalidResponse, $"The response from {serviceName} was too large.", (int)response.StatusCode);
 
+        // Read in small pooled pieces (16 KB) and parse the pieces as they are, never as one big array. One big array per
+        // answer was the benchmark's problem with huge answers: first megabytes of garbage per call (every endpoint slowed),
+        // then, pooled, a gigabyte kept, then, unpooled, a fragmented large-object heap the process never gave back.
         await using var stream = await response.Content.ReadAsStreamAsync(ct);
-        using var buffer = new MemoryStream();
-        var chunk = new byte[16 * 1024];
-        int read;
-        while ((read = await stream.ReadAsync(chunk, ct)) > 0)
+        var reader = PipeReader.Create(stream, new StreamPipeReaderOptions(bufferSize: 16 * 1024, leaveOpen: true));
+        ReadResult result;
+        while (true)
         {
-            if (buffer.Length + read > _options.MaxResponseBytes)
+            result = await reader.ReadAsync(ct);
+            if (result.Buffer.Length > _options.MaxResponseBytes)
+            {
+                await reader.CompleteAsync();
                 throw new DownstreamException(DownstreamErrorCode.InvalidResponse, $"The response from {serviceName} was too large.", (int)response.StatusCode);
-            buffer.Write(chunk, 0, read);
+            }
+            if (result.IsCompleted) break;
+            reader.AdvanceTo(result.Buffer.Start, result.Buffer.End); // keep it all, ask for more
         }
-        if (buffer.Length == 0) return null;
 
-        var mediaType = response.Content.Headers.ContentType?.MediaType ?? "";
-        if (mediaType.Contains("json", StringComparison.OrdinalIgnoreCase))
+        var body = result.Buffer;
+        try
         {
-            try { return JsonNode.Parse(buffer.GetBuffer().AsSpan(0, (int)buffer.Length)); }
-            catch (JsonException) { throw new DownstreamException(DownstreamErrorCode.InvalidResponse, $"{serviceName} returned an invalid response.", (int)response.StatusCode); }
+            if (body.IsEmpty) return null;
+            var mediaType = response.Content.Headers.ContentType?.MediaType ?? "";
+            if (mediaType.Contains("json", StringComparison.OrdinalIgnoreCase))
+            {
+                try
+                {
+                    var json = new Utf8JsonReader(body);
+                    var node = JsonNode.Parse(ref json);
+                    if (json.Read()) throw new JsonException("More than one value."); // same rule as parsing the whole text
+                    return node;
+                }
+                catch (JsonException) { throw new DownstreamException(DownstreamErrorCode.InvalidResponse, $"{serviceName} returned an invalid response.", (int)response.StatusCode); }
+            }
+            return mediaType.StartsWith("text/", StringComparison.OrdinalIgnoreCase)
+                ? JsonValue.Create(Encoding.UTF8.GetString(body))
+                : null; // binary content is not aggregated
         }
-        return mediaType.StartsWith("text/", StringComparison.OrdinalIgnoreCase)
-            ? JsonValue.Create(Encoding.UTF8.GetString(buffer.GetBuffer(), 0, (int)buffer.Length))
-            : null; // binary content is not aggregated
+        finally
+        {
+            reader.AdvanceTo(body.End);
+            await reader.CompleteAsync();
+        }
     }
 
     private static JsonObject ReadHeaders(HttpResponseMessage response)

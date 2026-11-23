@@ -237,14 +237,15 @@ public sealed class AdminService(
     public async Task<AdminResult<IReadOnlyList<RecipeSummary>>> GetRecipesAsync(AdminActor actor, CancellationToken ct = default)
     {
         if (NeedsAuthor(actor) is { } no) return no;
-        var published = (await store.GetSnapshotAsync(ct)).Recipes;
-        var drafts = await store.GetDraftsAsync(ct);
-        var current = published.Select(r => r.Id).Union(drafts.Select(d => d.Id)).ToHashSet();
+        // Looked up by id (thousands of endpoints: a search through both lists per endpoint would be slow).
+        var published = (await store.GetSnapshotAsync(ct)).Recipes.ToDictionary(r => r.Id);
+        var drafts = (await store.GetDraftsAsync(ct)).DistinctBy(d => d.Id).ToDictionary(d => d.Id); // a hand-copied draft file could repeat an id
+        var current = published.Keys.Union(drafts.Keys).ToHashSet();
 
         var list = current.Select(id =>
         {
-            var p = published.FirstOrDefault(r => r.Id == id);
-            var d = drafts.FirstOrDefault(r => r.Id == id);
+            var p = published.GetValueOrDefault(id);
+            var d = drafts.GetValueOrDefault(id);
             var r = d ?? p!;
             return new RecipeSummary(id, r.Name, r.Method, "/bff/" + r.Route, p?.Version, d is not null, Deleted: false);
         }).ToList();

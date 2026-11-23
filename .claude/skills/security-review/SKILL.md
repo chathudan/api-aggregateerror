@@ -29,6 +29,11 @@ Go through each item against the diff. For every "no", fix it or explain why in 
 - [ ] Timeouts, response-size cap, forEach cap and step cap still apply
 - [ ] Retries only for idempotent methods
 - [ ] Errors shown to callers name the service and status, never downstream bodies or stack traces
+- [ ] Nothing a downstream service does can become a 500: new exceptions on the call path are step failures (ADR 0017)
+- [ ] Anything kept in memory for the life of the process is bounded (per config version, capped, or expiring), and
+      nothing per request or per caller-chosen value (Host, headers, ids) grows without limit
+- [ ] The overload limit (`Gateway:MaxConcurrentRequests`) still sits in front of new `/bff` work. For pipeline or
+      engine changes, run `./scripts/bench.sh --profile smoke`
 
 ## Logging and data
 - [ ] Logs contain ids, statuses and timings, never values or tokens

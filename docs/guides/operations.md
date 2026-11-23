@@ -191,7 +191,11 @@ Settings come from `appsettings.json`, then environment variables (`:` becomes `
 | `Aggregator:Engine:MaxResponseBytes` | gateway | 5242880 (5 MB) | Largest downstream answer accepted |
 | `Aggregator:Engine:MaxForEachItems` | gateway | 100 | Most items one "run for each" step may call |
 | `Aggregator:Engine:CacheSizeMb` | gateway | 256 | Memory for the response and step caches |
-| `Gateway:RequestsPerMinutePerCaller` | gateway | 600 | Rate limit per user (or per IP without a token) |
+| `Gateway:RequestsPerMinutePerCaller` | gateway | 600 | Rate limit per user (or per IP without a token: see [Overload and broken services](#overload-and-broken-services)) |
+| `Gateway:MaxConcurrentRequests` | gateway | 1000 | Most `/bff` requests answered at once. More get a quick 503 `overloaded` with `Retry-After: 5` ([ADR 0017](../adr/0017-overload-protection-and-per-service-circuits.md)) |
+| `Gateway:MaxCallsInFlightPerService` | gateway | 200 | Most calls to one service at once. More fail at once with 502 `unreachable`, so one slow service can't hold the whole gateway |
+| `Gateway:Diagnostics:Enabled` | gateway | false | `GET /_admin/runtime`: memory, collections, threads, requests in flight and turned away (numbers only; authors and publishers). Used by the benchmark |
+| `Gateway:Diagnostics:AllowForcedGc` | gateway | false | **Development only.** Lets the benchmark force a garbage collection for exact memory readings |
 | `Gateway:OpenApi:Enabled` | gateway | true | Serve `/bff/openapi.json` |
 | `Gateway:OpenApi:IncludeInternalDetails` | gateway | false | Show internal service names in the spec. Keep off in production |
 | `Gateway:ApiDocs:Enabled` | gateway | true in Development, else false | The Swagger UI page at `/bff/docs` |
@@ -249,6 +253,7 @@ Keep it that way: don't turn on HttpClient request logging, which prints full ad
 | `ConfigReloadFailed` | 1401 | A bad config file. The gateway keeps serving the last good one |
 | p95 of `RequestCompleted.DurationMs` per `Endpoint` | 2000 | Slow endpoints |
 | 429 count per `Subject` | 2000 | An app calling in a loop |
+| Any 503 | 2000 | The gateway is at `Gateway:MaxConcurrentRequests`: scale out, or find the slow service holding requests |
 | Health probe failures | — | The process or its config |
 
 Example Log Analytics query, failures per service in the last hour (column names depend on how your
@@ -274,8 +279,27 @@ central store.
   slowest *chain* of calls.
 - A shared Redis cache across replicas is on the roadmap. Until then, the cache hit rate drops as you add
   replicas.
-- Load-test with release builds against the real test services before sizing. The numbers in
-  [architecture 05](../architecture/05-operations.md#why-its-fast) come from a debug build on one small container.
+- Run the [benchmark](benchmarking.md) (`./scripts/bench.sh`) before a release and after changing the engine or the
+  gateway's pipeline: it checks the gateway under load, with a broken service, with abusive requests, while endpoints
+  are published, and over time (memory). Its numbers compare runs on one machine; size production with a release
+  build against the real test services.
+
+## Overload and broken services
+
+The gateway is built to keep answering, quickly, whatever its services do ([ADR 0017](../adr/0017-overload-protection-and-per-service-circuits.md)).
+
+| Situation | What the gateway does | What to watch |
+|---|---|---|
+| More than `Gateway:MaxConcurrentRequests` requests at once | Answers 503 `overloaded` with `Retry-After: 5` straight away; health checks still answer | 503 count in the request log (event 2000). Scale out, or find the slow service behind it |
+| A service is slow, failing or unreachable | Endpoints that **need** it answer 502/504 with the service named; optional steps are left out (a partial answer); other endpoints are unaffected | `StepFailed` (1101) by `ServiceId` |
+| A service is slow or sends huge answers | At most `Gateway:MaxCallsInFlightPerService` calls to it at once; more fail straight away (502 `unreachable`), so it can only hold part of the gateway | `StepFailed` by `ServiceId` |
+| A service keeps failing | Its circuit breaker opens for a few seconds: calls to it fail at once (502 `unreachable`) instead of waiting. One circuit per service, so others carry on | The same, plus Polly warnings naming the service |
+| A safe call (GET) fails briefly | Tried again twice, after 100 ms and 200 ms, within the step's timeout. POST, PUT, PATCH and DELETE are never repeated | — |
+| One app calls in a loop | 429 for that caller only, after `Gateway:RequestsPerMinutePerCaller` | 429 count per `Subject` |
+
+Callers **without a token** share one allowance per IP address. Behind a reverse proxy or load balancer every caller
+seems to come from the proxy, so enable forwarded headers (`ASPNETCORE_FORWARDEDHEADERS_ENABLED=true`, and trust
+only your proxy) or anonymous endpoints are limited together.
 
 ## Backup of the configuration
 

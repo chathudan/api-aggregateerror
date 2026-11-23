@@ -36,7 +36,13 @@ builder.Services.AddAggregatorEngine(builder.Configuration);
 using var host = builder.Build();
 
 var store = host.Services.GetRequiredService<IConfigStore>();
-var snapshot = await store.GetSnapshotAsync();
+ConfigSnapshot snapshot;
+try { snapshot = await store.GetSnapshotAsync(); }
+catch (ConfigException problem)
+{
+    Console.WriteLine($"FAIL {problem.Message}");
+    return 1;
+}
 
 switch (args[0])
 {

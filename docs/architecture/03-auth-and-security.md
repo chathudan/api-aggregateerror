@@ -70,11 +70,12 @@ puts a password, secret, token or key value in plain text.
 | Header injection (CR/LF) | Rejected; 4 KB limit; security headers can't be bound | `RequestBuilder`, `RecipeValidator` |
 | Session leakage between users | `UseCookies = false` (no shared cookie jar); per-caller cache keys | `ServiceCollectionExtensions`, `CacheKeys` |
 | Credential replay to another host | `AllowAutoRedirect = false` | `ServiceCollectionExtensions` |
-| ReDoS in input patterns | 50 ms regex timeout | `InputBinder`, `RecipeValidator` |
+| ReDoS in input patterns | Non-backtracking regex engine (time grows linearly with the input, no limit needed); patterns it can't run (lookarounds, backreferences) get a 250 ms limit. Values are at most 200 characters by default | `InputBinder`, `RecipeValidator` |
 | Huge or slow downstream responses | 5 MB cap, per-step and per-recipe timeouts | `CompositionExecutor` |
 | Fan-out amplification | `forEach` capped at 100 items with bounded concurrency; 25 steps max | `CompositionExecutor`, `RecipeValidator` |
 | Abuse / brute force | Per-caller fixed-window rate limit (default 600/min) | Gateway |
-| Downstream outages | Standard resilience handler: retries **only idempotent methods**, circuit breaker, timeouts | Gateway |
+| Downstream outages | Standard resilience handler: retries **only idempotent methods** (100 ms, 200 ms), one circuit breaker **per service**; anything the pipeline refuses is a step failure (502), never a 500 (ADR 0017) | `DownstreamResilience` |
+| Overload and resource exhaustion | At most `Gateway:MaxConcurrentRequests` `/bff` requests at once, then a quick 503 `overloaded`; caches bounded per config version; the OpenAPI document built for at most two `Host` values (ADR 0017) | Gateway |
 | Leaking internals in errors | Callers get a code and a safe message ("Service X answered 404"); internal detail only in logs and admin traces; never downstream bodies or stack traces | `CompositionExecutor`, ADR 0009 |
 | Identifiers or tokens in logs | Default HttpClient logging removed; our own logs carry ids, codes and timings only; the request log uses the recipe id, not the raw path | `EngineLog`, gateway request log |
 | Browser/proxy caching of personal data | `Cache-Control: no-store`, `nosniff`, `no-referrer`; no `Server` header | Gateway |

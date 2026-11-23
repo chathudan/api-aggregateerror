@@ -123,6 +123,32 @@ public sealed class FileConfigStoreTests : IDisposable
     }
 
     [Fact]
+    public async Task Two_endpoint_files_with_the_same_id_are_refused_with_a_plain_message()
+    {
+        await Store().PublishAsync(Recipe(1), Change);
+        File.Copy(Path.Combine(_dir, "recipes", "orders.json"), Path.Combine(_dir, "recipes", "orders-copy.json"));
+
+        var problem = await Assert.ThrowsAsync<ConfigException>(async () => await Store().GetSnapshotAsync());
+
+        Assert.Contains("Two endpoints use the id 'orders' (recipes/orders-copy.json and recipes/orders.json)", problem.Message);
+    }
+
+    [Fact]
+    public async Task A_running_gateway_keeps_its_config_when_a_duplicate_id_appears()
+    {
+        await Store().PublishAsync(Recipe(1), Change);
+        var gateway = Store();
+        var before = await gateway.GetSnapshotAsync();
+
+        File.Copy(Path.Combine(_dir, "recipes", "orders.json"), Path.Combine(_dir, "recipes", "orders-copy.json"));
+        await Task.Delay(TimeSpan.FromSeconds(1.2)); // ReloadCheckSeconds = 1
+
+        var after = await gateway.GetSnapshotAsync();
+        Assert.Same(before, after);
+        Assert.NotNull(after.GetRecipe("orders"));
+    }
+
+    [Fact]
     public async Task History_of_one_recipe_never_includes_another_whose_id_starts_the_same()
     {
         var store = Store();

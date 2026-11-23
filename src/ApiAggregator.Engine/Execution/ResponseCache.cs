@@ -20,9 +20,19 @@ public interface IResponseCache
 public sealed class MemoryResponseCache : IResponseCache, IDisposable
 {
     private readonly MemoryCache _cache;
+    private readonly Timer _sweep;
 
-    public MemoryResponseCache(IOptions<EngineOptions> options) =>
-        _cache = new MemoryCache(new MemoryCacheOptions { SizeLimit = (long)options.Value.CacheSizeMb * 1024 * 1024 });
+    public MemoryResponseCache(IOptions<EngineOptions> options)
+    {
+        _cache = new MemoryCache(new MemoryCacheOptions
+        {
+            SizeLimit = (long)options.Value.CacheSizeMb * 1024 * 1024,
+            ExpirationScanFrequency = TimeSpan.FromSeconds(10)
+        });
+        // MemoryCache drops expired entries only when it is used. When traffic stops they would stay in memory, and they
+        // can hold personal data: sweep them out every 30 seconds whatever the traffic.
+        _sweep = new Timer(_ => _cache.Compact(0), null, TimeSpan.FromSeconds(30), TimeSpan.FromSeconds(30));
+    }
 
     public bool TryGet(string key, out byte[] value)
     {
@@ -34,7 +44,11 @@ public sealed class MemoryResponseCache : IResponseCache, IDisposable
     public void Set(string key, byte[] value, TimeSpan ttl) =>
         _cache.Set(key, value, new MemoryCacheEntryOptions { Size = value.Length + key.Length, AbsoluteExpirationRelativeToNow = ttl });
 
-    public void Dispose() => _cache.Dispose();
+    public void Dispose()
+    {
+        _sweep.Dispose();
+        _cache.Dispose();
+    }
 }
 
 /// <summary>

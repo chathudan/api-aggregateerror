@@ -102,4 +102,10 @@ public static class EngineHttpClients
 {
     public const string Downstream = "aggregator-downstream";
     public const string Auth = "aggregator-auth";
+
+    /// <summary>
+    /// The service id on every downstream request, so the gateway keeps one circuit breaker per service (ADR 0017):
+    /// a broken service must not stop calls to the others, even when they share a host.
+    /// </summary>
+    public static readonly HttpRequestOptionsKey<string> ServiceId = new("aggregator.service");
 }

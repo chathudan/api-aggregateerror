@@ -147,7 +147,8 @@ public static class OpenApiDocumentBuilder
                 ["TooManyRequests"] = ProblemResponse("Too many calls. Wait for `Retry-After` seconds.", retryAfter: true),
                 ["InternalError"] = ProblemResponse("Unexpected error in the gateway. Quote the correlation id."),
                 ["BadGateway"] = ProblemResponse("A required service call failed. See `code`, `retryable` and `errors`.", retryAfter: true),
-                ["GatewayTimeout"] = ProblemResponse("A required service took too long. Try again shortly.", retryAfter: true)
+                ["GatewayTimeout"] = ProblemResponse("A required service took too long. Try again shortly.", retryAfter: true),
+                ["Overloaded"] = ProblemResponse("The gateway is busy (`code` overloaded). Wait for `Retry-After` seconds and try again.", retryAfter: true)
             }
         };
     }
@@ -334,6 +335,7 @@ public static class OpenApiDocumentBuilder
             responses["429"] = ResponseRef("TooManyRequests");
             responses["500"] = ResponseRef("InternalError");
             responses["502"] = ResponseRef("BadGateway");
+            responses["503"] = ResponseRef("Overloaded");
             responses["504"] = ResponseRef("GatewayTimeout");
             return responses;
         }

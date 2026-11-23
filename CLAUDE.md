@@ -47,6 +47,9 @@ service (Basic, session login, OAuth/JWT, API key, pass-through) in any combinat
 - **History is append-only.** Entries are written once and never changed; version numbers are never
   reused. Publish, roll back and delete endpoint need `aggregator.publisher` (ADR 0012).
 - `Auth:DevSigningKey` is Development-only (startup fails otherwise).
+- **Overload and broken services never crash or 500** (ADR 0017). Too many `/bff` requests at once get 503 `overloaded`;
+  a resilience-pipeline rejection is a step failure (`ResilienceRejectionHandler`); circuits are per service. Long-lived
+  caches stay bounded (per config version, or capped). Check with `./scripts/bench.sh` after changing the engine or pipeline.
 
 If a change touches any of these, run the `security-review` skill and add or adjust a unit test.
 
@@ -69,7 +72,8 @@ If a change touches any of these, run the `security-review` skill and add or adj
 | `src/ApiAggregator.Admin` | The admin app on :5300 (ADR 0014). `Hosting/`: `AdminAuth` (cookie for pages, bearer only for `/admin/*`, dev sign-in, OIDC), `AdminEndpoints` (thin `/admin/*` wrappers over `AdminService`). Pages: `SignIn`, `Home` (dashboard), `Endpoints`, `EndpointEditor` (wizard: stepper, problems next to fields, run-order lanes, sticky footer, rename prompt), `Services`, `Logs`, `BrowserAccess` (Settings → Browser access (CORS)), `Help`. Shared: `PageShell` (every page: one primary action), `StatusPill` (icon + word, never colour alone), `ConfirmBox`, `ErrorBanner`, `Toasts`/`ToastService`, `FieldIssues`, `StepFlow`, `LoopPicker`, `ConditionPicker`, `EmptyState`, `Loading`, `SignInEditor`. `Services/`: `CurrentUser` (the signed-in person), `LiveLogClient`, form models (`RecipeForm`, lossless round trip; `StepChoices` for the pickers; `SignInForm` + `SignInKinds`, `ServiceForms`) |
 | `src/ApiAggregator.Hosting` | `InboundAuth` (JWT setup, scopes, caller context), `LocalSecrets` (Development-only secrets file) |
 | `tools/ApiAggregator.Cli` | `aggregator validate | run` |
-| `samples/MockServices` | Service A (Basic `svc-a/pass-a`), B (session `svc-b/pass-b`), C (OAuth `client-c/secret-c`), D (API key `X-Api-Key: key-d`, spec at `/d/openapi.json`, not in the sample config: use it to try **Add service**); B also has `POST /b/orders/search` (body); I fixed token (`token-i`), J the caller's token, K API key `key-k` + login `svc-k/pass-k`; E Identity, F CRM, G Billing, H Links: people data for **Combine lists** (`PeopleSamples.cs`, explained in `samples/README.md`). All on :5100 |
+| `tools/ApiAggregator.Bench` | `bench generate | micro | run` (ADR 0017, `docs/guides/benchmarking.md`): generates thousands of endpoints against the mocks' `/bench/sNN` services, then load, faults, abuse, config churn, soak and memory checks with pass/fail. No packages. Results in `bench-results/` (git-ignored) |
+| `samples/MockServices` | `/bench/sNN` generic services with switchable faults for the benchmark (`BenchServices.cs`). Service A (Basic `svc-a/pass-a`), B (session `svc-b/pass-b`), C (OAuth `client-c/secret-c`), D (API key `X-Api-Key: key-d`, spec at `/d/openapi.json`, not in the sample config: use it to try **Add service**); B also has `POST /b/orders/search` (body); I fixed token (`token-i`), J the caller's token, K API key `key-k` + login `svc-k/pass-k`; E Identity, F CRM, G Billing, H Links: people data for **Combine lists** (`PeopleSamples.cs`, explained in `samples/README.md`). All on :5100 |
 | `samples/config/` | Sample services, sign-ins and recipes (used by `dev-run.sh`, the guides and the tests; has `SAMPLE-DATA.md`). `customer-summary` shows values passed into path, body, query and header; customer `C-30003` has no loyalty record (a partial answer) |
 | `docs/` | `README.md` (index by audience), `guides/` (getting started, services, endpoints, combine lists, testing, app developers, troubleshooting, operations, security, glossary, FAQ), `architecture/` and `adr/` (the design record), `images/` (screenshots) |
 | `tests/ApiAggregator.Docs.Tests` | Runs every `<!-- check: ... -->` example in `docs/` and compares the output (`scripts/check-docs.sh`) |
@@ -88,6 +92,7 @@ dotnet run --project tools/ApiAggregator.Cli -- validate --config samples/config
 dotnet run --project tools/ApiAggregator.Cli -- run customer-overview --route id=C-10042 --config samples/config   # needs mocks + Secrets__* env
 ./scripts/dev-run.sh                                           # mocks :5100, gateway :5200, admin app :5300 (--real for config/)
 ./scripts/try-gateway.sh                                       # call the sample endpoints with a dev token
+./scripts/bench.sh [--profile smoke|default|soak]              # benchmark: load, faults, abuse, memory (Release build, own ports)
 ```
 
 Target framework: set once in `Directory.Build.props` (`AggregatorTargetFramework`, default `net10.0`).

@@ -13,7 +13,6 @@ using ApiAggregator.Gateway;
 using ApiAggregator.Hosting;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Cors.Infrastructure;
-using Microsoft.Extensions.Http.Resilience;
 
 var builder = WebApplication.CreateBuilder(args);
 builder.AddLocalSecretsFile(); // Development only: secrets saved from the admin UI
@@ -41,13 +40,7 @@ builder.WebHost.ConfigureKestrel(k =>
 
 // ---------------------------------------------------------------- engine + downstream resilience
 builder.Services.AddAggregatorEngine(builder.Configuration);
-builder.Services.AddHttpClient(EngineHttpClients.Downstream)
-    .AddStandardResilienceHandler(o =>
-    {
-        // Retry only safe, idempotent calls (GET/HEAD/OPTIONS...), never POST/PUT/PATCH/DELETE.
-        o.Retry.DisableForUnsafeHttpMethods();
-        o.Retry.MaxRetryAttempts = 2;
-    });
+builder.Services.AddDownstreamResilience(builder.Configuration); // retries, timeouts, one circuit breaker per service (ADR 0017)
 
 // ---------------------------------------------------------------- inbound auth (JWT)
 InboundAuth.ValidateSettings(builder.Configuration.GetSection("Auth"), builder.Environment); // fail at startup, not on the first request
@@ -128,6 +121,27 @@ app.UseExceptionHandler();
 // as the response starts, so error responses (including the exception handler's) keep them.
 app.UseRouting();
 app.UseCors();
+// Overload protection (ADR 0017): at most Gateway:MaxConcurrentRequests /bff requests at once. Beyond that the gateway
+// answers 503 straight away (cheap, with Retry-After) instead of queueing work until memory or threads run out.
+// After CORS, so browser apps can read the 503 and preflights are never counted; before authentication, which costs CPU.
+var inFlight = new InFlightRequests();
+var maxInFlight = builder.Configuration.GetValue("Gateway:MaxConcurrentRequests", 1000);
+app.Use(async (http, next) =>
+{
+    if (!http.Request.Path.StartsWithSegments("/bff")) { await next(); return; }
+    if (inFlight.Enter() > maxInFlight)
+    {
+        inFlight.Leave();
+        inFlight.Rejected();
+        http.Response.StatusCode = StatusCodes.Status503ServiceUnavailable;
+        http.Response.Headers.RetryAfter = "5";
+        await GatewayProblems.WriteAsync(http, ErrorBody.Problem("overloaded", "The gateway is busy. Try again in a few seconds.", 503,
+            InboundAuth.CorrelationIdFrom(http), retryable: true), http.RequestAborted);
+        return;
+    }
+    try { await next(); }
+    finally { inFlight.Leave(); }
+});
 app.UseAuthentication();
 app.UseAuthorization();
 app.UseRateLimiter();
@@ -142,6 +156,10 @@ app.MapGet("/health/ready", async (IConfigStore store, CancellationToken ct) =>
 // Live logs for the admin UI. Outside /bff on purpose, and skipped by the request log (see RequestLogMiddleware).
 app.MapLiveLogs("/_admin/logs", "log-reader");
 
+// Runtime numbers (memory, collections, threads, requests in flight) for the benchmark and operations. Off by default.
+if (builder.Configuration.GetValue("Gateway:Diagnostics:Enabled", false))
+    app.MapRuntimeDiagnostics("/_admin/runtime", "log-reader", inFlight);
+
 // OpenAPI document for all published aggregated endpoints (web/mobile teams generate clients from it),
 // and the Swagger UI page that shows it. Both are anonymous: callers need the spec before they have a token.
 // Literal routes win over the "/bff/{**path}" catch-all below, and they skip the per-caller rate limit
@@ -150,20 +168,13 @@ var devTokenEnabled = app.Environment.IsDevelopment() && !string.IsNullOrEmpty(b
 
 if (builder.Configuration.GetValue("Gateway:OpenApi:Enabled", true))
 {
-    var includeInternalDetails = builder.Configuration.GetValue("Gateway:OpenApi:IncludeInternalDetails", false);
-    CachedSpec? cachedSpec = null; // rebuilt only when the config or the address changes
+    // Rebuilt only when the config changes; a few addresses at most (the Host header is the caller's to choose).
+    var specs = new OpenApiSpecCache(builder.Configuration.GetValue("Gateway:OpenApi:IncludeInternalDetails", false));
 
     app.MapGet("/bff/openapi.json", async (HttpContext http, IConfigStore store, CancellationToken ct) =>
     {
         var snapshot = await store.GetSnapshotAsync(ct);
-        var server = $"{http.Request.Scheme}://{http.Request.Host}";
-        var hit = cachedSpec; // a class, so reading and replacing it is safe across requests
-        if (hit is null || hit.Version != snapshot.Version || hit.Server != server)
-        {
-            var spec = OpenApiDocumentBuilder.Build(snapshot, new OpenApiBuildOptions { ServerUrl = server, IncludeInternalDetails = includeInternalDetails });
-            cachedSpec = hit = new CachedSpec(snapshot.Version, server, spec.ToJsonString());
-        }
-        return Results.Content(hit.Json, "application/json");
+        return Results.Content(specs.Get(snapshot, $"{http.Request.Scheme}://{http.Request.Host}"), "application/json");
     });
 
     if (builder.Configuration.GetValue("Gateway:ApiDocs:Enabled", app.Environment.IsDevelopment()))
@@ -235,8 +246,5 @@ if (devTokenEnabled)
 }
 
 app.Run();
-
-/// <summary>The last OpenAPI document built, for one config version and address.</summary>
-sealed record CachedSpec(string Version, string Server, string Json);
 
 public partial class Program;

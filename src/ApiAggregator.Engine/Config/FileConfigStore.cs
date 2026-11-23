@@ -68,7 +68,15 @@ public sealed class FileConfigStore : IConfigStore
         // Fast path: no I/O at all between checks.
         if (_snapshot is not null && DateTime.UtcNow - _lastCheckUtc < _checkInterval) return _snapshot;
 
-        await _gate.WaitAsync(ct);
+        // The routine check: one request looks at the files (thousands of them with many endpoints) while the others keep
+        // using the current config instead of queueing behind it. After a save here (_lastCheckUtc reset), callers wait,
+        // so whoever saved reads their own change.
+        var current = _snapshot;
+        if (current is not null && _lastCheckUtc != DateTime.MinValue)
+        {
+            if (!_gate.Wait(0)) return current;
+        }
+        else await _gate.WaitAsync(ct);
         try
         {
             if (_snapshot is not null && DateTime.UtcNow - _lastCheckUtc < _checkInterval) return _snapshot;
@@ -83,9 +91,11 @@ public sealed class FileConfigStore : IConfigStore
                 _lastStamp = stamp;
                 _logger.ConfigLoaded(_snapshot.Services.Count, _snapshot.Recipes.Count, _snapshot.Version);
             }
-            catch (Exception ex) when (_snapshot is not null && ex is JsonException or IOException)
+            catch (Exception ex) when (_snapshot is not null && ex is JsonException or IOException or ConfigException)
             {
-                // A half-saved or broken file must never take the gateway down: keep serving the last good config.
+                // A half-saved or broken file must never take the gateway down: keep serving the last good config, and
+                // don't read every file again until something changes.
+                _lastStamp = stamp;
                 _logger.ConfigReloadFailed(ex);
             }
             return _snapshot!;
@@ -244,11 +254,24 @@ public sealed class FileConfigStore : IConfigStore
     {
         var services = await ReadListAsync<ApiService>(ServicesFile, ct);
         var profiles = await ReadListAsync<AuthProfile>(ProfilesFile, ct);
-        var recipes = new List<Recipe>();
+        var recipes = new List<(Recipe Recipe, string File)>();
         foreach (var file in System.IO.Directory.EnumerateFiles(RecipesDir, "*.json").Order())
-            if (await ReadRecipeAsync(file, ct) is { Status: RecipeStatus.Published } recipe) recipes.Add(recipe);
+            if (await ReadRecipeAsync(file, ct) is { Status: RecipeStatus.Published } recipe) recipes.Add((recipe, Path.GetFileName(file)));
         var origins = File.Exists(CorsFile) ? (await ReadAsync<BrowserAccessFile>(CorsFile, ct))?.Origins ?? [] : [];
-        return new ConfigSnapshot(services, profiles, recipes, stamp, origins);
+
+        // Two things with one id would make every lookup ambiguous: refuse the whole config, saying where to look.
+        Unique(services.Select(s => (s.Id, "services.json")), "services");
+        Unique(profiles.Select(p => (p.Id, "auth-profiles.json")), "sign-ins");
+        Unique(recipes.Select(r => (r.Recipe.Id, "recipes/" + r.File)), "endpoints");
+        return new ConfigSnapshot(services, profiles, recipes.Select(r => r.Recipe), stamp, origins);
+    }
+
+    private static void Unique(IEnumerable<(string Id, string Where)> items, string what)
+    {
+        var clash = items.GroupBy(i => i.Id, StringComparer.OrdinalIgnoreCase).FirstOrDefault(g => g.Count() > 1);
+        if (clash is not null)
+            throw new ConfigException($"Two {what} use the id '{clash.Key}' ({string.Join(" and ", clash.Select(c => c.Where).Distinct())}). " +
+                                      "Give each its own id; until then the previous configuration stays in use.");
     }
 
     private string ComputeStamp()
@@ -331,3 +354,6 @@ public sealed class FileConfigStore : IConfigStore
     /// <summary>Files end with a newline, like the hand-written ones, so saving one doesn't show up as a change on its last line.</summary>
     private static string WithFinalNewline(string content) => content.EndsWith('\n') ? content : content + "\n";
 }
+
+/// <summary>The configuration files can't be used as they are. The message says what to fix, in plain English.</summary>
+public sealed class ConfigException(string message) : Exception(message);

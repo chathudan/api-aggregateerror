@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Benchmark: load, soak, faults and memory checks for the gateway (docs/guides/benchmarking.md). No NuGet packages. -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <AssemblyName>bench</AssemblyName>
+    <RootNamespace>ApiAggregator.Bench</RootNamespace>
+    <ServerGarbageCollection>true</ServerGarbageCollection>
+  </PropertyGroup>
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    <ProjectReference Include="../../src/ApiAggregator.Engine/ApiAggregator.Engine.csproj" />
+  </ItemGroup>
+</Project>

@@ -27,12 +27,12 @@
                     <input type="search" @bind="_search" @bind:event="oninput" placeholder="Name or address, for example customer" />
                 </label>
                 @{ var shown = Visible.ToList(); }
-                <p class="hint" role="status">@shown.Count of @_recipes.Count(r => !r.Deleted) endpoints</p>
+                <p class="hint" role="status">@shown.Count of @_recipes.Count(r => !r.Deleted) endpoints@(shown.Count > _limit ? $", first {_limit} shown" : "")</p>
                 <table class="list">
                     <caption class="visually-hidden">Aggregated endpoints</caption>
                     <thead><tr><th scope="col">Name</th><th scope="col">Address</th><th scope="col">Status</th><th scope="col"><span class="visually-hidden">Links</span></th></tr></thead>
                     <tbody>
-                        @foreach (var r in shown)
+                        @foreach (var r in shown.Take(_limit))
                         {
                             <tr>
                                 <td><a href="/endpoints/@r.Id">@NameOf(r)</a></td>
@@ -48,6 +48,11 @@
                     </tbody>
                 </table>
                 @if (shown.Count == 0) { <p class="muted">Nothing matches "@_search".</p> }
+                @if (shown.Count > _limit)
+                {
+                    <p><button type="button" class="button" @onclick="() => _limit += PageSize">Show @Math.Min(PageSize, shown.Count - _limit) more</button>
+                        <span class="hint">or search to find one quickly.</span></p>
+                }
             </section>
         }
 
@@ -77,6 +82,10 @@
 @code {
     private List<RecipeSummary>? _recipes;
     private string _search = "";
+
+    // With thousands of endpoints, drawing every row makes the page slow to open and to search: show them a page at a time.
+    private const int PageSize = 100;
+    private int _limit = PageSize;
 
     private IEnumerable<RecipeSummary> Visible => _recipes!.Where(r => !r.Deleted).Where(r =>
         string.IsNullOrWhiteSpace(_search) || $"{r.Name} {r.Id} {r.Route}".Contains(_search.Trim(), StringComparison.OrdinalIgnoreCase));

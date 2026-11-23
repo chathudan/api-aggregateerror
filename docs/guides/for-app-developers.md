@@ -135,6 +135,7 @@ logs and support. They can change when someone renames a step in the admin app, 
 | 502 | `rate_limited` | A service said "too many requests" | Yes | Try again after `Retry-After` |
 | 502 | `server_error` | A service failed (5xx) | Yes | Try again later; "temporarily unavailable" |
 | 502 | `unreachable` | A service couldn't be reached | Yes | Same as above |
+| 503 | `overloaded` | The gateway is handling as many requests as it allows at once | Yes, after `Retry-After` (5 s) | Back off and try again; don't retry in a tight loop |
 | 504 | `timeout` | A service, or the whole endpoint, took too long | Yes | Try again later |
 | 502 | `invalid_response` | A service sent something that isn't JSON, or too much | No | Report it |
 | 502 | `missing_value` | A value needed for a call was missing, such as an id missing from an earlier answer | No | Usually data-specific: report it with the record |

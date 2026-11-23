@@ -124,6 +124,7 @@ Every error is RFC 7807 problem details (`application/problem+json`) with a stab
 | Token lacks the recipe's scope | 403 | `insufficient_scope` |
 | No published endpoint at that path | 404 | `not_found` |
 | Too many requests from one caller | 429 | `rate_limited` (with `Retry-After`) |
+| Too many requests at once for the whole gateway | 503 | `overloaded` (with `Retry-After: 5`, [ADR 0017](../adr/0017-overload-protection-and-per-service-circuits.md)) |
 | Unexpected gateway error | 500 | `internal_error` (no exception details) |
 
 Example: the gateway can't sign in to Service B, which a recipe requires.

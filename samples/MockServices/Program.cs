@@ -13,6 +13,7 @@
 //   /f  CRM       - contacts, notes, orders   - Basic auth (svc-f / pass-f)
 //   /g  Billing   - accounts                  - API key (X-Api-Key: key-g)
 //   /h  Links     - billing account -> user   - no auth (internal)
+//   /bench/sNN  any number of generic services for the benchmark, with faults switched on by POST /_chaos/sNN
 // GET /_stats shows how many times each endpoint was called (handy for checking the cache).
 // Test data only. No real customer or patient data belongs here.
 
@@ -220,6 +221,9 @@ app.MapGet("/e/openapi.json", () => Results.Text(OpenApiSpecs.ServiceE, "applica
 app.MapGet("/f/openapi.json", () => Results.Text(OpenApiSpecs.ServiceF, "application/json"));
 app.MapGet("/g/openapi.json", () => Results.Text(OpenApiSpecs.ServiceG, "application/json"));
 app.MapGet("/h/openapi.json", () => Results.Text(OpenApiSpecs.ServiceH, "application/json"));
+
+// /bench/sNN: generic services for the benchmark, with switchable faults (BenchServices.cs).
+app.MapBenchServices();
 
 app.Run();
 
