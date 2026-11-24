@@ -105,6 +105,22 @@ Lists versions newest first: version, what happened (published / rolled back fro
 the full JSON, read only. **Roll back to this** and **Delete endpoint** are shown to publishers only
 (`canPublish` from `/admin/capabilities`), and each asks for confirmation in plain words. The API
 checks the role whatever the UI shows. Entries from before ADR 0012 show "Not recorded" for who and when.
+"Who" also says how: "via the admin API" for scripts, and "drafted by Ann Author via MCP (Claude Code)" when the
+draft that went live was written by someone else or by an AI agent (ADR 0020).
+
+## Activity log
+
+Author changes have no versions, so they aren't in the history. The **activity log** records each one instead
+(ADR 0020):
+- what was done: saved, imported, discarded or deleted;
+- to what: an endpoint draft, a service, a sign-in, or a secret (its name only);
+- who did it, and how: page, admin API, or MCP with the client's name;
+- when.
+
+Never contents, never values. It is one line per change in `history/activity.jsonl`, appended and never rewritten.
+The endpoint editor shows the newest change under the address ("Draft saved by Ann Author via MCP (Claude Code), 3 min
+ago"), and so does each service on the Services page. If the log can't be written, the change still stands and an
+error is logged.
 
 ## Services: rename and delete
 
@@ -228,6 +244,7 @@ here (401). Roles are checked by the endpoint policy and again by `AdminService`
 | `DELETE /admin/recipes/{id}/draft` | author | Discard changes. The live version keeps serving |
 | `DELETE /admin/recipes/{id}` | **publisher** | Delete the endpoint: unpublish and discard the draft. History is kept |
 | `POST /admin/recipes/{id}/validate` | author | Plain-English issues |
+| `GET /admin/activity?kind=&id=&max=` | author | The activity log, newest first (`kind`: `endpoint`, `service`, `sign-in`, `secret`): `at`, `by`, `byName`, `via` (`page`, `api`, `mcp`), `client`, `action`, `kind`, `id`. Never contents or values |
 | `GET /admin/schema/recipe` | author | The JSON Schema of an endpoint (recipe), with plain descriptions (ADR 0019). The same as `docs/schemas/recipe.schema.json` and `aggregator schema` |
 | `GET /admin/path-language` | author | The value language as data: roots, syntax, the fixed transforms (name, usage, meaning), templates, conditions, binding targets |
 | `POST /admin/recipes/validate` (endpoint JSON) | author | Check endpoint JSON that isn't saved: `issues` (with `where`) and `warnings`. Saves nothing |

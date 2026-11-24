@@ -177,4 +177,54 @@ public sealed class FileConfigStoreTests : IDisposable
         Assert.False(await store.DeleteDraftAsync("orders"));
         Assert.False(await store.DeleteServiceAsync("nothing"));
     }
+
+    // ---------------------------------------------------------------- activity log (ADR 0020)
+
+    private static ActivityEntry Activity(string id, string action, int minute, ChangeChannel via = ChangeChannel.Page, string? client = null) =>
+        new(new DateTimeOffset(2026, 11, 24, 9, minute, 0, TimeSpan.Zero), "qa-1", "Quinn QA", via, client, action, ActivityEntry.Endpoint, id);
+
+    [Fact]
+    public async Task The_activity_log_only_ever_grows_and_earlier_lines_are_never_rewritten()
+    {
+        var store = Store();
+        await store.AppendActivityAsync(Activity("orders", "draft saved", 1));
+        var file = Path.Combine(_dir, "history", "activity.jsonl");
+        var firstLine = (await File.ReadAllLinesAsync(file))[0];
+
+        await store.AppendActivityAsync(Activity("orders", "draft saved", 2, ChangeChannel.Mcp, "Claude Code"));
+
+        var lines = await File.ReadAllLinesAsync(file);
+        Assert.Equal(2, lines.Length);
+        Assert.Equal(firstLine, lines[0]);
+        Assert.Empty(await store.GetHistoryIdsAsync()); // never read as a version
+    }
+
+    [Fact]
+    public async Task Activity_comes_back_newest_first_for_one_endpoint_and_a_line_cut_short_is_skipped()
+    {
+        var store = Store();
+        await store.AppendActivityAsync(Activity("orders", "draft saved", 1));
+        await store.AppendActivityAsync(Activity("people", "draft saved", 2));
+        await File.AppendAllTextAsync(Path.Combine(_dir, "history", "activity.jsonl"), "{\"at\":\"2026-11-24T09:03\n"); // a crash mid-write
+        await store.AppendActivityAsync(Activity("orders", "draft imported", 4, ChangeChannel.Mcp, "Claude Code"));
+
+        var orders = await store.GetActivityAsync(ActivityEntry.Endpoint, "orders", 10);
+
+        Assert.Equal(["draft imported", "draft saved"], orders.Select(e => e.Action));
+        Assert.Equal("Quinn QA via MCP (Claude Code)", orders[0].Source.Describe());
+        Assert.Single(await store.GetActivityAsync(null, null, 1));
+    }
+
+    [Fact]
+    public async Task A_published_entry_keeps_how_it_was_made_and_who_drafted_it()
+    {
+        var store = Store();
+        var drafted = new ChangeSource("agent-user", "Ann Author", ChangeChannel.Mcp, "Claude Code");
+
+        await store.PublishAsync(Recipe(1), Change with { Via = ChangeChannel.Api, Drafted = drafted });
+
+        var entry = Assert.Single(await Store().GetHistoryAsync("orders"));
+        Assert.Equal(ChangeChannel.Api, entry.Via);
+        Assert.Equal(drafted, entry.Drafted);
+    }
 }

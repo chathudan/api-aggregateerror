@@ -56,6 +56,12 @@ public interface IConfigStore
 
     /// <summary>Every change to the admin-managed origins, newest first.</summary>
     Task<IReadOnlyList<BrowserAccessHistoryEntry>> GetBrowserAccessHistoryAsync(CancellationToken ct = default);
+
+    /// <summary>Adds one author change to the activity log (ADR 0020). Append-only: entries are never changed or removed.</summary>
+    Task AppendActivityAsync(ActivityEntry entry, CancellationToken ct = default);
+
+    /// <summary>The newest <paramref name="max"/> entries, newest first; only of this kind and id when given.</summary>
+    Task<IReadOnlyList<ActivityEntry>> GetActivityAsync(string? kind, string? id, int max, CancellationToken ct = default);
 }
 
 /// <summary>The version being published is already in the history (for example two people published at once).</summary>

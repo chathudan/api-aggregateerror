@@ -357,6 +357,41 @@ public sealed class RoleTests(AdminApp app) : IClassFixture<AdminApp>
     private static ClaimsPrincipal Principal(Claim role) => new(new ClaimsIdentity([new Claim("sub", "u-1"), role], "test"));
 
     /// <summary>A draft that has passed Try it, ready to publish.</summary>
+    // ---------------------------------------------------------------- activity log (ADR 0020)
+
+    [Fact]
+    public async Task Author_changes_are_in_the_activity_log_with_how_they_were_made_and_never_values()
+    {
+        var agent = Author with { Via = ChangeChannel.Mcp, Client = "Test Agent" };
+        var profile = new AuthProfile
+        {
+            Id = "activity-signin",
+            Steps = [new AuthStepDef { Kind = "ApiKey", Settings = new(StringComparer.OrdinalIgnoreCase) { ["name"] = "X-Api-Key", ["value"] = "secret:activity-key" } }]
+        };
+
+        Assert.True((await Service.SaveAuthProfileAsync(agent, profile.Id, profile)).Ok);
+        await TestedDraft("activity-draft", Publisher with { Via = ChangeChannel.Api });
+
+        var signIn = Assert.Single((await Service.GetActivityAsync(Author, ActivityEntry.SignIn, "activity-signin")).Value!);
+        Assert.Equal("Saved by Ann Author via MCP (Test Agent), just now", ActivityText.Line(signIn, DateTimeOffset.UtcNow));
+        Assert.DoesNotContain("activity-key", JsonSerializer.Serialize(signIn));
+        var draft = Assert.Single((await Service.GetActivityAsync(Author, ActivityEntry.Endpoint, "activity-draft")).Value!);
+        Assert.Equal(ChangeChannel.Api, draft.Via);
+        Assert.Equal(FailureKind.Forbidden, (await Service.GetActivityAsync(new AdminActor("x", null, false, false), null, null)).Failure?.Kind);
+    }
+
+    [Fact]
+    public async Task A_draft_an_agent_wrote_says_so_in_the_history_when_a_person_publishes_it()
+    {
+        await TestedDraft("agent-drafted", Author with { Via = ChangeChannel.Mcp, Client = "Test Agent" });
+
+        Assert.True((await Service.PublishAsync(Publisher, "agent-drafted")).Ok);
+
+        var row = Assert.Single((await Service.GetHistoryAsync(Publisher, "agent-drafted")).Value!);
+        Assert.Equal(ChangeChannel.Page, row.Via);
+        Assert.Equal("Ann Author via MCP (Test Agent)", row.Drafted?.Describe());
+    }
+
     private async Task TestedDraft(string id, AdminActor? who = null)
     {
         who ??= Publisher;

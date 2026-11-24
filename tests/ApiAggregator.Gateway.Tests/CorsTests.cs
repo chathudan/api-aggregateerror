@@ -334,5 +334,7 @@ public sealed class CorsTests(CorsGateway gateway) : IClassFixture<CorsGateway>
         public Task<IReadOnlyList<RecipeHistoryEntry>> GetHistoryAsync(string id, CancellationToken ct = default) => throw Boom();
         public Task SaveBrowserOriginsAsync(IReadOnlyList<ApiAggregator.Engine.BrowserAccess.BrowserOrigin> origins, ApiAggregator.Engine.BrowserAccess.BrowserAccessHistoryEntry change, CancellationToken ct = default) => throw Boom();
         public Task<IReadOnlyList<ApiAggregator.Engine.BrowserAccess.BrowserAccessHistoryEntry>> GetBrowserAccessHistoryAsync(CancellationToken ct = default) => throw Boom();
+        public Task AppendActivityAsync(ApiAggregator.Engine.Config.ActivityEntry entry, CancellationToken ct = default) => throw Boom();
+        public Task<IReadOnlyList<ApiAggregator.Engine.Config.ActivityEntry>> GetActivityAsync(string? kind, string? id, int max, CancellationToken ct = default) => throw Boom();
     }
 }

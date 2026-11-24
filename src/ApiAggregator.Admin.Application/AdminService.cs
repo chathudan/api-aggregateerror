@@ -84,6 +84,7 @@ public sealed class AdminService(
                 return Refuse.BadRequest($"The sign-in '{signIn}' doesn't exist. Save the sign-in first, or pick another one.");
 
         await store.SaveServiceAsync(service, ct);
+        await Record(actor, "saved", ActivityEntry.Service, service.Id, ct);
         return service;
     }
 
@@ -146,6 +147,7 @@ public sealed class AdminService(
                     ("published", published));
 
             await store.DeleteServiceAsync(id, ct);
+            await Record(actor, "deleted", ActivityEntry.Service, id, ct);
             log.LogInformation("Service {ServiceId} deleted by {Subject}", id, actor.Subject);
             return new ServiceDeleted(id, drafts);
         }
@@ -174,6 +176,7 @@ public sealed class AdminService(
         {
             var updated = await importer.ImportAsync(service, request, ct);
             await store.SaveServiceAsync(updated, ct);
+            await Record(actor, "spec imported", ActivityEntry.Service, id, ct);
             return updated;
         }
         catch (OpenApiImportException ex) { return ImportRefused(ex); }
@@ -217,6 +220,7 @@ public sealed class AdminService(
         if (string.IsNullOrEmpty(value) || value.Length > 4096) return Refuse.BadRequest("Enter a value (up to 4096 characters).");
 
         await secretWriter.SaveAsync(name, value, ct);
+        await Record(actor, "saved", ActivityEntry.Secret, name, ct); // the name only, never the value
         return new SecretSaved(name, $"secret:{name}");
     }
 
@@ -244,6 +248,7 @@ public sealed class AdminService(
         var problems = auth.Check(profile).ToList();
         if (problems.Count > 0) return Refuse.BadRequest("The auth profile has problems.", ("errors", problems));
         await store.SaveAuthProfileAsync(profile, ct);
+        await Record(actor, "saved", ActivityEntry.SignIn, id, ct);
         return profile;
     }
 
@@ -316,13 +321,17 @@ public sealed class AdminService(
         return recipe is null ? Refuse.NotFound() : recipe;
     }
 
-    public async Task<AdminResult<Recipe>> SaveDraftAsync(AdminActor actor, string id, Recipe draft, CancellationToken ct = default)
+    public Task<AdminResult<Recipe>> SaveDraftAsync(AdminActor actor, string id, Recipe draft, CancellationToken ct = default) =>
+        SaveDraftAsync(actor, id, draft, "draft saved", ct);
+
+    private async Task<AdminResult<Recipe>> SaveDraftAsync(AdminActor actor, string id, Recipe draft, string action, CancellationToken ct)
     {
         if (NeedsAuthor(actor) is { } no) return no;
         if (draft.Id != id) return Refuse.BadRequest("The id in the URL and the body must match.");
         if (IdProblem(id, "endpoint") is { } badId) return Refuse.BadRequest(badId);
         var saved = Clone(draft, status: RecipeStatus.Draft, version: await NextVersion(id, ct));
         await store.SaveDraftAsync(saved, ct);
+        await Record(actor, action, ActivityEntry.Endpoint, id, ct);
         return saved;
     }
 
@@ -363,7 +372,8 @@ public sealed class AdminService(
         var others = (await store.GetSnapshotAsync(ct)).Recipes.Concat(await store.GetDraftsAsync(ct)).Where(r => r.Id != recipe.Id);
         if (others.FirstOrDefault(r => SameAddress(r, recipe)) is { } clash)
             return Refuse.Conflict($"The endpoint '{clash.Id}' already answers {recipe.Method.ToUpperInvariant()} /bff/{recipe.Route}. Pick another route.");
-        return await SaveDraftAsync(actor, recipe.Id, recipe, ct);
+        var exists = await store.GetDraftAsync(recipe.Id, ct) is not null || (await store.GetSnapshotAsync(ct)).GetRecipe(recipe.Id) is not null;
+        return await SaveDraftAsync(actor, recipe.Id, recipe, exists ? "draft saved" : "draft imported", ct);
     }
 
     /// <summary>What a step can use (fields, and lists to run for each item), for a recipe that may not be saved yet.</summary>
@@ -395,6 +405,7 @@ public sealed class AdminService(
     {
         if (NeedsAuthor(actor) is { } no) return no;
         if (!await store.DeleteDraftAsync(id, ct)) return Refuse.NotFound("There are no unpublished changes to discard.");
+        await Record(actor, "draft discarded", ActivityEntry.Endpoint, id, ct);
         _passedTests.TryRemove(id, out _);
         log.LogInformation("Draft {RecipeId} discarded by {Subject}", id, actor.Subject);
         var live = (await store.GetSnapshotAsync(ct)).GetRecipe(id);
@@ -497,7 +508,7 @@ public sealed class AdminService(
 
             // The version comes from the history, not the draft: a roll back or a delete may have happened since it was saved.
             var live = Clone(draft, status: RecipeStatus.Published, version: await NextVersion(id, ct));
-            try { await store.PublishAsync(live, Change(actor), ct); }
+            try { await store.PublishAsync(live, Change(actor) with { Drafted = await DraftedBy(id, ct) }, ct); }
             catch (HistoryConflictException) { return PublishedMeanwhile(); }
 
             await store.DeleteDraftAsync(id, ct); // it is the live version now, so there are no unpublished changes left
@@ -515,7 +526,7 @@ public sealed class AdminService(
         var liveVersion = (await store.GetSnapshotAsync(ct)).GetRecipe(id)?.Version;
         return (await store.GetHistoryAsync(id, ct)).Select(e => new HistoryRow(
             e.Version, e.Action, e.At, e.By, e.ByName, e.RestoredFrom, e.Recipe?.Name, e.Recipe?.Route,
-            IsLive: e.Action != HistoryAction.Unpublished && e.Version == liveVersion)).ToList();
+            IsLive: e.Action != HistoryAction.Unpublished && e.Version == liveVersion, e.Via, e.Client, e.Drafted)).ToList();
     }
 
     /// <summary>One version's content, for "View" in the History panel (read only).</summary>
@@ -770,7 +781,41 @@ public sealed class AdminService(
             .ToList();
 
     /// <summary>Who and when, for the history (ADR 0012): the person's id and, when their sign-in has one, their name.</summary>
-    private static ChangeInfo Change(AdminActor actor, int? restoredFrom = null) => new(actor.Subject, DateTimeOffset.UtcNow, restoredFrom, actor.DisplayName);
+    private static ChangeInfo Change(AdminActor actor, int? restoredFrom = null) =>
+        new(actor.Subject, DateTimeOffset.UtcNow, restoredFrom, actor.DisplayName, actor.Via, actor.Client);
+
+    // ---------------------------------------------------------------- activity log (ADR 0020)
+
+    /// <summary>
+    /// The newest author changes, newest first: services, sign-ins, secrets (names only) and drafts, from every channel.
+    /// Only of this kind and id when given. Never contents or values.
+    /// </summary>
+    public async Task<AdminResult<IReadOnlyList<ActivityEntry>>> GetActivityAsync(AdminActor actor, string? kind, string? id, int max = 50, CancellationToken ct = default)
+    {
+        if (NeedsAuthor(actor) is { } no) return no;
+        return AdminResult<IReadOnlyList<ActivityEntry>>.Success(await store.GetActivityAsync(kind, id, Math.Clamp(max, 1, 500), ct));
+    }
+
+    /// <summary>
+    /// Adds one entry. The change itself is already saved: if the log can't be written, that's logged as an error rather
+    /// than undoing the change or telling the person it failed.
+    /// </summary>
+    private async Task Record(AdminActor actor, string action, string kind, string id, CancellationToken ct)
+    {
+        try
+        {
+            await store.AppendActivityAsync(new ActivityEntry(DateTimeOffset.UtcNow, actor.Subject, actor.DisplayName, actor.Via, actor.Client, action, kind, id), ct);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            log.LogError("Couldn't add to the activity log: {Kind} {Id} {Action} by {Subject} ({Error})", kind, id, action, actor.Subject, ex.GetType().Name);
+        }
+    }
+
+    /// <summary>Who last saved or imported this draft, and how, for the history entry it goes live with.</summary>
+    private async Task<ChangeSource?> DraftedBy(string id, CancellationToken ct) =>
+        (await store.GetActivityAsync(ActivityEntry.Endpoint, id, 20, ct))
+            .FirstOrDefault(e => e.Action is "draft saved" or "draft imported")?.Source;
 
     /// <summary>One more than any version ever used, live or in the history: version numbers are never reused (ADR 0012).</summary>
     private async Task<int> NextVersion(string id, CancellationToken ct)

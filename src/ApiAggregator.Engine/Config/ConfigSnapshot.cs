@@ -59,4 +59,7 @@ public static class AggregatorJson
         DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
         Converters = { new JsonStringEnumConverter(JsonNamingPolicy.CamelCase) }
     };
+
+    /// <summary>The same, on one line (append-only logs such as the activity log, ADR 0020).</summary>
+    public static readonly JsonSerializerOptions Compact = new(Options) { WriteIndented = false };
 }

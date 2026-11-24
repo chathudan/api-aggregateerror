@@ -183,6 +183,8 @@ internal sealed class InMemoryConfigStore(ConfigSnapshot snapshot) : IConfigStor
     public Task<IReadOnlyList<RecipeHistoryEntry>> GetHistoryAsync(string id, CancellationToken ct = default) => Task.FromResult<IReadOnlyList<RecipeHistoryEntry>>([]);
     public Task SaveBrowserOriginsAsync(IReadOnlyList<ApiAggregator.Engine.BrowserAccess.BrowserOrigin> origins, ApiAggregator.Engine.BrowserAccess.BrowserAccessHistoryEntry change, CancellationToken ct = default) => Task.CompletedTask;
     public Task<IReadOnlyList<ApiAggregator.Engine.BrowserAccess.BrowserAccessHistoryEntry>> GetBrowserAccessHistoryAsync(CancellationToken ct = default) => Task.FromResult<IReadOnlyList<ApiAggregator.Engine.BrowserAccess.BrowserAccessHistoryEntry>>([]);
+    public Task AppendActivityAsync(ApiAggregator.Engine.Config.ActivityEntry entry, CancellationToken ct = default) => Task.CompletedTask;
+    public Task<IReadOnlyList<ApiAggregator.Engine.Config.ActivityEntry>> GetActivityAsync(string? kind, string? id, int max, CancellationToken ct = default) => Task.FromResult<IReadOnlyList<ApiAggregator.Engine.Config.ActivityEntry>>([]);
 }
 
 /// <summary>Fake downstream: answers by "host path" and records every request it sees.</summary>

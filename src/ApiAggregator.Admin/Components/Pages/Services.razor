@@ -132,6 +132,7 @@ else if (_services.Count > 0)
                         <code>@s.BaseUrl</code> ·
                         @(profile is null ? "No sign-in" : string.Join(" + ", profile.Steps.Select(st => SignInKinds.Get(st.Kind).Title)))
                         @if (SignInDisplay.Ago(signIn.CheckedAt) is { Length: > 0 } ago) { <span> · @ago</span> }
+                        @if (_lastChanges.TryGetValue(s.Id, out var change)) { <span> · @ActivityText.Line(change, DateTimeOffset.UtcNow)</span> }
                         @if (s.Certificates is { AcceptAny: true }) { <span> · Accepts any certificate (Development only)</span> }
                         else if (s.Certificates is { Trusted.Count: > 0 } own) { <span> · Trusts @own.Trusted.Count certificate@(own.Trusted.Count == 1 ? "" : "s") of its own</span> }
                     </p>
@@ -431,6 +432,7 @@ else if (_services.Count > 0)
     private List<SignInStatus> _signIns = [];
     private AdminActor _me = AdminActor.Anonymous;
     private bool _canSaveSecrets, _canAcceptAny;
+    private Dictionary<string, ApiAggregator.Engine.Config.ActivityEntry> _lastChanges = []; // service id -> its newest change (ADR 0020)
     private ServiceCertificate? _certificate;
     private ServiceCertificate? _importUntrusted; // More › Import: the spec address's certificate, when nothing trusts it
     private string? _importTrust;                 // ...and the one the person trusted for that import
@@ -467,6 +469,8 @@ else if (_services.Count > 0)
         _services = (await Admin.GetServicesAsync(_me).ValueAsync())?.ToList() ?? [];
         _profiles = (await Admin.GetAuthProfilesAsync(_me).ValueAsync())?.ToList() ?? [];
         _signIns = (await Admin.GetSignInStatusAsync(_me).ValueAsync())?.ToList() ?? [];
+        _lastChanges = ((await Admin.GetActivityAsync(_me, ApiAggregator.Engine.Config.ActivityEntry.Service, null, 500).ValueAsync()) ?? [])
+            .GroupBy(e => e.Id).ToDictionary(g => g.Key, g => g.First());
     }
 
     // ------------------------------------------------------------------ search

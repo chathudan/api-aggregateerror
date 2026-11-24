@@ -155,6 +155,7 @@ public sealed class FileConfigStore : IConfigStore
         var entry = new RecipeHistoryEntry
         {
             Id = recipe.Id, Version = recipe.Version, At = change.At, By = change.By, ByName = change.ByName, RestoredFrom = change.RestoredFrom,
+            Via = change.Via, Client = change.Client, Drafted = change.Drafted,
             Action = change.RestoredFrom is null ? HistoryAction.Published : HistoryAction.RolledBack, Recipe = recipe
         };
         // History first and write-once: if this version is already there, nothing goes live.
@@ -179,7 +180,11 @@ public sealed class FileConfigStore : IConfigStore
             await WriteOnceAsync(published, JsonSerializer.Serialize(kept, FileJson), ct);
         }
 
-        var entry = new RecipeHistoryEntry { Id = id, Version = recipe.Version, Action = HistoryAction.Unpublished, At = change.At, By = change.By, ByName = change.ByName };
+        var entry = new RecipeHistoryEntry
+        {
+            Id = id, Version = recipe.Version, Action = HistoryAction.Unpublished, At = change.At, By = change.By, ByName = change.ByName,
+            Via = change.Via, Client = change.Client
+        };
         await WriteOnceAsync(SafePath(HistoryDir, $"{id}.v{recipe.Version}.unpublished"), JsonSerializer.Serialize(entry, FileJson), ct);
         File.Delete(live); // the gateway's next config check sees one recipe fewer and stops serving it
         _lastCheckUtc = DateTime.MinValue;
@@ -207,6 +212,44 @@ public sealed class FileConfigStore : IConfigStore
             .Select(name => name[..name.IndexOf(".v", StringComparison.Ordinal)])
             .Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal).ToList();
         return Task.FromResult(ids);
+    }
+
+    // ------------------------------------------------------------------ activity (ADR 0020)
+
+    private string ActivityFile => Path.Combine(HistoryDir, "activity.jsonl");
+    private readonly SemaphoreSlim _activityGate = new(1, 1);
+
+    /// <summary>One line per entry, appended and never rewritten (not a "*.v*.json" file, so never read as a version).</summary>
+    public async Task AppendActivityAsync(ActivityEntry entry, CancellationToken ct = default)
+    {
+        var line = JsonSerializer.Serialize(entry, AggregatorJson.Compact) + "\n";
+        await _activityGate.WaitAsync(ct);
+        try
+        {
+            System.IO.Directory.CreateDirectory(HistoryDir);
+            await using var file = new FileStream(ActivityFile, FileMode.Append, FileAccess.Write, FileShare.Read);
+            await file.WriteAsync(System.Text.Encoding.UTF8.GetBytes(line), ct);
+        }
+        finally { _activityGate.Release(); }
+    }
+
+    public async Task<IReadOnlyList<ActivityEntry>> GetActivityAsync(string? kind, string? id, int max, CancellationToken ct = default)
+    {
+        if (!File.Exists(ActivityFile)) return [];
+        var newest = new Queue<ActivityEntry>();
+        await using var stream = new FileStream(ActivityFile, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+        using var reader = new StreamReader(stream);
+        while (await reader.ReadLineAsync(ct) is { } line)
+        {
+            if (line.Length == 0) continue;
+            ActivityEntry? entry;
+            try { entry = JsonSerializer.Deserialize<ActivityEntry>(line, AggregatorJson.Options); }
+            catch (JsonException) { continue; } // a line cut short by a crash: skip it, keep the rest
+            if (entry is null || (kind is not null && entry.Kind != kind) || (id is not null && entry.Id != id)) continue;
+            newest.Enqueue(entry);
+            if (newest.Count > max) newest.Dequeue();
+        }
+        return newest.Reverse().ToList();
     }
 
     public async Task SaveBrowserOriginsAsync(IReadOnlyList<BrowserOrigin> origins, BrowserAccessHistoryEntry change, CancellationToken ct = default)

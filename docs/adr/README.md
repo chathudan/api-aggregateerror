@@ -24,3 +24,4 @@ decision; write a new ADR that supersedes it. Use `.claude/skills/write-adr` or 
 | [0017](0017-overload-protection-and-per-service-circuits.md) | Overload answers 503, one circuit breaker per service, bounded caches; a benchmark checks them | Accepted |
 | [0018](0018-service-certificates.md) | Services with their own certificate: trust an exact one by fingerprint; "accept any" in Development only | Accepted |
 | [0019](0019-authoring-contract.md) | An authoring contract: recipe JSON Schema, the value language as data, endpoint JSON in and out as drafts, llms.txt | Accepted |
+| [0020](0020-activity-log.md) | An append-only activity log of author changes, with how they were made (page, API, MCP) | Accepted |

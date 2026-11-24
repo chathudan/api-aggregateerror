@@ -12,6 +12,15 @@ namespace ApiAggregator.Admin.Application;
 /// </summary>
 public sealed record AdminActor(string? Subject, string? DisplayName, bool IsAuthor, bool IsPublisher, bool IsAdmin = false)
 {
+    /// <summary>How the person is working (ADR 0020): a page (the default), the /admin/* API, or MCP. The host sets it.</summary>
+    public ApiAggregator.Engine.Config.ChangeChannel Via { get; init; } = ApiAggregator.Engine.Config.ChangeChannel.Page;
+
+    /// <summary>The name an MCP client gives itself, e.g. "Claude Code". A label for the activity log; never used to decide anything.</summary>
+    public string? Client { get; init; }
+
+    /// <summary>Who and how, for the activity log and history.</summary>
+    public ApiAggregator.Engine.Config.ChangeSource Source => new(Subject, DisplayName, Via, Client);
+
     public const string AuthorRole = "aggregator.author";
     public const string PublisherRole = "aggregator.publisher";
     public const string AdminRole = "aggregator.admin";

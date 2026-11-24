@@ -1,5 +1,6 @@
 using System.Text.Json.Nodes;
 using ApiAggregator.Admin.Application;
+using ApiAggregator.Engine.Config;
 using ApiAggregator.Engine.Model;
 using ApiAggregator.Hosting;
 
@@ -27,7 +28,8 @@ internal static class AdminEndpoints
                     : Results.BadRequest(new { title = "Ids use lowercase letters, digits and dashes only." });
             });
 
-        static AdminActor Me(HttpContext http) => AdminActor.From(http.User);
+        // Everything here comes through the admin API (scripts), which the activity log records as such (ADR 0020).
+        static AdminActor Me(HttpContext http) => AdminActor.From(http.User) with { Via = ChangeChannel.Api };
 
         // ------------------------------------------------------------ browser access (CORS for the gateway, ADR 0015)
         // Its own group: admins who aren't authors may use it. Looking needs any role; changing needs the admin role.
@@ -66,6 +68,10 @@ internal static class AdminEndpoints
 
         // ------------------------------------------------------------ aggregated endpoints (recipes)
         admin.MapGet("/recipes", async (AdminService s, HttpContext h, CancellationToken ct) => (await s.GetRecipesAsync(Me(h), ct)).ToHttp());
+        // Activity log (ADR 0020): author changes from every channel, newest first. Never contents or values.
+        admin.MapGet("/activity", async (string? kind, string? id, int? max, AdminService s, HttpContext h, CancellationToken ct) =>
+            (await s.GetActivityAsync(Me(h), kind, id, max ?? 50, ct)).ToHttp());
+
         // Authoring contract (ADR 0019): the schema, the value language, and endpoint JSON in and out (as a draft).
         admin.MapGet("/schema/recipe", (AdminService s, HttpContext h) => s.GetRecipeSchema(Me(h)).ToHttp());
         admin.MapGet("/path-language", (AdminService s, HttpContext h) => s.GetPathLanguage(Me(h)).ToHttp());

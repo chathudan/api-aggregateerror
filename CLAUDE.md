@@ -49,6 +49,8 @@ service (Basic, session login, OAuth/JWT, API key, pass-through) in any combinat
   and the gateway re-checks them. Changing them needs `aggregator.admin` (a separate role). The admin app has no CORS.
 - **History is append-only.** Entries are written once and never changed; version numbers are never
   reused. Publish, roll back and delete endpoint need `aggregator.publisher` (ADR 0012).
+- **The activity log is append-only too** (ADR 0020): one line per author change (who, how: page, API or MCP, what,
+  when), never contents or values. `AdminService` writes it; nothing rewrites it.
 - `Auth:DevSigningKey` is Development-only (startup fails otherwise).
 - **Overload and broken services never crash or 500** (ADR 0017). Too many `/bff` requests at once get 503 `overloaded`;
   a resilience-pipeline rejection is a step failure (`ResilienceRejectionHandler`); circuits are per service. Long-lived

@@ -28,7 +28,8 @@
 
 <PageShell Title="@(IsNew ? "New endpoint" : (string.IsNullOrWhiteSpace(_form.Name) ? _form.Id : _form.Name))" Crumbs="Crumbs"
            Purpose="Build, test and publish one aggregated endpoint." HelpTopic="build" />
-<p class="muted">Address callers use: <code>@_form.Method /bff/@_form.Route.Trim('/')</code></p>
+<p class="muted">Address callers use: <code>@_form.Method /bff/@_form.Route.Trim('/')</code>
+    @if (_lastChange is { } change) { <span> · @ActivityText.Line(change, DateTimeOffset.UtcNow)</span> }</p>
 
 @* ---- stepper: each step links to its section and says what's left to do there *@
 <nav aria-label="Steps">
@@ -651,6 +652,7 @@ else if (IsNew)
 
     private static readonly IReadOnlyList<(string Text, string Href)> Crumbs = [("Endpoints", "/endpoints")];
     private List<HistoryRow>? _history;
+    private ApiAggregator.Engine.Config.ActivityEntry? _lastChange; // who last changed the draft, and how (ADR 0020)
     private int? _liveVersion;   // the version the gateway serves now, if any
     private bool _hasDraft;      // there are unpublished changes
     private bool _deleted;       // not live, no draft, but there is history: shown from its last version
@@ -832,6 +834,7 @@ else if (IsNew)
     private async Task LoadHistory()
     {
         _history = (await Admin.GetHistoryAsync(_me, Id!).ValueAsync())?.ToList() ?? [];
+        _lastChange = (await Admin.GetActivityAsync(_me, ApiAggregator.Engine.Config.ActivityEntry.Endpoint, Id, 1).ValueAsync())?.FirstOrDefault();
         _viewing = null; _viewed = null; _confirmRollBack = null; _confirm = Confirm.None;
     }
 
@@ -845,8 +848,15 @@ else if (IsNew)
     };
 
     /// <summary>"Dana Tester (dev:dana-tester)" when the sign-in gave a name, else the id, else "Not recorded".</summary>
-    private static string Who(HistoryRow row) =>
-        row.By is null ? "Not recorded" : row.ByName is { Length: > 0 } name ? $"{name} ({row.By})" : row.By;
+    private static string Who(HistoryRow row)
+    {
+        var who = row.By is null ? "Not recorded" : row.ByName is { Length: > 0 } name ? $"{name} ({row.By})" : row.By;
+        if (row.Via is ApiAggregator.Engine.Config.ChangeChannel.Api) who += ", via the admin API";
+        // The draft that went live came from someone else, or from an AI agent: say so (ADR 0020).
+        if (row.Drafted is { } drafted && (drafted.Via != ApiAggregator.Engine.Config.ChangeChannel.Page || drafted.By != row.By))
+            who += $"; drafted by {drafted.Describe()}";
+        return who;
+    }
 
     private static string When(DateTimeOffset? at) =>
         at?.ToUniversalTime().ToString("d MMM yyyy, HH:mm 'UTC'", System.Globalization.CultureInfo.InvariantCulture) ?? "Not recorded";

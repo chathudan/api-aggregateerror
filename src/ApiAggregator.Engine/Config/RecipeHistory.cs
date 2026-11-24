@@ -7,9 +7,11 @@ public enum HistoryAction { Published, RolledBack, Unpublished }
 
 /// <summary>
 /// Who made a change and when. <see cref="By"/> is the person's subject id (never an email);
-/// <see cref="ByName"/> is their display name when their sign-in gives one (ADR 0014).
+/// <see cref="ByName"/> is their display name when their sign-in gives one (ADR 0014). <see cref="Via"/> and
+/// <see cref="Client"/> say how (ADR 0020); <see cref="Drafted"/> who last changed the draft that went live, and how.
 /// </summary>
-public sealed record ChangeInfo(string? By, DateTimeOffset At, int? RestoredFrom = null, string? ByName = null);
+public sealed record ChangeInfo(string? By, DateTimeOffset At, int? RestoredFrom = null, string? ByName = null,
+    ChangeChannel Via = ChangeChannel.Page, string? Client = null, ChangeSource? Drafted = null);
 
 /// <summary>
 /// One entry in a recipe's history (ADR 0012). History only ever grows: entries are written once and
@@ -31,6 +33,13 @@ public sealed class RecipeHistoryEntry
 
     /// <summary>For a roll back: the version whose content was published again.</summary>
     public int? RestoredFrom { get; init; }
+
+    /// <summary>How the change was made (ADR 0020). Null in entries written before it.</summary>
+    public ChangeChannel? Via { get; init; }
+    public string? Client { get; init; }
+
+    /// <summary>Who last changed the draft that went live, and how, e.g. via MCP (ADR 0020). Null when unknown.</summary>
+    public ChangeSource? Drafted { get; init; }
 
     public Recipe? Recipe { get; init; }
 }

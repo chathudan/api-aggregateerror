@@ -107,7 +107,8 @@ public sealed record PublishResult(string Id, int Version, string Url, IReadOnly
 /// One row of an endpoint's history. <see cref="By"/> is the person's id; <see cref="ByName"/> their display name
 /// when the sign-in gave one. Both, and <see cref="At"/>, are empty for versions published before they were recorded.
 /// </summary>
-public sealed record HistoryRow(int Version, HistoryAction Action, DateTimeOffset? At, string? By, string? ByName, int? RestoredFrom, string? Name, string? Route, bool IsLive);
+public sealed record HistoryRow(int Version, HistoryAction Action, DateTimeOffset? At, string? By, string? ByName, int? RestoredFrom, string? Name, string? Route, bool IsLive,
+    ChangeChannel? Via = null, string? Client = null, ChangeSource? Drafted = null);
 
 public sealed record RollbackResult(string Id, int Version, int RestoredFrom);
 

@@ -79,5 +79,7 @@ public class ErrorContractTests(GatewayApp app) : IClassFixture<GatewayApp>
         public Task<IReadOnlyList<RecipeHistoryEntry>> GetHistoryAsync(string id, CancellationToken ct = default) => throw new InvalidOperationException(Message);
         public Task SaveBrowserOriginsAsync(IReadOnlyList<BrowserOrigin> origins, BrowserAccessHistoryEntry change, CancellationToken ct = default) => throw new InvalidOperationException(Message);
         public Task<IReadOnlyList<BrowserAccessHistoryEntry>> GetBrowserAccessHistoryAsync(CancellationToken ct = default) => throw new InvalidOperationException(Message);
+        public Task AppendActivityAsync(ApiAggregator.Engine.Config.ActivityEntry entry, CancellationToken ct = default) => throw new InvalidOperationException(Message);
+        public Task<IReadOnlyList<ApiAggregator.Engine.Config.ActivityEntry>> GetActivityAsync(string? kind, string? id, int max, CancellationToken ct = default) => throw new InvalidOperationException(Message);
     }
 }
