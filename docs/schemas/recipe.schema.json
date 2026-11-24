@@ -1,0 +1,374 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Aggregated endpoint (recipe)",
+  "description": "One aggregated endpoint: GET /bff/<route>. Steps call service endpoints; the response template builds one answer. Always saved as a draft; a person publishes it.",
+  "type": "object",
+  "properties": {
+    "id": {
+      "description": "Stable id: lowercase letters, digits and dashes, e.g. customer-overview.",
+      "type": "string"
+    },
+    "name": {
+      "description": "Name people see, e.g. Customer overview.",
+      "type": "string"
+    },
+    "version": {
+      "description": "Set by the app when saving; leave it out.",
+      "type": [
+        "string",
+        "integer"
+      ],
+      "pattern": "^-?(?:0|[1-9]\\d*)$"
+    },
+    "status": {
+      "description": "Set by the app (always draft when saved); leave it out.",
+      "enum": [
+        "draft",
+        "published",
+        "retired"
+      ]
+    },
+    "method": {
+      "description": "HTTP method apps call it with: GET (default) or POST.",
+      "type": "string"
+    },
+    "route": {
+      "description": "Address after /bff/, with {name} for route values, e.g. customer/{id}/overview. Each route value must be declared in inputs as route.<name>.",
+      "type": "string"
+    },
+    "requireAuthentication": {
+      "description": "true (default): callers need a valid token.",
+      "type": "boolean"
+    },
+    "requiredScope": {
+      "description": "A scope the caller's token must have, e.g. customer.read.",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "inputs": {
+      "description": "The only caller values that reach services. Keys: route.<name>, query.<name> or header.<Name>.",
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "description": "string, int, number, bool or date.",
+            "type": "string"
+          },
+          "required": {
+            "description": "A request without it is refused with 400.",
+            "type": "boolean"
+          },
+          "pattern": {
+            "description": "A regular expression the whole value must match, e.g. ^C-[0-9]{5}$.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "enum": {
+            "description": "The only values allowed.",
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "string"
+            }
+          },
+          "min": {
+            "type": [
+              "string",
+              "number",
+              "null"
+            ],
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?(?:[eE][+-]?\\d+)?$"
+          },
+          "max": {
+            "type": [
+              "string",
+              "number",
+              "null"
+            ],
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?(?:[eE][+-]?\\d+)?$"
+          },
+          "maxLength": {
+            "description": "Longest value allowed (default 200).",
+            "type": [
+              "string",
+              "integer"
+            ],
+            "pattern": "^-?(?:0|[1-9]\\d*)$"
+          },
+          "default": {
+            "description": "Used when the caller doesn't send it.",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      }
+    },
+    "steps": {
+      "description": "Service calls. They run in parallel unless one uses another's value.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "alias": {
+            "description": "Short name used in expressions, e.g. customer (letters, digits, _). {{customer.body}} is its answer.",
+            "type": "string"
+          },
+          "displayName": {
+            "description": "Name people see, e.g. Get customer.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "endpoint": {
+            "description": "The service endpoint it calls: <serviceId>/<endpointId>, e.g. service-a/getCustomer.",
+            "type": "string"
+          },
+          "bind": {
+            "description": "Values sent with the call: each moves a value (from) or a template to a target (to).",
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "from": {
+                  "description": "A path without braces, e.g. request.route.id, a.body.id or item; may end with | transform.",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "template": {
+                  "description": "A JSON template instead of from, mainly for request bodies."
+                },
+                "to": {
+                  "description": "Target: path.<name>, query.<name>, header.<Name>, cookie.<name>, body or body.<field>.",
+                  "type": "string"
+                },
+                "default": {
+                  "description": "Sent when the value is missing.",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              },
+              "required": [
+                "to"
+              ]
+            }
+          },
+          "required": {
+            "description": "true (default): if it fails, the endpoint answers 502. false: a partial answer with _errors.",
+            "type": "boolean"
+          },
+          "when": {
+            "description": "Run only when this is true, e.g. {{a.body.isPremium}} or {{a.body.status}} == active.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "forEach": {
+            "description": "Run once per item of this list, e.g. {{b.body.items[*].id}}; use item in bind.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "maxConcurrency": {
+            "description": "For forEach: calls at once (1-32, default 4).",
+            "type": [
+              "string",
+              "integer"
+            ],
+            "pattern": "^-?(?:0|[1-9]\\d*)$"
+          },
+          "distinct": {
+            "description": "For forEach: call each unique item once (default true).",
+            "type": "boolean"
+          },
+          "timeoutMs": {
+            "description": "Limit for this call, in ms (default: the service's).",
+            "type": [
+              "string",
+              "integer",
+              "null"
+            ],
+            "pattern": "^-?(?:0|[1-9]\\d*)$"
+          },
+          "cache": {
+            "description": "Cache this call's answer. Off by default; per caller by default.",
+            "type": "object",
+            "properties": {
+              "enabled": {
+                "type": "boolean"
+              },
+              "ttlSeconds": {
+                "type": [
+                  "string",
+                  "integer"
+                ],
+                "pattern": "^-?(?:0|[1-9]\\d*)$"
+              },
+              "perCaller": {
+                "description": "true (default): each caller has their own copy. false only for data that is the same for everyone; never for customer or patient data.",
+                "type": "boolean"
+              }
+            }
+          }
+        },
+        "required": [
+          "alias",
+          "endpoint"
+        ]
+      }
+    },
+    "combine": {
+      "description": "Named lists merged from several steps by exact key; used in the response as {{combine.<name>}}.",
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "sources": {
+            "description": "The lists to merge, in priority order.",
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "from": {
+                  "description": "Path (no braces) to a list, e.g. crm.body.contacts.",
+                  "type": "string"
+                },
+                "key": {
+                  "description": "Field that identifies a record, e.g. userId; several separated by commas. Matched exactly, never fuzzily.",
+                  "type": "string"
+                },
+                "name": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "via": {
+                  "description": "A mapping list for services that don't share an id.",
+                  "type": [
+                    "object",
+                    "null"
+                  ],
+                  "properties": {
+                    "from": {
+                      "type": "string"
+                    },
+                    "match": {
+                      "type": "string"
+                    },
+                    "use": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "from",
+                    "match",
+                    "use"
+                  ]
+                }
+              },
+              "required": [
+                "from",
+                "key"
+              ]
+            }
+          },
+          "normalize": {
+            "description": "Applied to keys before comparing: trim, lower.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "onConflict": {
+            "description": "priority (the first source wins) or newest:<field>.",
+            "type": "string"
+          },
+          "owners": {
+            "description": "Field -> source name whose value always wins.",
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            }
+          },
+          "nulls": {
+            "type": "string"
+          },
+          "withoutKey": {
+            "description": "keep or drop records without a key.",
+            "type": "string"
+          },
+          "trackSources": {
+            "type": "boolean"
+          },
+          "sortBy": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "maxRecords": {
+            "type": [
+              "string",
+              "integer"
+            ],
+            "pattern": "^-?(?:0|[1-9]\\d*)$"
+          },
+          "required": {
+            "type": "boolean"
+          }
+        }
+      }
+    },
+    "response": {
+      "description": "The answer: any JSON with {{ }} expressions in its texts, e.g. { \"customer\": \"{{a.body}}\" }."
+    },
+    "cache": {
+      "description": "Whole-answer cache. Off by default; per caller by default.",
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "ttlSeconds": {
+          "type": [
+            "string",
+            "integer"
+          ],
+          "pattern": "^-?(?:0|[1-9]\\d*)$"
+        },
+        "perCaller": {
+          "description": "true (default): each caller has their own copy. false only for data that is the same for everyone; never for customer or patient data.",
+          "type": "boolean"
+        }
+      }
+    },
+    "timeoutMs": {
+      "description": "Limit for the whole call, in ms (default 10000).",
+      "type": [
+        "string",
+        "integer"
+      ],
+      "pattern": "^-?(?:0|[1-9]\\d*)$"
+    }
+  },
+  "required": [
+    "id",
+    "route"
+  ]
+}

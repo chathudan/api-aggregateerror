@@ -222,11 +222,18 @@ here (401). Roles are checked by the endpoint policy and again by `AdminService`
 | `GET /admin/auth-kinds` | author | Available auth kinds and their required settings |
 | `GET /admin/auth-profiles`, `PUT /admin/auth-profiles/{id}` | author | Profiles (plain-text secrets are rejected) |
 | `POST /admin/schema/infer` | author | Sample response → schema |
+| `GET /llms.txt` | none | A fixed plain-text map for AI agents and tools (`docs/llms.txt`): what an endpoint is, where the schema and rules are. Nothing from the configuration |
 | `GET /admin/logs?after=&wait=` | author | Recent admin app log lines (long poll). The gateway has the same at `/_admin/logs`. The Logs page reads the admin app's lines in-process |
 | `GET /admin/recipes`, `GET/PUT /admin/recipes/{id}` | author | List (including `deleted` endpoints that still have history), read and save drafts |
 | `DELETE /admin/recipes/{id}/draft` | author | Discard changes. The live version keeps serving |
 | `DELETE /admin/recipes/{id}` | **publisher** | Delete the endpoint: unpublish and discard the draft. History is kept |
 | `POST /admin/recipes/{id}/validate` | author | Plain-English issues |
+| `GET /admin/schema/recipe` | author | The JSON Schema of an endpoint (recipe), with plain descriptions (ADR 0019). The same as `docs/schemas/recipe.schema.json` and `aggregator schema` |
+| `GET /admin/path-language` | author | The value language as data: roots, syntax, the fixed transforms (name, usage, meaning), templates, conditions, binding targets |
+| `POST /admin/recipes/validate` (endpoint JSON) | author | Check endpoint JSON that isn't saved: `issues` (with `where`) and `warnings`. Saves nothing |
+| `POST /admin/recipes/import` (endpoint JSON) | author | Save endpoint JSON as a **draft**, never live. 409 when another endpoint already answers that method and route; 400 for an id that isn't a lowercase slug |
+| `GET /admin/recipes/{id}/export` | author | `{ id, source: "draft"\|"published", liveVersion, recipe }` |
+| `POST /admin/recipes/sources` `{ "recipe", "beforeStep" }` | author | What a step (or, without `beforeStep`, the response) can use: `fields` and `lists` (to run for each item), for endpoint JSON that may not be saved |
 | `GET /admin/recipes/{id}/sources?beforeStep=x` | author | Options for the "use value from" dropdown |
 | `POST /admin/recipes/{id}/test` | author | Run the draft (no cache, with trace) |
 | `POST /admin/recipes/{id}/publish` | **publisher** | Make it live |

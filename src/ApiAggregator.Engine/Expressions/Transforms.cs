@@ -2,6 +2,9 @@ using System.Text.Json.Nodes;
 
 namespace ApiAggregator.Engine.Expressions;
 
+/// <summary>One transform: its name, how it's written and what it does.</summary>
+public sealed record TransformInfo(string Name, string Usage, string Description);
+
 /// <summary>A parsed "name(arg)" call, e.g. join(',') or default('n/a').</summary>
 public sealed record TransformCall(string Name, string? Argument)
 {
@@ -28,6 +31,24 @@ public static class Transforms
     {
         "default", "join", "first", "last", "count", "upper", "lower", "trim", "string", "distinct"
     };
+
+    /// <summary>
+    /// Each transform as people (and AI agents, ADR 0019) read it: how to write it and what it does.
+    /// Same names as <see cref="Names"/>; a test keeps the two in step.
+    /// </summary>
+    public static readonly IReadOnlyList<TransformInfo> Described =
+    [
+        new("default", "default('n/a')", "The argument when the value is missing, null or an empty text; otherwise the value."),
+        new("join", "join(',')", "A list joined into one text with the argument between items (',' when none). Not a list: unchanged."),
+        new("first", "first", "The first item of a list. Not a list: unchanged."),
+        new("last", "last", "The last item of a list. Not a list: unchanged."),
+        new("count", "count", "How many items a list has (1 for a single value, 0 for nothing)."),
+        new("upper", "upper", "Text in capitals (each text in a list)."),
+        new("lower", "lower", "Text in lower case (each text in a list)."),
+        new("trim", "trim", "Text without spaces at the start and end (each text in a list)."),
+        new("string", "string", "The value as text, e.g. 42 becomes \"42\"."),
+        new("distinct", "distinct('id')", "A list without repeats, first one kept, order kept. With an argument, objects are compared by that field; items without it are kept.")
+    ];
 
     public static JsonNode? Apply(TransformCall call, JsonNode? value) => call.Name switch
     {

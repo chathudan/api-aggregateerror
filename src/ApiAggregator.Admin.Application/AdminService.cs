@@ -9,6 +9,7 @@ using ApiAggregator.Engine.Authoring;
 using ApiAggregator.Engine.BrowserAccess;
 using ApiAggregator.Engine.Config;
 using ApiAggregator.Engine.Execution;
+using ApiAggregator.Engine.Expressions;
 using ApiAggregator.Engine.Model;
 using ApiAggregator.Engine.Validation;
 using Microsoft.Extensions.Logging;
@@ -68,6 +69,7 @@ public sealed class AdminService(
     {
         if (NeedsAuthor(actor) is { } no) return no;
         if (service.Id != id) return Refuse.BadRequest("The id in the URL and the body must match.");
+        if (IdProblem(id, "service") is { } badId) return Refuse.BadRequest(badId);
         if (!Uri.TryCreate(service.BaseUrl, UriKind.Absolute, out var u) || u.Scheme is not ("http" or "https"))
             return Refuse.BadRequest("Base URL must be an http or https address.");
         if (string.IsNullOrWhiteSpace(service.Name) || service.Name.Length > 100 || service.Name.Any(char.IsControl))
@@ -238,6 +240,7 @@ public sealed class AdminService(
     {
         if (NeedsAuthor(actor) is { } no) return no;
         if (profile.Id != id) return Refuse.BadRequest("The id in the URL and the body must match.");
+        if (IdProblem(id, "sign-in") is { } badId) return Refuse.BadRequest(badId);
         var problems = auth.Check(profile).ToList();
         if (problems.Count > 0) return Refuse.BadRequest("The auth profile has problems.", ("errors", problems));
         await store.SaveAuthProfileAsync(profile, ct);
@@ -317,10 +320,75 @@ public sealed class AdminService(
     {
         if (NeedsAuthor(actor) is { } no) return no;
         if (draft.Id != id) return Refuse.BadRequest("The id in the URL and the body must match.");
+        if (IdProblem(id, "endpoint") is { } badId) return Refuse.BadRequest(badId);
         var saved = Clone(draft, status: RecipeStatus.Draft, version: await NextVersion(id, ct));
         await store.SaveDraftAsync(saved, ct);
         return saved;
     }
+
+    // ---------------------------------------------------------------- authoring contract (ADR 0019)
+
+    /// <summary>The JSON Schema of an endpoint (recipe): what the JSON may contain. RecipeValidator still decides what's valid.</summary>
+    public AdminResult<JsonNode> GetRecipeSchema(AdminActor actor) =>
+        NeedsAuthor(actor) is { } no ? no : AdminResult<JsonNode>.Success(RecipeSchema.Get());
+
+    /// <summary>The value language: roots, syntax, the fixed transforms, templates, conditions and binding targets.</summary>
+    public AdminResult<PathLanguage.Guide> GetPathLanguage(AdminActor actor) =>
+        NeedsAuthor(actor) is { } no ? no : AdminResult<PathLanguage.Guide>.Success(PathLanguage.Described);
+
+    /// <summary>Checks an endpoint that isn't saved: the same plain-English problems (and warnings) as saving and testing show.</summary>
+    public async Task<AdminResult<ValidationResult>> ValidateRecipeAsync(AdminActor actor, Recipe recipe, CancellationToken ct = default)
+    {
+        if (NeedsAuthor(actor) is { } no) return no;
+        return RecipeValidator.Validate(recipe, await store.GetSnapshotAsync(ct));
+    }
+
+    /// <summary>An endpoint as JSON: the draft when there is one, else the live version.</summary>
+    public async Task<AdminResult<RecipeExport>> ExportRecipeAsync(AdminActor actor, string id, CancellationToken ct = default)
+    {
+        if (NeedsAuthor(actor) is { } no) return no;
+        var live = (await store.GetSnapshotAsync(ct)).GetRecipe(id);
+        if (await store.GetDraftAsync(id, ct) is { } draft) return new RecipeExport(id, "draft", live?.Version, draft);
+        return live is null ? Refuse.NotFound($"There is no endpoint '{id}'.") : new RecipeExport(id, "published", live.Version, live);
+    }
+
+    /// <summary>
+    /// Saves endpoint JSON (written by hand, exported elsewhere, or by an AI agent) as a DRAFT, never live. Refused when
+    /// another endpoint already answers the same method and route, so two can't fight over an address.
+    /// </summary>
+    public async Task<AdminResult<Recipe>> ImportDraftAsync(AdminActor actor, Recipe recipe, CancellationToken ct = default)
+    {
+        if (NeedsAuthor(actor) is { } no) return no;
+        if (IdProblem(recipe.Id, "endpoint") is { } badId) return Refuse.BadRequest(badId);
+        var others = (await store.GetSnapshotAsync(ct)).Recipes.Concat(await store.GetDraftsAsync(ct)).Where(r => r.Id != recipe.Id);
+        if (others.FirstOrDefault(r => SameAddress(r, recipe)) is { } clash)
+            return Refuse.Conflict($"The endpoint '{clash.Id}' already answers {recipe.Method.ToUpperInvariant()} /bff/{recipe.Route}. Pick another route.");
+        return await SaveDraftAsync(actor, recipe.Id, recipe, ct);
+    }
+
+    /// <summary>What a step can use (fields, and lists to run for each item), for a recipe that may not be saved yet.</summary>
+    public async Task<AdminResult<SourcesView>> GetSourcesForAsync(AdminActor actor, SourcesRequest request, CancellationToken ct = default)
+    {
+        if (NeedsAuthor(actor) is { } no) return no;
+        if (request.BeforeStep is { } step && request.Recipe.Steps.All(s => s.Alias != step))
+            return Refuse.BadRequest($"There is no step '{step}' in this endpoint. Use one of: {string.Join(", ", request.Recipe.Steps.Select(s => s.Alias))}.");
+        var config = await store.GetSnapshotAsync(ct);
+        return new SourcesView(sources.For(request.Recipe, request.BeforeStep, config), sources.LoopOptions(request.Recipe, request.BeforeStep, config));
+    }
+
+    private static bool SameAddress(Recipe a, Recipe b) =>
+        a.Method.Equals(b.Method, StringComparison.OrdinalIgnoreCase)
+        && NormalizeRoute(a.Route).Equals(NormalizeRoute(b.Route), StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>customer/{id}/overview and customer/{customerId}/overview are the same address.</summary>
+    private static string NormalizeRoute(string route) =>
+        string.Join('/', route.Trim('/').Split('/').Select(s => s.StartsWith('{') ? "{}" : s));
+
+    /// <summary>Ids become file names, cache keys and references: lowercase letters, digits and dashes, at most 64.</summary>
+    private static string? IdProblem(string? id, string what) =>
+        !string.IsNullOrEmpty(id) && id.Length <= 64 && id.All(c => char.IsAsciiLetterLower(c) || char.IsAsciiDigit(c) || c == '-')
+            ? null
+            : $"Give the {what} an id of lowercase letters, digits and dashes (at most 64), e.g. customer-overview.";
 
     /// <summary>Discard changes: removes the draft only. The live version (if any) keeps serving.</summary>
     public async Task<AdminResult<DraftDiscarded>> DiscardDraftAsync(AdminActor actor, string id, CancellationToken ct = default)

@@ -66,6 +66,13 @@ internal static class AdminEndpoints
 
         // ------------------------------------------------------------ aggregated endpoints (recipes)
         admin.MapGet("/recipes", async (AdminService s, HttpContext h, CancellationToken ct) => (await s.GetRecipesAsync(Me(h), ct)).ToHttp());
+        // Authoring contract (ADR 0019): the schema, the value language, and endpoint JSON in and out (as a draft).
+        admin.MapGet("/schema/recipe", (AdminService s, HttpContext h) => s.GetRecipeSchema(Me(h)).ToHttp());
+        admin.MapGet("/path-language", (AdminService s, HttpContext h) => s.GetPathLanguage(Me(h)).ToHttp());
+        admin.MapPost("/recipes/validate", async (Recipe body, AdminService s, HttpContext h, CancellationToken ct) => (await s.ValidateRecipeAsync(Me(h), body, ct)).ToHttp());
+        admin.MapPost("/recipes/import", async (Recipe body, AdminService s, HttpContext h, CancellationToken ct) => (await s.ImportDraftAsync(Me(h), body, ct)).ToHttp());
+        admin.MapPost("/recipes/sources", async (SourcesRequest body, AdminService s, HttpContext h, CancellationToken ct) => (await s.GetSourcesForAsync(Me(h), body, ct)).ToHttp());
+        admin.MapGet("/recipes/{id}/export", async (string id, AdminService s, HttpContext h, CancellationToken ct) => (await s.ExportRecipeAsync(Me(h), id, ct)).ToHttp());
         admin.MapGet("/recipes/{id}", async (string id, AdminService s, HttpContext h, CancellationToken ct) => (await s.GetRecipeAsync(Me(h), id, ct)).ToHttp());
         admin.MapPut("/recipes/{id}", async (string id, Recipe body, AdminService s, HttpContext h, CancellationToken ct) => (await s.SaveDraftAsync(Me(h), id, body, ct)).ToHttp());
         admin.MapDelete("/recipes/{id}/draft", async (string id, AdminService s, HttpContext h, CancellationToken ct) => (await s.DiscardDraftAsync(Me(h), id, ct)).ToHttp());

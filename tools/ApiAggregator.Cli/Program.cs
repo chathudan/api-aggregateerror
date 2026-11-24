@@ -2,6 +2,7 @@
 //
 //   aggregator validate [--config ./config]                       validate every recipe, auth profile and browser origin
 //                                                                 (exit code 1 on problems; use in CI)
+//   aggregator schema                                             print the JSON Schema of a recipe (docs/schemas/recipe.schema.json)
 //   aggregator run <recipeId> [--route id=C-10042] [--query status=open] [--header X-Tenant=t1]
 //                  [--sub test-user] [--token <caller's token>] [--repeat 3] [--config ./config]
 //
@@ -24,7 +25,14 @@ using Microsoft.Extensions.Logging;
 
 if (args.Length == 0 || args[0] is "-h" or "--help")
 {
-    Console.WriteLine("Usage: aggregator validate [--config dir] | aggregator run <recipeId> [--route k=v] [--query k=v] [--header k=v] [--sub user] [--token caller-token] [--repeat n]");
+    Console.WriteLine("Usage: aggregator validate [--config dir] | aggregator schema | aggregator run <recipeId> [--route k=v] [--query k=v] [--header k=v] [--sub user] [--token caller-token] [--repeat n]");
+    return 0;
+}
+
+// The recipe JSON Schema (ADR 0019): no configuration needed.
+if (args[0] == "schema")
+{
+    Console.WriteLine(ApiAggregator.Engine.Authoring.RecipeSchema.Json);
     return 0;
 }
 

@@ -104,6 +104,9 @@ app.UseAuthorization();
 app.UseAntiforgery();
 
 app.MapHealthChecks("/health/live"); // for the platform's liveness probe; says nothing but "Healthy"
+// A plain-text map for AI agents and tools (ADR 0019): fixed text from docs/llms.txt, nothing from the configuration.
+var llms = File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "llms.txt"));
+app.MapGet("/llms.txt", () => Results.Text(llms, "text/plain; charset=utf-8")).AllowAnonymous();
 app.MapAdminSignIn();
 app.MapAdminApi();
 app.MapRazorComponents<App>().AddInteractiveServerRenderMode();

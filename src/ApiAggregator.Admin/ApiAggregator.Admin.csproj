@@ -17,6 +17,10 @@
     <ProjectReference Include="../ApiAggregator.Hosting/ApiAggregator.Hosting.csproj" />
   </ItemGroup>
   <ItemGroup>
+    <!-- Served at /llms.txt (ADR 0019). -->
+    <None Include="../../docs/llms.txt" Link="llms.txt" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+  <ItemGroup>
     <InternalsVisibleTo Include="ApiAggregator.Admin.Tests" />
   </ItemGroup>
 </Project>

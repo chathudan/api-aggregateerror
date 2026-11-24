@@ -1,5 +1,6 @@
 using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
+using ApiAggregator.Engine.Authoring;
 using ApiAggregator.Engine.BrowserAccess;
 using ApiAggregator.Engine.Config;
 using ApiAggregator.Engine.Execution;
@@ -136,3 +137,15 @@ public sealed record AddOriginRequest(string? Origin, string? Note);
 public sealed record ChangeOriginRequest(string? Origin, string? NewOrigin, string? Note);
 public sealed record OriginTestRequest(string? Origin);
 public sealed record OriginRemoved(string Origin);
+
+// ---------------------------------------------------------------- authoring contract (ADR 0019)
+
+/// <summary>An endpoint as JSON, from its draft when there is one (<see cref="Source"/> "draft"), else the live version ("published").</summary>
+public sealed record RecipeExport(string Id, string Source, int? LiveVersion, Recipe Recipe);
+
+/// <summary>What a step (or the response, with no <see cref="BeforeStep"/>) can use, for a recipe that may not be saved yet.</summary>
+public sealed record SourcesRequest(Recipe Recipe, string? BeforeStep);
+
+/// <summary>Values the step can use, and the lists it could run once per item of.</summary>
+public sealed record SourcesView(IReadOnlyList<SourceOption> Fields, IReadOnlyList<LoopOption> Lists);
+
