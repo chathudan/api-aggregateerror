@@ -25,6 +25,12 @@ public sealed record AdminActor(string? Subject, string? DisplayName, bool IsAut
     public const string PublisherRole = "aggregator.publisher";
     public const string AdminRole = "aggregator.admin";
 
+    /// <summary>
+    /// Lets a token use the MCP server at /mcp (ADR 0021). Not a role: an administrator grants it to the tokens an AI
+    /// agent may use, and the roles above still decide what the agent can do.
+    /// </summary>
+    public const string McpScope = "aggregator.mcp";
+
     /// <summary>Nobody signed in: may do nothing.</summary>
     public static AdminActor Anonymous { get; } = new(null, null, false, false);
 
@@ -40,10 +46,7 @@ public sealed record AdminActor(string? Subject, string? DisplayName, bool IsAut
     {
         if (user?.Identity?.IsAuthenticated != true) return Anonymous;
 
-        var granted = user.Claims
-            .Where(c => c.Type is "scope" or "scp" or "roles" or "role" or ClaimTypes.Role)
-            .SelectMany(c => c.Value.Split(' ', StringSplitOptions.RemoveEmptyEntries))
-            .ToHashSet(StringComparer.Ordinal);
+        var granted = Granted(user);
         var publisher = granted.Contains(PublisherRole);
         var author = publisher || granted.Contains(AuthorRole);
 
@@ -51,6 +54,15 @@ public sealed record AdminActor(string? Subject, string? DisplayName, bool IsAut
         var name = user.FindFirst("name")?.Value ?? user.FindFirst(ClaimTypes.Name)?.Value;
         return new AdminActor(subject, string.IsNullOrWhiteSpace(name) ? null : name, author, publisher, granted.Contains(AdminRole));
     }
+
+    /// <summary>Whether the signed-in token or person has this scope or role.</summary>
+    public static bool Has(ClaimsPrincipal? user, string scopeOrRole) =>
+        user?.Identity?.IsAuthenticated == true && Granted(user).Contains(scopeOrRole);
+
+    private static HashSet<string> Granted(ClaimsPrincipal user) => user.Claims
+        .Where(c => c.Type is "scope" or "scp" or "roles" or "role" or ClaimTypes.Role)
+        .SelectMany(c => c.Value.Split(' ', StringSplitOptions.RemoveEmptyEntries))
+        .ToHashSet(StringComparer.Ordinal);
 
     /// <summary>How the person shows up in the UI: their name, or their id when the sign-in has no name.</summary>
     public string Label => DisplayName ?? Subject ?? "unknown";

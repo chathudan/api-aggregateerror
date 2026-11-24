@@ -61,6 +61,21 @@ public sealed partial class SignInTests : IDisposable
     }
 
     [Fact]
+    public async Task The_mcp_server_refuses_a_request_that_carries_only_the_page_cookie()
+    {
+        var browser = Browser(_dev);
+        await SignInAsync(browser, "Dana Tester", "publisher");
+
+        using var request = new HttpRequestMessage(HttpMethod.Post, "/mcp")
+        {
+            Content = new StringContent("""{"jsonrpc":"2.0","id":1,"method":"tools/list"}""", System.Text.Encoding.UTF8, "application/json")
+        };
+        request.Headers.Accept.ParseAdd("application/json, text/event-stream");
+
+        Assert.Equal(HttpStatusCode.Unauthorized, (await browser.SendAsync(request)).StatusCode);
+    }
+
+    [Fact]
     public async Task The_admin_api_refuses_a_request_that_carries_only_the_page_cookie()
     {
         var browser = Browser(_dev);

@@ -25,3 +25,4 @@ decision; write a new ADR that supersedes it. Use `.claude/skills/write-adr` or 
 | [0018](0018-service-certificates.md) | Services with their own certificate: trust an exact one by fingerprint; "accept any" in Development only | Accepted |
 | [0019](0019-authoring-contract.md) | An authoring contract: recipe JSON Schema, the value language as data, endpoint JSON in and out as drafts, llms.txt | Accepted |
 | [0020](0020-activity-log.md) | An append-only activity log of author changes, with how they were made (page, API, MCP) | Accepted |
+| [0021](0021-mcp-server-for-ai-agents.md) | An MCP server for AI agents in the admin app: drafts only, no values from real services, no secrets (new dependency) | Accepted |

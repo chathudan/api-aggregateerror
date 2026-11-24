@@ -157,6 +157,7 @@ public sealed class AdminService(
     public async Task<AdminResult<ImportPreview>> PreviewOpenApiAsync(AdminActor actor, OpenApiImportRequest request, CancellationToken ct = default)
     {
         if (NeedsAuthor(actor) is { } no) return no;
+        if (await SpecAddressProblem(actor, request, ct) is { } notHere) return notHere;
         certificates.Use(await store.GetSnapshotAsync(ct)); // a spec on a service's host gets its certificate settings
         try { return await importer.PreviewAsync(request, ct); }
         catch (OpenApiImportException ex) { return ImportRefused(ex); }
@@ -171,6 +172,7 @@ public sealed class AdminService(
         if (NeedsAuthor(actor) is { } no) return no;
         var service = (await store.GetSnapshotAsync(ct)).GetService(id);
         if (service is null) return Refuse.NotFound($"Service '{id}' not found. Create it first.");
+        if (await SpecAddressProblem(actor, request, ct) is { } notHere) return notHere;
         certificates.Use(await store.GetSnapshotAsync(ct));
         try
         {
@@ -245,6 +247,7 @@ public sealed class AdminService(
         if (NeedsAuthor(actor) is { } no) return no;
         if (profile.Id != id) return Refuse.BadRequest("The id in the URL and the body must match.");
         if (IdProblem(id, "sign-in") is { } badId) return Refuse.BadRequest(badId);
+        if (RawSecretProblem(actor, profile) is { } rawSecret) return Refuse.BadRequest(rawSecret);
         var problems = auth.Check(profile).ToList();
         if (problems.Count > 0) return Refuse.BadRequest("The auth profile has problems.", ("errors", problems));
         await store.SaveAuthProfileAsync(profile, ct);
@@ -445,9 +448,10 @@ public sealed class AdminService(
 
         var result = await executor.ExecuteAsync(draft, test.ToInbound(), caller, ExecutionMode.AdminTest, ct);
         var passed = result.StatusCode == 200 && !result.Partial;
-        if (passed) _passedTests[id] = Hash(draft);
+        // An agent's try never counts for publishing (ADR 0021): a person tests the exact draft and sees the real answer.
+        if (passed && actor.Via != ChangeChannel.Mcp) _passedTests[id] = Hash(draft);
 
-        return new TestOutcome(passed, result.StatusCode, result.DurationMs, result.Partial, result.Trace, result.Body, caller.CorrelationId, null, validation.Warnings);
+        return ForActor(actor, new TestOutcome(passed, result.StatusCode, result.DurationMs, result.Partial, result.Trace, result.Body, caller.CorrelationId, null, validation.Warnings));
     }
 
     /// <summary>
@@ -488,8 +492,8 @@ public sealed class AdminService(
         if (!validation.IsValid) return new TestOutcome(false, null, null, null, null, null, null, validation.Issues, null);
 
         var result = await executor.ExecuteAsync(recipe, new InboundRequest(), caller, ExecutionMode.AdminTest, ct, withEndpoint);
-        return new TestOutcome(result.StatusCode == 200 && !result.Partial, result.StatusCode, result.DurationMs, result.Partial, result.Trace,
-            result.Body, caller.CorrelationId, null, null);
+        return ForActor(actor, new TestOutcome(result.StatusCode == 200 && !result.Partial, result.StatusCode, result.DurationMs, result.Partial, result.Trace,
+            result.Body, caller.CorrelationId, null, null));
     }
 
     public async Task<AdminResult<PublishResult>> PublishAsync(AdminActor actor, string id, CancellationToken ct = default)
@@ -816,6 +820,76 @@ public sealed class AdminService(
     private async Task<ChangeSource?> DraftedBy(string id, CancellationToken ct) =>
         (await store.GetActivityAsync(ActivityEntry.Endpoint, id, 20, ct))
             .FirstOrDefault(e => e.Action is "draft saved" or "draft imported")?.Source;
+
+    // ---------------------------------------------------------------- MCP rules (ADR 0021)
+
+    /// <summary>
+    /// Real services may answer with personal or health data, which must not flow into an AI model. So over MCP a try
+    /// shows only how it went and the answer's field names and types, unless this is the sample data in Development.
+    /// Whether any real value may ever go to an AI client is for a privacy professional to decide (architecture 03).
+    /// </summary>
+    private bool ValuesAllowed(AdminActor actor) =>
+        actor.Via != ChangeChannel.Mcp
+        || (options.IsDevelopment && File.Exists(Path.Combine(Path.GetFullPath(options.ConfigDirectory), "SAMPLE-DATA.md")));
+
+    private TestOutcome ForActor(AdminActor actor, TestOutcome outcome) => ValuesAllowed(actor) ? outcome : outcome with
+    {
+        Body = null,
+        BodyShape = outcome.Body is null ? null : SourceCatalog.InferSchema(outcome.Body),
+        // Statuses, timings, codes and the engine's own messages (names and statuses only). Never the address with its
+        // values, the internal detail, or what each call sent and got back.
+        Trace = outcome.Trace?.Select(t => t with { Request = null, Detail = null, Details = null }).ToList(),
+        ValuesHidden = "Values are hidden: real services may return personal or health data, which must not go to an AI model. "
+                       + "The answer's field names and types are in bodyShape. A person can see the values with Try it in the admin app."
+    };
+
+    /// <summary>
+    /// Over MCP a spec comes as text. An address is allowed only on the host of a service a PERSON set up (in the app,
+    /// a script or the config files), so an agent can't make the admin app fetch from anywhere it likes (SSRF), not
+    /// even by first adding a service on that address itself.
+    /// </summary>
+    private async Task<AdminFailure?> SpecAddressProblem(AdminActor actor, OpenApiImportRequest request, CancellationToken ct)
+    {
+        if (actor.Via != ChangeChannel.Mcp || string.IsNullOrWhiteSpace(request.Url)) return null;
+        var refused = Refuse.BadRequest("Over MCP, give the spec as text. A spec address is allowed only on the host of a service a person has set up.");
+        if (!Uri.TryCreate(request.Url, UriKind.Absolute, out var url)) return refused;
+
+        foreach (var service in (await store.GetSnapshotAsync(ct)).Services)
+        {
+            if (!Uri.TryCreate(service.BaseUrl, UriKind.Absolute, out var b) || !b.Authority.Equals(url.Authority, StringComparison.OrdinalIgnoreCase)) continue;
+            // Who first saved it? No entry: it came from the config files, set up by a person.
+            var first = (await store.GetActivityAsync(ActivityEntry.Service, service.Id, 1000, ct)).LastOrDefault();
+            if (first is null || first.Via != ChangeChannel.Mcp) return null;
+        }
+        return refused;
+    }
+
+    /// <summary>
+    /// Over MCP no setting may carry a credential, whatever it's called: a long random-looking value is refused too. The
+    /// name-based check (<see cref="DownstreamAuthenticator.Check"/>) applies to everyone.
+    /// </summary>
+    private static string? RawSecretProblem(AdminActor actor, AuthProfile profile)
+    {
+        if (actor.Via != ChangeChannel.Mcp) return null;
+        foreach (var (name, value) in profile.Steps.SelectMany(s => s.Settings))
+            if (!value.StartsWith("secret:", StringComparison.OrdinalIgnoreCase) && LooksLikeCredential(name, value))
+                return $"'{name}' looks like a password, key or token. Use a reference such as secret:{SecretNameFor(profile.Id, name)}. "
+                       + $"Ask a person to set secret '{SecretNameFor(profile.Id, name)}' in Services. Secret values never go through MCP.";
+        return null;
+    }
+
+    private static bool LooksLikeCredential(string name, string value)
+    {
+        // By name: "password", "clientSecret", "token", "value"... but not settings ABOUT one, such as tokenUrl or tokenPath.
+        var describesOne = new[] { "name", "path", "url", "header", "field", "in", "type" }.Any(e => name.EndsWith(e, StringComparison.OrdinalIgnoreCase));
+        if (!describesOne && new[] { "password", "secret", "token", "key", "credential", "value" }.Any(w => name.Contains(w, StringComparison.OrdinalIgnoreCase)))
+            return true;
+        // By shape: long, no spaces, letters and digits mixed (an API key, a JWT, a client secret), and not an address.
+        return value.Length >= 20 && !value.Contains(' ') && value.Any(char.IsDigit) && value.Any(char.IsLetter) && !value.Contains("://");
+    }
+
+    private static string SecretNameFor(string profileId, string setting) =>
+        new string($"{profileId}-{setting}".ToLowerInvariant().Select(c => char.IsAsciiLetterOrDigit(c) ? c : '-').ToArray()).Trim('-');
 
     /// <summary>One more than any version ever used, live or in the history: version numbers are never reused (ADR 0012).</summary>
     private async Task<int> NextVersion(string id, CancellationToken ct)

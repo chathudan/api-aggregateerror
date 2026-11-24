@@ -99,7 +99,10 @@ public sealed record TestOutcome(
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] JsonNode? Body,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? CorrelationId,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] IReadOnlyList<ValidationIssue>? Issues,
-    IReadOnlyList<ValidationIssue> Warnings);
+    IReadOnlyList<ValidationIssue> Warnings,
+    // Over MCP outside sample data (ADR 0021): the answer's field names and types instead of the answer, and why.
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] JsonNode? BodyShape = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? ValuesHidden = null);
 
 public sealed record PublishResult(string Id, int Version, string Url, IReadOnlyList<ValidationIssue> Warnings);
 

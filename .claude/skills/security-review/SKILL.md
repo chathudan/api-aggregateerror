@@ -21,6 +21,13 @@ Go through each item against the diff. For every "no", fix it or explain why in 
 - [ ] Certificate checks are never skipped globally: only a service's exact fingerprints, or "accept any" in Development only (`DownstreamCertificates`, ADR 0018). Any new HttpClient that calls services uses its callback
 - [ ] Inbound: new endpoints have the right policy (`author`, `publisher`) or recipe scope; nothing is anonymous by accident
 
+## MCP (AI agents, ADR 0021)
+- [ ] No new tool publishes, rolls back, deletes, discards, or touches secret values or browser access (the tool-list test still passes)
+- [ ] New tools are thin `AdminService` wrappers; MCP-only rules are in `AdminService` (`actor.Via == Mcp`)
+- [ ] Nothing returns values from real services to an MCP client outside the sample data (field names and types only)
+- [ ] Inputs have size limits; specs are text, or an address on a configured service host only
+- [ ] Logs name the tool, person, client, outcome and time; never arguments or results
+
 ## Caching
 - [ ] Off by default; per caller by default; keys hashed and versioned
 - [ ] Only successful, complete responses are stored

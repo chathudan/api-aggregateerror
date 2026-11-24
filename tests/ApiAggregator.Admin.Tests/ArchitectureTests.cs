@@ -43,6 +43,23 @@ public sealed class ArchitectureTests
     }
 
     [Fact]
+    public void Mcp_tools_use_AdminService_never_the_store_or_the_engine()
+    {
+        // ADR 0021: the MCP tools are thin wrappers like /admin/*; every rule stays in AdminService.
+        var mcp = typeof(Program).Assembly.GetTypes().Where(t => t.Namespace == "ApiAggregator.Admin.Mcp").ToList();
+        Assert.NotEmpty(mcp);
+
+        const BindingFlags all = BindingFlags.Instance | BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.DeclaredOnly;
+        var problems = (from type in mcp
+                        from used in type.GetFields(all).Select(f => (f.Name, Type: f.FieldType))
+                            .Concat(type.GetConstructors(all).SelectMany(c => c.GetParameters()).Select(p => (Name: p.Name ?? "?", Type: p.ParameterType)))
+                            .Concat(type.GetMethods(all).SelectMany(m => m.GetParameters()).Select(p => (Name: p.Name ?? "?", Type: p.ParameterType)))
+                        where Forbidden.Any(f => f.IsAssignableFrom(used.Type))
+                        select $"{type.Name}.{used.Name} is a {used.Type.Name}. MCP tools must call AdminService instead.").ToList();
+        Assert.True(problems.Count == 0, string.Join("\n", problems));
+    }
+
+    [Fact]
     public void The_use_cases_know_nothing_about_http_endpoints_or_blazor()
     {
         var references = typeof(AdminService).Assembly.GetReferencedAssemblies().Select(a => a.Name!).ToList();

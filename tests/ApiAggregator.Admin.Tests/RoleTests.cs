@@ -384,6 +384,9 @@ public sealed class RoleTests(AdminApp app) : IClassFixture<AdminApp>
     public async Task A_draft_an_agent_wrote_says_so_in_the_history_when_a_person_publishes_it()
     {
         await TestedDraft("agent-drafted", Author with { Via = ChangeChannel.Mcp, Client = "Test Agent" });
+        // The agent's passing try doesn't count (ADR 0021): a person tests the exact draft before publishing.
+        Assert.Equal("Run a successful test of this exact draft before publishing.", (await Service.PublishAsync(Publisher, "agent-drafted")).Failure?.Message);
+        Assert.True((await Service.TestAsync(Publisher, "agent-drafted", new TestRequest(null, null, null), CallerContext.Anonymous())).Value?.Passed);
 
         Assert.True((await Service.PublishAsync(Publisher, "agent-drafted")).Ok);
 

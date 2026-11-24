@@ -31,6 +31,7 @@ internal static class AdminAuth
     /// <summary>/admin/cors: anyone with a role may look (viewer); only the admin role may change it.</summary>
     public const string ApiViewer = "api-viewer";
     public const string ApiAdmin = "api-admin";
+    public const string Mcp = "mcp";
 
     /// <summary>Claim holding a random id for this sign-in, so the person's access token can be kept server side.</summary>
     public const string SessionClaim = "sid";
@@ -98,7 +99,11 @@ internal static class AdminAuth
             .AddPolicy(ApiViewer, p => p.AddAuthenticationSchemes(BearerScheme).RequireAuthenticatedUser()
                 .RequireAssertion(c => AdminActor.From(c.User).HasAnyRole))
             .AddPolicy(ApiAdmin, p => p.AddAuthenticationSchemes(BearerScheme).RequireAuthenticatedUser()
-                .RequireAssertion(c => AdminActor.From(c.User).IsAdmin));
+                .RequireAssertion(c => AdminActor.From(c.User).IsAdmin))
+            // /mcp (ADR 0021): bearer only like /admin/*, so the page cookie gets 401; and the separate aggregator.mcp
+            // scope (403 without it). What the agent may then do is decided by its roles, in AdminService.
+            .AddPolicy(Mcp, p => p.AddAuthenticationSchemes(BearerScheme).RequireAuthenticatedUser()
+                .RequireAssertion(c => AdminActor.Has(c.User, AdminActor.McpScope)));
         builder.Services.AddCascadingAuthenticationState();
     }
 

@@ -11,6 +11,7 @@ using System.Text.Json;
 using ApiAggregator.Admin.Application;
 using ApiAggregator.Admin.Components;
 using ApiAggregator.Admin.Hosting;
+using ApiAggregator.Admin.Mcp;
 using ApiAggregator.Admin.Services;
 using ApiAggregator.Engine;
 using ApiAggregator.Engine.Authoring;
@@ -51,6 +52,7 @@ builder.Services.AddHttpClient(OpenApiImporter.HttpClientName)
     .ConfigureHttpClient(c => c.Timeout = TimeSpan.FromSeconds(10))
     .RemoveAllLoggers(); // no default HttpClient logging: it would write full URLs (see ServiceCollectionExtensions)
 builder.Services.AddSingleton<ISecretWriter, LocalSecretWriter>();
+builder.AddAggregatorMcp(); // the MCP server for AI agents at /mcp (ADR 0021)
 // Browser access (CORS) for the GATEWAY (ADR 0015): the same Gateway:Cors limits the gateway reads, checked at startup
 // here too. This app itself answers no cross-origin requests: there is deliberately no AddCors/UseCors in it.
 var browserAccess = builder.Configuration.GetSection(BrowserAccessSettings.Section).Get<BrowserAccessSettings>() ?? new BrowserAccessSettings();
@@ -109,6 +111,7 @@ var llms = File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "llms.txt"));
 app.MapGet("/llms.txt", () => Results.Text(llms, "text/plain; charset=utf-8")).AllowAnonymous();
 app.MapAdminSignIn();
 app.MapAdminApi();
+app.MapAggregatorMcp();
 app.MapRazorComponents<App>().AddInteractiveServerRenderMode();
 
 if (app.Environment.IsDevelopment() && !string.IsNullOrEmpty(builder.Configuration["Auth:DevSigningKey"]))

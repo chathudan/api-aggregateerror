@@ -51,6 +51,11 @@ service (Basic, session login, OAuth/JWT, API key, pass-through) in any combinat
   reused. Publish, roll back and delete endpoint need `aggregator.publisher` (ADR 0012).
 - **The activity log is append-only too** (ADR 0020): one line per author change (who, how: page, API or MCP, what,
   when), never contents or values. `AdminService` writes it; nothing rewrites it.
+- **AI agents (MCP, ADR 0021) write drafts only.** `/mcp` takes bearer tokens with the `aggregator.mcp` scope (the
+  cookie gets 401). No tool publishes, rolls back, deletes, discards, touches secret values or browser access (a test
+  checks the tool list). Outside the sample data a try returns **no values** from real services, only field names
+  and types; an MCP try never counts for publishing. Specs come as text; an address only on a service's host. Tools
+  are thin wrappers; the rules are in `AdminService` (`actor.Via == Mcp`).
 - `Auth:DevSigningKey` is Development-only (startup fails otherwise).
 - **Overload and broken services never crash or 500** (ADR 0017). Too many `/bff` requests at once get 503 `overloaded`;
   a resilience-pipeline rejection is a step failure (`ResilienceRejectionHandler`); circuits are per service. Long-lived
@@ -73,8 +78,8 @@ If a change touches any of these, run the `security-review` skill and add or adj
 | `…/BrowserAccess` | `OriginRules`, `BrowserAccessPolicy` (CORS for `/bff/*`, ADR 0015): shared by the gateway, the admin app and the CLI |
 | `…/Authoring` | `SourceCatalog` (wizard dropdown options, loop options, schema inference), `AutoBinder` (pre-filled values), `RecipeRefactor` (step names from display names, rename a step everywhere by expression root), `RecipeSchema` (JSON Schema of a recipe, ADR 0019; copy in `docs/schemas/`, `aggregator schema` regenerates it) |
 | `src/ApiAggregator.Gateway` | `Program.cs` (one handler for `/bff/{**path}`), `BffCorsPolicyProvider` (CORS, rebuilt per config version), `ApiDocsPage` (Swagger UI at `/bff/docs`); the spec comes from `Engine/Authoring/OpenApiDocumentBuilder` |
-| `src/ApiAggregator.Admin.Application` | `AdminService`: every admin use case with its rules and **role checks** (author / publisher / admin), `AdminActor`, `AdminResult`, `OpenApiImporter`. No ASP.NET Core types (ADR 0014) |
-| `src/ApiAggregator.Admin` | The admin app on :5300 (ADR 0014). `Hosting/`: `AdminAuth` (cookie for pages, bearer only for `/admin/*`, dev sign-in, OIDC), `AdminEndpoints` (thin `/admin/*` wrappers over `AdminService`). Pages: `SignIn`, `Home` (dashboard), `Endpoints`, `EndpointEditor` (wizard: stepper, problems next to fields, run-order lanes, sticky footer, rename prompt), `Services`, `Logs`, `BrowserAccess` (Settings → Browser access (CORS)), `Help`. Shared: `PageShell` (every page: one primary action), `StatusPill` (icon + word, never colour alone), `ConfirmBox`, `ErrorBanner`, `Toasts`/`ToastService`, `FieldIssues`, `StepFlow`, `LoopPicker`, `ConditionPicker`, `EmptyState`, `Loading`, `SignInEditor`. `Services/`: `CurrentUser` (the signed-in person), `LiveLogClient`, form models (`RecipeForm`, lossless round trip; `StepChoices` for the pickers; `SignInForm` + `SignInKinds`, `ServiceForms`) |
+| `src/ApiAggregator.Admin.Application` | `AdminService`: every admin use case with its rules and **role checks** (author / publisher / admin), the MCP-only rules (ADR 0021), the activity log (ADR 0020), `AdminActor` (with `Via` and `Client`), `AdminResult`, `OpenApiImporter`, `ActivityText`. No ASP.NET Core types (ADR 0014) |
+| `src/ApiAggregator.Admin` | The admin app on :5300 (ADR 0014). `Hosting/`: `AdminAuth` (cookie for pages, bearer only for `/admin/*`, dev sign-in, OIDC), `AdminEndpoints` (thin `/admin/*` wrappers over `AdminService`). `Mcp/`: the MCP server for AI agents at `/mcp` (ADR 0021): `McpHosting` (auth policy, size and rate limits, the per-call log line), `McpCall`, `AggregatorTools` (thin wrappers); `/llms.txt` (ADR 0019). Pages: `SignIn`, `Home` (dashboard), `Endpoints`, `EndpointEditor` (wizard: stepper, problems next to fields, run-order lanes, sticky footer, rename prompt), `Services`, `Logs`, `BrowserAccess` (Settings → Browser access (CORS)), `Help`. Shared: `PageShell` (every page: one primary action), `StatusPill` (icon + word, never colour alone), `ConfirmBox`, `ErrorBanner`, `Toasts`/`ToastService`, `FieldIssues`, `StepFlow`, `LoopPicker`, `ConditionPicker`, `EmptyState`, `Loading`, `SignInEditor`. `Services/`: `CurrentUser` (the signed-in person), `LiveLogClient`, form models (`RecipeForm`, lossless round trip; `StepChoices` for the pickers; `SignInForm` + `SignInKinds`, `ServiceForms`) |
 | `src/ApiAggregator.Hosting` | `InboundAuth` (JWT setup, scopes, caller context), `LocalSecrets` (Development-only secrets file) |
 | `tools/ApiAggregator.Cli` | `aggregator validate | schema | run` |
 | `tools/ApiAggregator.Bench` | `bench generate | micro | run` (ADR 0017, `docs/guides/benchmarking.md`): generates thousands of endpoints against the mocks' `/bench/sNN` services, then load, faults, abuse, config churn, soak and memory checks with pass/fail. No packages. Results in `bench-results/` (git-ignored) |
@@ -101,8 +106,8 @@ dotnet run --project tools/ApiAggregator.Cli -- run customer-overview --route id
 ```
 
 Target framework: set once in `Directory.Build.props` (`AggregatorTargetFramework`, default `net10.0`).
-Package versions: `Directory.Packages.props` (central management). Only Gateway, Admin (OpenID Connect, ADR 0014),
-Admin.Application (Microsoft.OpenApi.Readers), Hosting and the tests use packages (the UI tests use Microsoft.Playwright, ADR 0013). Keep runtime packages on the 10.x line while targeting `net10.0`.
+Package versions: `Directory.Packages.props` (central management). Only Gateway, Admin (OpenID Connect, ADR 0014; the MCP SDK
+`ModelContextProtocol.AspNetCore`, ADR 0021), Admin.Application (Microsoft.OpenApi.Readers), Hosting and the tests use packages (the UI tests use Microsoft.Playwright, ADR 0013; the admin and docs tests the MCP client). Keep runtime packages on the 10.x line while targeting `net10.0`.
 
 ## How to make common changes
 
@@ -115,7 +120,8 @@ Admin.Application (Microsoft.OpenApi.Readers), Hosting and the tests use package
 | Change anything security-relevant | `.claude/skills/security-review` |
 | New validation rule | `RecipeValidator`: plain-English message, plus a test in `PlanningAndValidationTests` |
 | New admin action | A method on `AdminService` that checks the role first (`NeedsAuthor` / `NeedsPublisher`), a test in `RoleTests`, then a thin wrapper in `Admin/Hosting/AdminEndpoints.cs` with the `api-author` or `api-publisher` policy; document it in `docs/architecture/04-admin-and-openapi.md`. Pages call the service, never the store or engine (`ArchitectureTests`) |
-| New config store (PostgreSQL) | Implement `IConfigStore`; register it before `AddAggregatorEngine` (it uses `TryAdd`) |
+| New config store (PostgreSQL) | Implement `IConfigStore` (including the append-only activity log, ADR 0020); register it before `AddAggregatorEngine` (it uses `TryAdd`) |
+| New MCP tool | Only if a person could do it as an author and it can't publish or touch secrets: one `AdminService` call in `Admin/Mcp/AggregatorTools.cs`, a test in `McpTests`, a row in `docs/guides/for-ai-agents.md` and architecture 04 (ADR 0021) |
 
 ## Conventions
 

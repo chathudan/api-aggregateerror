@@ -11,6 +11,8 @@
   <ItemGroup>
     <!-- Production sign-in for the pages (ADR 0014). Off unless Auth:Oidc:Authority is set. -->
     <PackageReference Include="Microsoft.AspNetCore.Authentication.OpenIdConnect" />
+    <!-- The MCP server at /mcp for AI agents (ADR 0021): drafts only, never publish. -->
+    <PackageReference Include="ModelContextProtocol.AspNetCore" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="../ApiAggregator.Admin.Application/ApiAggregator.Admin.Application.csproj" />
