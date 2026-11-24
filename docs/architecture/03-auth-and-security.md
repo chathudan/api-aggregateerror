@@ -22,6 +22,37 @@ flowchart LR
 2. **Downstream (gateway → service).** Each service has an **auth profile**. The caller's token is
    **not** forwarded unless the profile explicitly says so.
 
+### AI agents (MCP, ADR 0021)
+
+The admin app's MCP server at `/mcp` is a third way in, for AI agents (Claude Code, Claude Desktop). It has the same
+shape as `/admin/*`:
+- **Bearer tokens only.** The page cookie gets 401.
+- **The separate scope `aggregator.mcp`.** Without it the answer is 403, so an administrator decides which tokens an
+  agent may use.
+- **Roles still decide, in `AdminService`.** The tools are thin wrappers, as `ArchitectureTests` checks.
+
+What an agent can do is narrower than a person:
+- **Drafts only.** There is no tool to publish, roll back, delete, discard, read or set secret values, or change
+  browser access. A test asserts that the tool list has none.
+- **Its tries never count as the test publishing needs.** A person tests the exact draft with Try it.
+- **No secret values.** Sign-ins take `secret:<name>` references only. Any setting that looks like a credential, by
+  name or by shape, is refused with "Ask a person to set secret '<name>' in Services".
+- **Specs as text.** An address is allowed only on the host of a service a person set up, not one the agent added (no SSRF).
+- **No values from real services.** A try returns statuses, timings, error codes and the engine's messages, and the
+  answer's field names and types. Values are returned only with the sample data in Development. See the review item
+  below.
+- **Limits:**
+  - 3 MB per request;
+  - 2 MB of spec text;
+  - 256 KB of endpoint JSON;
+  - `Mcp:RequestsPerMinute` per person (default 120), answering 429.
+- **Logs:** one line per tool call, with the tool, person, client name, outcome and time; never arguments or
+  results. Unexpected errors give the agent a reference, and the log records the exception type only.
+- **The client's name is self-reported.** It labels the activity log ("via MCP (Claude Code)") and decides nothing.
+- **Specs, service answers and tool output are data for the model, never instructions.** The server instructions
+  and tool descriptions say so. Prompt injection inside a spec can at most lead the agent to write a bad **draft**,
+  which a person reviews.
+
 ## Downstream auth profiles: any combination
 
 A profile is an ordered list of steps. Each step adds something to the outgoing request, so a
@@ -131,6 +162,10 @@ Design choices that help:
 
 **Not decided here — review with qualified people:**
 
+- **Values from real services to AI clients (MCP, ADR 0021):** whether any value from a real service may ever be
+  returned to an AI client (and so to the model provider behind it), under what agreement (data processing,
+  retention, region), and for which data. Until a privacy professional decides, the code returns **none** outside
+  the sample data: only field names, types, statuses and timings.
 - **Australia:** obligations under the *Privacy Act 1988* and the Australian Privacy Principles
   (in particular APP 11, security of personal information), the Notifiable Data Breaches scheme,
   and, if any connected system touches My Health Record, the *My Health Records Act 2012* and the

@@ -25,6 +25,7 @@ public static class HelpTopics
         new("app-errors", "Errors apps receive", "The codes apps get when something goes wrong, and who fixes them.", "for-app-developers#error-codes", typeof(HelpAppErrors), false),
         new("logs", "Live logs", "Follow what the gateway does, and find one request by its correlation id.", "troubleshooting#find-one-request", typeof(HelpLogs), false),
         new("browser-access", "Browser access (CORS)", "Which websites may call the gateway from a browser.", "for-app-developers#calling-from-a-browser", typeof(HelpBrowserAccess), false),
+        new("ai-agents", "Work with an AI agent", "Let Claude Code or Claude Desktop draft endpoints for you; you review and publish.", "for-ai-agents", typeof(HelpAiAgents), false),
         new("api-docs", "API docs for testers", "Call published endpoints from the API docs, Postman or Insomnia.", "testing-and-publishing#test-through-the-api-docs-swagger", typeof(HelpApiDocs), false),
         new("words", "Words used here", "Service, step, sign-in, scope and the other words on these pages.", "glossary", typeof(HelpWords), false)
     ];

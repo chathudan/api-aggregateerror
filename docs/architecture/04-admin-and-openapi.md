@@ -17,7 +17,37 @@ flowchart LR
 ```
 
 Rule, checked by `ArchitectureTests`: pages and components use `AdminService`, never the store or the engine,
-and `AdminService` uses no HTTP or Blazor types.
+and `AdminService` uses no HTTP or Blazor types. The same goes for the MCP tools.
+
+## MCP server for AI agents (`/mcp`)
+
+The admin app also serves an MCP server ([ADR 0021](../adr/0021-mcp-server-for-ai-agents.md), guide:
+[For AI agents](../guides/for-ai-agents.md)). It uses Streamable HTTP with the official C# SDK; clients that start
+with `initialize` keep a session. Access needs a bearer token with `aggregator.mcp`, as described in
+[03](03-auth-and-security.md#ai-agents-mcp-adr-0021). `src/ApiAggregator.Admin/Mcp/`:
+- `McpHosting`: registration, the body-size limit, the rate limit and the per-call log line.
+- `McpCall`: who is asking (`AdminActor` with `Via = Mcp` and the client's name), JSON results, plain-English
+  refusals as error results, and size limits.
+- `AggregatorTools`: one `AdminService` call per tool.
+
+The MCP-only rules live in `AdminService`, keyed on `actor.Via`:
+- tries hide values outside the sample data and never count for publishing;
+- spec addresses are allowed only on service hosts;
+- credential-looking settings are refused.
+
+| Tool | `AdminService` |
+|---|---|
+| `list_services`, `get_service` | `GetServicesAsync` |
+| `list_sign_ins`, `list_sign_in_kinds` | `GetAuthProfilesAsync`, `GetAuthKinds` |
+| `list_endpoints`, `get_endpoint` | `GetRecipesAsync`, `ExportRecipeAsync` |
+| `get_recipe_schema`, `get_path_language` | `GetRecipeSchema`, `GetPathLanguage` |
+| `list_source_fields` | `GetSourcesForAsync` |
+| `validate_recipe` | `ValidateRecipeAsync` |
+| `import_openapi_service` | `SaveServiceAsync` (new service) and `ImportOpenApiAsync` |
+| `add_service`, `update_service` | `SaveServiceAsync` |
+| `save_sign_in` | `SaveAuthProfileAsync`, then `SecretExistsAsync` for each reference |
+| `save_endpoint_draft` | `ImportDraftAsync` |
+| `try_endpoint_draft` | `TestAsync` |
 
 ## In-app help
 

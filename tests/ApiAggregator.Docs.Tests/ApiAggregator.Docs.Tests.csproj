@@ -2,8 +2,9 @@
   <!--
     Keeps the guides honest: every example marked with a "check:" comment in docs/ is run for real (the CLI against the
     mock services, or a call through the gateway) and compared with the output written in the guide.
-    The fixture starts the BUILT mocks and gateway on free ports over a temporary copy of samples/config.
-    Run it alone with scripts/check-docs.sh. No packages beyond the test framework.
+    The fixture starts the BUILT mocks, gateway and admin app on free ports over a temporary copy of samples/config.
+    Run it alone with scripts/check-docs.sh. One package beyond the test framework: the MCP client, to check the
+    AI-agent guide's examples the way an agent calls them (ADR 0021).
   -->
   <PropertyGroup>
     <IsPackable>false</IsPackable>
@@ -13,11 +14,13 @@
     <PackageReference Include="Microsoft.NET.Test.Sdk" />
     <PackageReference Include="xunit" />
     <PackageReference Include="xunit.runner.visualstudio" />
+    <PackageReference Include="ModelContextProtocol" />
   </ItemGroup>
   <ItemGroup>
     <!-- Built first, but not referenced: the tests start them as processes. -->
     <ProjectReference Include="../../samples/MockServices/MockServices.csproj" ReferenceOutputAssembly="false" />
     <ProjectReference Include="../../src/ApiAggregator.Gateway/ApiAggregator.Gateway.csproj" ReferenceOutputAssembly="false" />
+    <ProjectReference Include="../../src/ApiAggregator.Admin/ApiAggregator.Admin.csproj" ReferenceOutputAssembly="false" />
     <ProjectReference Include="../../tools/ApiAggregator.Cli/ApiAggregator.Cli.csproj" ReferenceOutputAssembly="false" />
   </ItemGroup>
   <ItemGroup>

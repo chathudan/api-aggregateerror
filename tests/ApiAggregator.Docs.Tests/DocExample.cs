@@ -17,6 +17,9 @@ namespace ApiAggregator.Docs.Tests;
 /// <item><c>validate</c>: runs <c>aggregator validate</c>.</item>
 /// <item><c>gateway &lt;METHOD&gt; &lt;path&gt; [scope=a,b | token=none] [header:Name=value] [cors-headers]</c>: calls the gateway as an
 /// app would. With <c>cors-headers</c> the output is the response's <c>Access-Control-*</c> and <c>Vary</c> headers, one per line.</item>
+/// <item><c>mcp &lt;tool&gt; [name=value] [name=@block]</c>: calls an MCP tool on the admin app as an AI agent would (ADR 0021).
+/// Values are text; <c>@block</c> is the JSON code block just before the marker (what the guide shows the agent sending).
+/// A refusal is status 400.</item>
 /// </list>
 /// Options for every kind: <c>expect=502</c> (expected HTTP status, default 200) and <c>partial</c> (the guide shows only
 /// some properties of each object). A <c>json</c> block is compared as JSON; a <c>text</c> block's lines must appear in
@@ -24,6 +27,9 @@ namespace ApiAggregator.Docs.Tests;
 /// </summary>
 public sealed partial record DocExample(string File, int Line, string Kind, IReadOnlyList<string> Args, string Language, string Expected)
 {
+    /// <summary>The code block just before the marker (not itself an example's output), for <c>name=@block</c>.</summary>
+    public string? PreviousBlock { get; init; }
+
     public int ExpectedStatus => Option("expect") is { } s ? int.Parse(s) : 200;
     public bool Partial => Args.Contains("partial");
 
@@ -48,17 +54,21 @@ public sealed partial record DocExample(string File, int Line, string Kind, IRea
     public static IEnumerable<DocExample> Parse(string file, string[] lines)
     {
         string? outerFence = null; // set while inside a code block that isn't an example, e.g. one showing how to write one
+        StringBuilder? block = null;  // that block's text
+        string? lastBlock = null;     // the last such block, for name=@block
         for (var i = 0; i < lines.Length; i++)
         {
             var trimmed = lines[i].TrimStart();
             if (outerFence is not null)
             {
-                if (trimmed.StartsWith(outerFence, StringComparison.Ordinal) && trimmed.Trim().Trim('`').Length == 0) outerFence = null;
+                if (trimmed.StartsWith(outerFence, StringComparison.Ordinal) && trimmed.Trim().Trim('`').Length == 0) { outerFence = null; lastBlock = block!.ToString(); }
+                else block!.AppendLine(lines[i]);
                 continue;
             }
             if (trimmed.StartsWith("```", StringComparison.Ordinal))
             {
                 outerFence = new string('`', trimmed.TakeWhile(c => c == '`').Count());
+                block = new StringBuilder();
                 continue;
             }
 
@@ -81,7 +91,8 @@ public sealed partial record DocExample(string File, int Line, string Kind, IRea
 
             var words = Split(marker.Groups[1].Value);
             if (words.Count == 0) throw new FormatException($"{file}:{i + 1}: say what to check, e.g. check: run customer-overview --route id=C-10042.");
-            yield return new DocExample(file, i + 1, words[0], words.Skip(1).ToList(), language, body.ToString());
+            yield return new DocExample(file, i + 1, words[0], words.Skip(1).ToList(), language, body.ToString()) { PreviousBlock = lastBlock };
+            lastBlock = null;
             i = close;
         }
     }

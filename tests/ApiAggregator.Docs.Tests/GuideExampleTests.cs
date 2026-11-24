@@ -1,3 +1,4 @@
+using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
 
@@ -27,7 +28,8 @@ public sealed partial class GuideExampleTests(DocsStack stack) : IClassFixture<D
             "run" => await RunAsync(example),
             "validate" => await ValidateAsync(),
             "gateway" => await CallGatewayAsync(example),
-            _ => throw new FormatException($"{example}: unknown check '{example.Kind}'. Use run, validate or gateway.")
+            "mcp" => await CallToolAsync(example),
+            _ => throw new FormatException($"{example}: unknown check '{example.Kind}'. Use run, validate, gateway or mcp.")
         };
 
         var problems = new List<string>();
@@ -70,6 +72,38 @@ public sealed partial class GuideExampleTests(DocsStack stack) : IClassFixture<D
         var status = int.Parse(RunStatusRegex().Match(lines[last]).Groups[1].Value);
         var start = Array.FindIndex(lines, last + 1, l => l.StartsWith('{') || l.StartsWith('[') || l.Trim() == "null");
         return (status, output, start < 0 ? null : string.Join('\n', lines[start..]));
+    }
+
+    /// <summary>
+    /// check: mcp &lt;tool&gt; name=value name=@block: an AI agent's tool call (ADR 0021). A guide's tool calls build on each
+    /// other (a sign-in, then the service, then the draft) but tests run in any order, so the earlier calls of the same
+    /// guide run first, once per stack. They are all safe to repeat.
+    /// </summary>
+    private async Task<(int, string, string?)> CallToolAsync(DocExample example)
+    {
+        var earlier = DocExample.Parse(example.File, File.ReadAllLines(Path.Combine(DocsStack.RepoRoot, example.File)))
+            .Where(e => e.Kind == "mcp" && e.Line < example.Line);
+        foreach (var before in earlier)
+            if (stack.FirstTime($"{before.File}:{before.Line}")) await RunToolAsync(before);
+        stack.FirstTime($"{example.File}:{example.Line}");
+        return await RunToolAsync(example);
+    }
+
+    private async Task<(int, string, string?)> RunToolAsync(DocExample example)
+    {
+        var words = example.PlainArgs.ToList();
+        if (words.Count == 0) throw new FormatException($"{example}: write check: mcp <tool> [name=value] [name=@block].");
+        var arguments = new Dictionary<string, object?>();
+        foreach (var pair in words.Skip(1).Select(w => w.Split('=', 2)))
+        {
+            if (pair.Length != 2) throw new FormatException($"{example}: '{pair[0]}' should be name=value.");
+            arguments[pair[0]] = pair[1] == "@block"
+                ? JsonDocument.Parse(stack.AsRunning(example.PreviousBlock ?? throw new FormatException($"{example}: {pair[0]}=@block needs a JSON code block just before the check: comment."))).RootElement.Clone()
+                : stack.AsRunning(pair[1]);
+        }
+        var (status, text) = await stack.CallToolAsync(words[0], arguments);
+        var output = stack.AsDocumented(text);
+        return (status, output, status == 200 ? output : null);
     }
 
     private async Task<(int, string, string?)> ValidateAsync()

@@ -2,12 +2,15 @@ using System.Diagnostics;
 using System.Net;
 using System.Net.Http.Json;
 using System.Net.Sockets;
+using System.Text.Json;
 using System.Text.Json.Nodes;
+using ModelContextProtocol.Client;
+using ModelContextProtocol.Protocol;
 
 namespace ApiAggregator.Docs.Tests;
 
 /// <summary>
-/// What the guides' examples run against: the built mock services and gateway (Development settings), each its own
+/// What the guides' examples run against: the built mock services, gateway and admin app (Development settings), each its own
 /// process on a free port, over a temporary copy of samples/config. So a running dev-run.sh doesn't get in the way,
 /// and nothing in the repository changes. Also runs the built CLI.
 /// </summary>
@@ -18,10 +21,14 @@ public sealed class DocsStack : IAsyncLifetime
     public static string RepoRoot { get; } = FindRepoRoot();
     public string ConfigDir { get; } = Path.Combine(Path.GetTempPath(), "aggregator-docs-" + Guid.NewGuid().ToString("n"));
     public string GatewayUrl { get; private set; } = "";
+    public string AdminUrl { get; private set; } = "";
     private int _mockPort;
 
     /// <summary>The guides show the usual mock address. Output from here uses a free port, so it's mapped back.</summary>
     public string AsDocumented(string output) => output.Replace($"localhost:{_mockPort}", "localhost:5100");
+
+    /// <summary>The other way round, for what a guide sends (e.g. a spec address on the mocks).</summary>
+    public string AsRunning(string input) => input.Replace("localhost:5100", $"localhost:{_mockPort}");
 
     /// <summary>The mock secrets the gateway uses in Development, for the CLI (it reads them from the environment).</summary>
     private Dictionary<string, string> _secrets = [];
@@ -31,12 +38,15 @@ public sealed class DocsStack : IAsyncLifetime
         _mockPort = FreePort();
         var gatewayPort = FreePort();
         GatewayUrl = $"http://localhost:{gatewayPort}";
+        var adminPort = FreePort();
+        AdminUrl = $"http://localhost:{adminPort}";
         CopySampleConfig();
         _secrets = ReadDevelopmentSecrets();
 
         Start("MockServices", "samples/MockServices", _mockPort);
         Start("ApiAggregator.Gateway", "src/ApiAggregator.Gateway", gatewayPort);
-        await WaitUntilUp($"http://localhost:{_mockPort}/_stats", $"{GatewayUrl}/health/live");
+        Start("ApiAggregator.Admin", "src/ApiAggregator.Admin", adminPort);
+        await WaitUntilUp($"http://localhost:{_mockPort}/_stats", $"{GatewayUrl}/health/live", $"{AdminUrl}/health/live");
     }
 
     public Task DisposeAsync()
@@ -92,6 +102,34 @@ public sealed class DocsStack : IAsyncLifetime
             .ToList();
         return ((int)response.StatusCode, await response.Content.ReadAsStringAsync(), cors);
     }
+
+    /// <summary>
+    /// An MCP client on the admin app, as an AI agent connects (ADR 0021): a development token with the author role and
+    /// the aggregator.mcp scope, and the client name "Docs Agent".
+    /// </summary>
+    public async Task<McpClient> AgentAsync()
+    {
+        var http = new HttpClient { BaseAddress = new Uri(AdminUrl) };
+        var scope = Uri.EscapeDataString("aggregator.author aggregator.mcp");
+        var token = (await http.GetFromJsonAsync<JsonObject>($"/dev/token?sub=docs-agent&scope={scope}"))!["access_token"]!.GetValue<string>();
+        http.DefaultRequestHeaders.Authorization = new("Bearer", token);
+        var transport = new HttpClientTransport(new HttpClientTransportOptions { Endpoint = new Uri($"{AdminUrl}/mcp") }, http, ownsHttpClient: true);
+        return await McpClient.CreateAsync(transport, new McpClientOptions { ClientInfo = new Implementation { Name = "Docs Agent", Version = "1.0" } });
+    }
+
+    /// <summary>Calls one MCP tool. Returns 200 and its text, or 400 and the refusal.</summary>
+    public async Task<(int Status, string Text)> CallToolAsync(string tool, IReadOnlyDictionary<string, object?> arguments)
+    {
+        await using var agent = await AgentAsync();
+        var result = await agent.CallToolAsync(tool, arguments);
+        var text = string.Concat(result.Content.OfType<TextContentBlock>().Select(t => t.Text));
+        return (result.IsError == true ? 400 : 200, text);
+    }
+
+    private readonly HashSet<string> _done = [];
+
+    /// <summary>True the first time it's asked about this key on this stack (e.g. a guide example that sets something up).</summary>
+    public bool FirstTime(string key) { lock (_done) return _done.Add(key); }
 
     public string Logs() => string.Join("\n", _apps.Select(a => $"--- {a.Name}\n{a.Log}"));
 

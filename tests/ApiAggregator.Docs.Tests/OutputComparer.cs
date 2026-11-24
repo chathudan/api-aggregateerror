@@ -7,7 +7,7 @@ namespace ApiAggregator.Docs.Tests;
 public static partial class OutputComparer
 {
     /// <summary>Values that differ on every run. The guide may show any value for them, but they must be present.</summary>
-    private static readonly HashSet<string> VolatileProperties = ["correlationId"];
+    private static readonly HashSet<string> VolatileProperties = ["correlationId", "durationMs"];
 
     /// <summary>Differences between the expected and actual JSON, as "where: what" lines. Empty when they match.</summary>
     public static List<string> CompareJson(JsonNode? expected, JsonNode? actual, bool partial)

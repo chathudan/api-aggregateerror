@@ -13,6 +13,7 @@ You connect services and build, test and publish aggregated endpoints in the adm
 4. [Combine lists](guides/combine-lists.md): one list of records from several services, without guessing
 5. [Testing and publishing](guides/testing-and-publishing.md): Try it, API docs, Postman, history and rolling back
 6. [Troubleshooting](guides/troubleshooting.md): every message, what it means and what to do
+7. [Working with an AI agent](guides/for-ai-agents.md): let Claude Code or Claude Desktop draft endpoints over MCP; you review and publish
 
 The admin UI's **Help** has the same steps, shorter: a page per task (*Add a service · Build an endpoint · Test and
 publish · Fix a problem*) and a few reference pages. Every screen links to its page, and each page links back here
