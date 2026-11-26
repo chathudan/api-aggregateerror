@@ -1,0 +1,114 @@
+{
+  "realm": "aggregator",
+  "displayName": "API Aggregator",
+  "enabled": true,
+  "sslRequired": "all",
+  "registrationAllowed": false,
+  "resetPasswordAllowed": false,
+  "loginWithEmailAllowed": false,
+  "bruteForceProtected": true,
+  "failureFactor": 10,
+  "accessTokenLifespan": 3600,
+  "roles": {
+    "realm": [
+      { "name": "aggregator.author", "description": "Services, sign-ins, drafts and Try it in the admin app" },
+      { "name": "aggregator.publisher", "description": "Also publish, roll back and delete endpoints" },
+      { "name": "aggregator.admin", "description": "Browser access (CORS) for the gateway" },
+      { "name": "bff.read", "description": "An example endpoint permission: give your first test endpoint the scope bff.read" }
+    ]
+  },
+  "clients": [
+    {
+      "clientId": "aggregator-admin",
+      "name": "Admin app sign-in",
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "secret": "${ADMIN_OIDC_CLIENT_SECRET}",
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": false,
+      "redirectUris": ["${ADMIN_URL}/signin-oidc"],
+      "webOrigins": [],
+      "attributes": {
+        "pkce.code.challenge.method": "S256",
+        "post.logout.redirect.uris": "${ADMIN_URL}/*"
+      },
+      "protocolMappers": [
+        { "name": "api-aggregator audience", "protocol": "openid-connect", "protocolMapper": "oidc-audience-mapper",
+          "config": { "included.custom.audience": "api-aggregator", "access.token.claim": "true", "id.token.claim": "false" } },
+        { "name": "roles", "protocol": "openid-connect", "protocolMapper": "oidc-usermodel-realm-role-mapper",
+          "config": { "claim.name": "roles", "multivalued": "true", "jsonType.label": "String",
+                      "access.token.claim": "true", "id.token.claim": "true", "userinfo.token.claim": "true" } }
+      ]
+    },
+    {
+      "clientId": "aggregator-agent",
+      "name": "AI agents (MCP)",
+      "description": "Only tokens from this client carry aggregator.mcp, the permission /mcp needs (ADR 0021)",
+      "protocol": "openid-connect",
+      "publicClient": true,
+      "standardFlowEnabled": false,
+      "directAccessGrantsEnabled": true,
+      "protocolMappers": [
+        { "name": "api-aggregator audience", "protocol": "openid-connect", "protocolMapper": "oidc-audience-mapper",
+          "config": { "included.custom.audience": "api-aggregator", "access.token.claim": "true", "id.token.claim": "false" } },
+        { "name": "roles", "protocol": "openid-connect", "protocolMapper": "oidc-usermodel-realm-role-mapper",
+          "config": { "claim.name": "roles", "multivalued": "true", "jsonType.label": "String", "access.token.claim": "true" } },
+        { "name": "mcp permission", "protocol": "openid-connect", "protocolMapper": "oidc-hardcoded-claim-mapper",
+          "config": { "claim.name": "scp", "claim.value": "aggregator.mcp", "jsonType.label": "String", "access.token.claim": "true" } }
+      ]
+    },
+    {
+      "clientId": "aggregator-scripts",
+      "name": "Scripts calling /admin/*",
+      "protocol": "openid-connect",
+      "publicClient": true,
+      "standardFlowEnabled": false,
+      "directAccessGrantsEnabled": true,
+      "protocolMappers": [
+        { "name": "api-aggregator audience", "protocol": "openid-connect", "protocolMapper": "oidc-audience-mapper",
+          "config": { "included.custom.audience": "api-aggregator", "access.token.claim": "true", "id.token.claim": "false" } },
+        { "name": "roles", "protocol": "openid-connect", "protocolMapper": "oidc-usermodel-realm-role-mapper",
+          "config": { "claim.name": "roles", "multivalued": "true", "jsonType.label": "String", "access.token.claim": "true" } }
+      ]
+    },
+    {
+      "clientId": "test-app",
+      "name": "A test app calling /bff/*",
+      "description": "Client credentials. Its permissions are the realm roles of its service account (bff.read to start)",
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "secret": "${TEST_APP_CLIENT_SECRET}",
+      "standardFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": true,
+      "protocolMappers": [
+        { "name": "api-aggregator audience", "protocol": "openid-connect", "protocolMapper": "oidc-audience-mapper",
+          "config": { "included.custom.audience": "api-aggregator", "access.token.claim": "true", "id.token.claim": "false" } },
+        { "name": "roles", "protocol": "openid-connect", "protocolMapper": "oidc-usermodel-realm-role-mapper",
+          "config": { "claim.name": "roles", "multivalued": "true", "jsonType.label": "String", "access.token.claim": "true" } }
+      ]
+    }
+  ],
+  "users": [
+    {
+      "username": "author", "firstName": "Ann", "lastName": "Author", "email": "author@example.test", "emailVerified": true,
+      "enabled": true, "realmRoles": ["aggregator.author"],
+      "credentials": [ { "type": "password", "value": "${AUTHOR_PASSWORD}", "temporary": false } ]
+    },
+    {
+      "username": "publisher", "firstName": "Pat", "lastName": "Publisher", "email": "publisher@example.test", "emailVerified": true,
+      "enabled": true, "realmRoles": ["aggregator.author", "aggregator.publisher"],
+      "credentials": [ { "type": "password", "value": "${PUBLISHER_PASSWORD}", "temporary": false } ]
+    },
+    {
+      "username": "admin", "firstName": "Alex", "lastName": "Admin", "email": "admin@example.test", "emailVerified": true,
+      "enabled": true, "realmRoles": ["aggregator.author", "aggregator.publisher", "aggregator.admin"],
+      "credentials": [ { "type": "password", "value": "${ADMIN_PASSWORD}", "temporary": false } ]
+    },
+    {
+      "username": "service-account-test-app", "enabled": true, "serviceAccountClientId": "test-app",
+      "realmRoles": ["bff.read"]
+    }
+  ]
+}

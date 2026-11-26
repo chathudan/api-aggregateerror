@@ -37,6 +37,10 @@ The gateway mounts the config **read-only**. Only the admin app writes it.
 `docker compose up --build` runs the development stack (mocks and dev tokens included). **Don't** use
 that file for production.
 
+To try production mode on your own machine first, use [`deploy/production`](../../deploy/production/README.md). It
+runs the gateway, the admin app and Keycloak as the identity provider, with an empty configuration, `https://` with a
+local test certificate, and no development shortcuts: `./setup.sh && docker compose up --build -d`.
+
 ## Deploy to Azure Container Apps
 
 A starting point. Adapt names, networking and identity to your landing zone.

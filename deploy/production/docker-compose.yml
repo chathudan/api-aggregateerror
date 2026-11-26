@@ -1,0 +1,110 @@
+# A production-mode stack to test on your own machine: gateway + admin app + Keycloak as the identity provider.
+# Fresh, empty configuration (no sample data, no mock services, no /dev/token, no development sign-in).
+#
+#   cd deploy/production && ./setup.sh && docker compose up --build
+#
+#   https://localhost:8300   admin app (sign in through Keycloak)
+#   https://localhost:8200   gateway (/bff/..., /bff/docs, /health/ready)
+#   https://localhost:8443   Keycloak (identity provider; its console at /admin)
+#
+# Everything runs with ASPNETCORE_ENVIRONMENT=Production, so the app behaves as it would in production: OpenID
+# Connect sign-in, https everywhere, certificates checked, secrets only from settings. What ISN'T production grade:
+# the certificates come from a local test CA (setup.sh), Keycloak keeps its data in a file database, and the ports are
+# open on this machine only. See README.md.
+
+name: aggregator-production
+
+x-app: &app
+  build: { context: ../.. }
+  env_file: [secrets.env]   # Secrets__<name>=<value>: the values behind secret:<name> (setup.sh creates it)
+  environment: &env
+    ASPNETCORE_ENVIRONMENT: Production
+    Aggregator__Config__Directory: /config
+    # Bearer tokens (apps calling /bff, scripts calling /admin/*, AI agents calling /mcp) come from Keycloak.
+    Auth__Authority: https://localhost:8443/realms/aggregator
+    Auth__Audience: api-aggregator
+    # https with the local test certificate, and trust in the local test CA (plus the usual public ones) for calls to
+    # Keycloak and to your services.
+    Kestrel__Certificates__Default__Path: /certs/server.crt
+    Kestrel__Certificates__Default__KeyPath: /certs/server.key
+    SSL_CERT_FILE: /certs/ca-bundle.crt
+  volumes: &volumes
+    - ./certs:/certs:ro
+  depends_on:
+    init: { condition: service_completed_successfully }
+
+services:
+  # One-off: makes the local test CA and certificate (kept in ./certs) and prepares the empty config volume.
+  init:
+    image: alpine:3.20
+    command: ["sh", "/init/init.sh"]
+    volumes:
+      - ./init:/init:ro
+      - ./certs:/certs
+      - config:/config
+      - admin-keys:/admin-keys
+
+  # The other containers share the gateway's network, so "https://localhost:8443" is the same address for your
+  # browser and for the apps (the token issuer must match exactly).
+  gateway:
+    <<: *app
+    build: { context: ../.., args: { PROJECT: src/ApiAggregator.Gateway/ApiAggregator.Gateway.csproj } }
+    command: ["ApiAggregator.Gateway.dll"]
+    environment:
+      <<: *env
+      ASPNETCORE_URLS: https://+:8200
+      Gateway__ApiDocs__Enabled: "true"   # the Swagger UI at /bff/docs, handy for testing; off by default in production
+    volumes: [./certs:/certs:ro, config:/config:ro]   # the gateway only reads the config
+    ports: ["127.0.0.1:8200:8200", "127.0.0.1:8300:8300", "127.0.0.1:8443:8443"]
+
+  admin:
+    <<: *app
+    build: { context: ../.., args: { PROJECT: src/ApiAggregator.Admin/ApiAggregator.Admin.csproj } }
+    command: ["ApiAggregator.Admin.dll"]
+    environment:
+      <<: *env
+      ASPNETCORE_URLS: https://+:8300
+      Gateway__BaseUrl: https://localhost:8200/
+      Auth__Oidc__Authority: https://localhost:8443/realms/aggregator
+      Auth__Oidc__ClientId: aggregator-admin
+      Auth__Oidc__ClientSecret: ${ADMIN_OIDC_CLIENT_SECRET:?Run ./setup.sh first}
+      Auth__Oidc__RoleClaim: roles
+    # admin-keys: the keys that protect the sign-in cookie, so a restart doesn't sign everyone out.
+    volumes: [./certs:/certs:ro, config:/config, admin-keys:/home/app/.aspnet/DataProtection-Keys]
+    network_mode: "service:gateway"
+    depends_on:
+      init: { condition: service_completed_successfully }
+      gateway: { condition: service_started }
+
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.2
+    command: ["start", "--import-realm"]
+    environment:
+      KC_HOSTNAME: https://localhost:8443
+      KC_HTTP_ENABLED: "false"
+      KC_HTTPS_PORT: "8443"
+      KC_HTTPS_CERTIFICATE_FILE: /certs/server.crt
+      KC_HTTPS_CERTIFICATE_KEY_FILE: /certs/server.key
+      KC_DB: dev-file
+      KC_BOOTSTRAP_ADMIN_USERNAME: admin
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:?Run ./setup.sh first}
+      # Read by the realm file (deploy/keycloak/aggregator-realm.json) on its first import.
+      ADMIN_URL: https://localhost:8300
+      ADMIN_OIDC_CLIENT_SECRET: ${ADMIN_OIDC_CLIENT_SECRET}
+      TEST_APP_CLIENT_SECRET: ${TEST_APP_CLIENT_SECRET:?Run ./setup.sh first}
+      AUTHOR_PASSWORD: ${AUTHOR_PASSWORD:?Run ./setup.sh first}
+      PUBLISHER_PASSWORD: ${PUBLISHER_PASSWORD:?Run ./setup.sh first}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:?Run ./setup.sh first}
+    volumes:
+      - ./certs:/certs:ro
+      - ../keycloak:/opt/keycloak/data/import:ro
+      - keycloak:/opt/keycloak/data
+    network_mode: "service:gateway"
+    depends_on:
+      init: { condition: service_completed_successfully }
+      gateway: { condition: service_started }
+
+volumes:
+  config:     # your services, sign-ins, drafts, published endpoints and history (starts empty)
+  admin-keys: # the admin app's cookie keys
+  keycloak:   # Keycloak's database: the realm is imported once, on the first start
