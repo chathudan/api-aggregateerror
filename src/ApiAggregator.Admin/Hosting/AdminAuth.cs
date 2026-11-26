@@ -131,17 +131,29 @@ internal static class AdminAuth
         o.Events.OnTokenValidated = context =>
         {
             if (context.Principal?.Identity is not ClaimsIdentity identity) return Task.CompletedTask;
-            // The provider's role claim (app roles "aggregator.author" / "aggregator.publisher") becomes "role".
-            foreach (var claim in identity.FindAll(roleClaim).ToList())
-                if (claim.Type != "role") identity.AddClaim(new Claim("role", claim.Value));
-
-            var sid = Guid.NewGuid().ToString("n");
-            identity.AddClaim(new Claim(SessionClaim, sid));
+            var sid = AdoptSignIn(identity, roleClaim);
             if (context.TokenEndpointResponse?.AccessToken is { Length: > 0 } token)
                 context.HttpContext.RequestServices.GetRequiredService<UserTokenStore>()
                     .Put(sid, token, DateTimeOffset.UtcNow.AddSeconds(int.TryParse(context.TokenEndpointResponse.ExpiresIn, out var s) ? s : 3600));
             return Task.CompletedTask;
         };
+    }
+
+    /// <summary>
+    /// Shapes the identity from the provider for this app: its role claim becomes "role", and a new random session id
+    /// replaces any "sid" the provider sent (Keycloak and Entra ID send their own; FindFirst would return theirs, and
+    /// the person's access token kept under ours could never be found). Returns the new session id.
+    /// </summary>
+    internal static string AdoptSignIn(ClaimsIdentity identity, string roleClaim)
+    {
+        // The provider's role claim (app roles "aggregator.author" / "aggregator.publisher") becomes "role".
+        foreach (var claim in identity.FindAll(roleClaim).ToList())
+            if (claim.Type != "role") identity.AddClaim(new Claim("role", claim.Value));
+
+        foreach (var claim in identity.FindAll(SessionClaim).ToList()) identity.RemoveClaim(claim);
+        var sid = Guid.NewGuid().ToString("n");
+        identity.AddClaim(new Claim(SessionClaim, sid));
+        return sid;
     }
 
     /// <summary>

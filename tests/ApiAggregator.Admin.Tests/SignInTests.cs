@@ -130,6 +130,24 @@ public sealed partial class SignInTests : IDisposable
         Assert.Contains("The admin pages need a sign-in outside Development", error.ToString());
     }
 
+    [Fact]
+    public void A_session_id_from_the_identity_provider_is_replaced_so_the_persons_token_can_be_found()
+    {
+        // Keycloak and Entra ID put their own "sid" in the ID token.
+        var identity = new System.Security.Claims.ClaimsIdentity(
+        [
+            new System.Security.Claims.Claim("sub", "ann"),
+            new System.Security.Claims.Claim("sid", "the-providers-session"),
+            new System.Security.Claims.Claim("roles", "aggregator.author")
+        ], "oidc");
+
+        var sid = Hosting.AdminAuth.AdoptSignIn(identity, "roles");
+
+        Assert.Equal(sid, Assert.Single(identity.FindAll("sid")).Value);
+        Assert.NotEqual("the-providers-session", sid);
+        Assert.Contains(identity.FindAll("role"), c => c.Value == "aggregator.author");
+    }
+
     // ------------------------------------------------------------------ helpers
 
     /// <summary>A client that keeps cookies and doesn't follow redirects, like a browser we can inspect.</summary>

@@ -5,7 +5,13 @@
 **/*.user
 .git
 docs
+# ...except the map for AI agents, which the admin app serves at /llms.txt (ADR 0019)
+!docs/llms.txt
 config/drafts
 config/history
 # Local secrets (Development) never go into a build, not even the build stage
 **/secrets.local.json
+# The production test stack's passwords, secrets and certificates (deploy/production)
+**/.env
+**/secrets.env
+deploy/production/certs
