@@ -33,13 +33,25 @@ You need a token with:
 - the **`aggregator.mcp`** scope, which an administrator grants to the tokens AI agents may use.
 
 On your machine with the sample data, `./scripts/dev-run.sh` gives you one, with the same mechanism as
-`try-gateway.sh`:
+`try-gateway.sh`. It lasts an hour; run it again when the agent starts getting 401s:
 
 ```bash
 TOKEN=$(curl -s "http://localhost:5300/dev/token?sub=$USER&scope=aggregator.author%20aggregator.mcp" | sed -E 's/.*"access_token":"([^"]+)".*/\1/')
 ```
 
-**Claude Code:** a `.mcp.json` in the repository root (don't commit the token: use the environment variable):
+The admin app serves plain `http://localhost:5300` in development. Use exactly that address: `https://`, or your
+machine's network address (`192.168…`), won't answer.
+
+**Claude Code:** add the server once, in the repository folder:
+
+```bash
+claude mcp add --transport http api-aggregator http://localhost:5300/mcp --header "Authorization: Bearer $TOKEN"
+```
+
+Then start `claude`; `/mcp` lists the server and its tools. With a new token, remove and add it again
+(`claude mcp remove api-aggregator`). Or share the set-up with your team in a `.mcp.json` file in the repository root
+(create it; it isn't in the repository). It reads the token from an environment variable, so the token is never
+committed:
 
 ```json
 {
@@ -53,11 +65,30 @@ TOKEN=$(curl -s "http://localhost:5300/dev/token?sub=$USER&scope=aggregator.auth
 }
 ```
 
-Then `export AGGREGATOR_TOKEN=$TOKEN` and start `claude`. `/mcp` lists the server and its tools.
+Then `export AGGREGATOR_TOKEN=$TOKEN` before starting `claude`.
 
-**Claude Desktop:** Settings → Connectors → Add custom connector, with the address `http://localhost:5300/mcp`
-and the header `Authorization: Bearer <token>`. In test and production use a token from your identity provider with
-the two scopes above; development tokens only work in Development.
+**Claude Desktop:** use its configuration file, not **Settings → Connectors → Add custom connector**. Custom
+connectors are reached from Anthropic's servers, so they need a public `https://` address with an OAuth sign-in. They
+can't reach `localhost` or a private network address, and they can't send a token. In Claude Desktop open
+**Settings → Developer → Edit Config** (`claude_desktop_config.json`) and add the server through the `mcp-remote`
+bridge (it needs Node.js):
+
+```json
+{
+  "mcpServers": {
+    "api-aggregator": {
+      "command": "npx",
+      "args": ["-y", "mcp-remote", "http://localhost:5300/mcp", "--header", "Authorization:${AGGREGATOR_AUTH}"],
+      "env": { "AGGREGATOR_AUTH": "Bearer <paste the token here>" }
+    }
+  }
+}
+```
+
+Restart Claude Desktop. The tools appear under the tools icon in a new chat.
+
+**In test and production**, use a token from your identity provider with the two scopes above; development tokens
+only work in Development. The admin app must then be reachable from the agent's machine over `https://`.
 
 Ask it, for example: *"Add an endpoint that lists every unique CRM contact with the notes of those who have orders.
 Use the CRM service."*

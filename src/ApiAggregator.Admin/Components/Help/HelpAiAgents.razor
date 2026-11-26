@@ -2,7 +2,7 @@
 <p>An AI agent such as Claude Code or Claude Desktop can import a service, set up its sign-in and write an endpoint as a <strong>draft</strong>. You review it, test it with <strong>Try it</strong> and publish it.</p>
 <ol>
     <li>Get a token with the <strong>author</strong> role and the <code>aggregator.mcp</code> scope. An administrator grants that scope; on a developer machine: <code>http://localhost:5300/dev/token?sub=you&amp;scope=aggregator.author%20aggregator.mcp</code>.</li>
-    <li>Point the agent at <code>http://localhost:5300/mcp</code> with the header <code>Authorization: Bearer &lt;token&gt;</code> (the full guide has a <code>.mcp.json</code> for Claude Code).</li>
+    <li>Point the agent at <code>http://localhost:5300/mcp</code> (plain http, <code>localhost</code>) with the header <code>Authorization: Bearer &lt;token&gt;</code>. Claude Code: <code>claude mcp add --transport http api-aggregator http://localhost:5300/mcp --header "Authorization: Bearer &lt;token&gt;"</code>. Claude Desktop: its config file with the <code>mcp-remote</code> bridge (see the full guide). Its <em>Add custom connector</em> dialog can't reach your machine.</li>
     <li>Ask it for the endpoint you need. When it says the draft is ready, open it under <strong>Endpoints</strong>: it shows "Draft … by you via MCP (…)".</li>
     <li>Read the draft, use <strong>Try it</strong> with a real record, and publish it if it's right.</li>
 </ol>
