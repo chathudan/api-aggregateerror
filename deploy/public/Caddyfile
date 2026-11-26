@@ -1,0 +1,30 @@
+# Caddy gets and renews a Let's Encrypt certificate for each name, and sends http to https.
+{
+	email {$ACME_EMAIL}
+}
+
+(common) {
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options nosniff
+		-Server
+	}
+}
+
+# The admin app (pages, /admin/* and /mcp). Blazor's WebSocket passes through as is.
+{$ADMIN_HOST} {
+	import common
+	reverse_proxy admin:8080
+}
+
+# The gateway: what apps call.
+{$API_HOST} {
+	import common
+	reverse_proxy gateway:8080
+}
+
+# Keycloak: the sign-in pages, tokens and its console.
+{$AUTH_HOST} {
+	import common
+	reverse_proxy keycloak:8080
+}

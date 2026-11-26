@@ -41,6 +41,10 @@ To try production mode on your own machine first, use [`deploy/production`](../.
 runs the gateway, the admin app and Keycloak as the identity provider, with an empty configuration, `https://` with a
 local test certificate, and no development shortcuts: `./setup.sh && docker compose up --build -d`.
 
+To let other people try it on a public server, use [`deploy/public`](../../deploy/public/README.md). It's the same
+apps behind Caddy, with Let's Encrypt certificates, accounts you hand out (`add-user.sh`) and optional made-up
+services. It's for demonstrations with made-up data, not a production deployment.
+
 ## Deploy to Azure Container Apps
 
 A starting point. Adapt names, networking and identity to your landing zone.

@@ -89,6 +89,7 @@ If a change touches any of these, run the `security-review` skill and add or adj
 | `tests/ApiAggregator.Docs.Tests` | Runs every `<!-- check: ... -->` example in `docs/` and compares the output (`scripts/check-docs.sh`) |
 | `config/` | Your own configuration (real mode: `dev-run.sh --real`). Starts empty |
 | `deploy/production/` | Production mode on one machine for testing: gateway + admin app + Keycloak (realm shared in `deploy/keycloak/`), empty config volume, https with a local test CA (`init/`), `setup.sh` (random passwords in `.env`), `token.sh` (app, MCP and script tokens). Not production grade (README) |
+| `deploy/public/` | A public demonstration server: the same behind Caddy (Let's Encrypt), `add-user.sh` (invite people with a role), optional `--profile mocks`. Made-up data only; not a production deployment (README) |
 | `Dockerfile.vercel`, `deploy/vercel/` | The public **sample-data** demo (gateway + admin app + mocks + `samples/config` in one container behind Caddy, Development mode, so `/dev/token` and the admin sign-in are open; admin changes don't survive a restart). Never for real services or data |
 
 ## Commands

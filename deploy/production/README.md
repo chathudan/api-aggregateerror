@@ -96,7 +96,7 @@ over with `down -v`. `certs/` stays until you delete it.
   CA). This is how they reach Keycloak and your real `https://` services.
 - **Volumes.** The gateway reads the config volume read-only. The admin app writes it, and keeps its sign-in cookie
   keys in a volume so a restart doesn't sign people out.
-- **Keycloak.** The realm is [`deploy/keycloak/aggregator-realm.json`](../keycloak/aggregator-realm.json):
+- **Keycloak.** The realm is [`deploy/keycloak/aggregator-realm.json`](../keycloak/aggregator-realm.json), shared with [`deploy/public`](../public/README.md):
   - the roles `aggregator.author`, `aggregator.publisher` and `aggregator.admin`, put into a `roles` claim;
   - `api-aggregator` as the audience;
   - four clients: the admin app, scripts, AI agents and a test app.

@@ -1,0 +1,115 @@
+# The aggregator on a public server, for demonstrations: Caddy (automatic Let's Encrypt certificates) in front of the
+# gateway, the admin app and Keycloak, in production mode, starting from an empty configuration.
+#
+#   ./setup.sh example.com you@example.com && docker compose up --build -d
+#
+#   https://admin.<domain>   admin app (people sign in through Keycloak)
+#   https://api.<domain>     gateway (/bff/..., /bff/docs)
+#   https://auth.<domain>    Keycloak (sign-in pages; its console at /admin)
+#
+# Only Caddy is reachable from outside (ports 80 and 443). See README.md, including what this is NOT suitable for.
+
+name: aggregator-public
+
+x-app: &app
+  env_file: [secrets.env]   # Secrets__<name>=<value>: the values behind secret:<name> (setup.sh creates it)
+  restart: unless-stopped
+  environment: &env
+    ASPNETCORE_ENVIRONMENT: Production
+    ASPNETCORE_URLS: http://+:8080
+    # Behind Caddy: take the scheme and the caller's address from its X-Forwarded-* headers. Safe because only Caddy
+    # can reach the apps (no ports are published for them).
+    ASPNETCORE_FORWARDEDHEADERS_ENABLED: "true"
+    Aggregator__Config__Directory: /config
+    Auth__Authority: https://${AUTH_HOST:?Run ./setup.sh first}/realms/aggregator
+    Auth__Audience: api-aggregator
+  depends_on:
+    init: { condition: service_completed_successfully }
+
+services:
+  # One-off: prepares the empty config volume and the admin app's key folder for the apps' user (1654).
+  init:
+    image: alpine:3.20
+    command: ["sh", "-c", "mkdir -p /config/recipes /config/drafts /config/history && for f in services auth-profiles; do [ -f /config/$$f.json ] || echo '[]' > /config/$$f.json; done && chown -R 1654:1654 /config /admin-keys"]
+    volumes: [config:/config, admin-keys:/admin-keys]
+
+  caddy:
+    image: caddy:2.8.4
+    restart: unless-stopped
+    ports: ["80:80", "443:443", "443:443/udp"]
+    environment:
+      ADMIN_HOST: ${ADMIN_HOST}
+      API_HOST: ${API_HOST}
+      AUTH_HOST: ${AUTH_HOST}
+      ACME_EMAIL: ${ACME_EMAIL:?Run ./setup.sh first}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data       # the certificates: keep this volume, or Let's Encrypt's limits can lock you out
+      - caddy-config:/config
+    networks:
+      default:
+        # The apps reach Keycloak (and the admin app the gateway) by their public names through Caddy, so the token
+        # issuer is the same address inside and outside, with a real certificate.
+        aliases: ["${ADMIN_HOST}", "${API_HOST}", "${AUTH_HOST}"]
+
+  gateway:
+    <<: *app
+    build: { context: ../.., args: { PROJECT: src/ApiAggregator.Gateway/ApiAggregator.Gateway.csproj } }
+    command: ["ApiAggregator.Gateway.dll"]
+    environment:
+      <<: *env
+      Gateway__ApiDocs__Enabled: "true"   # the Swagger UI at /bff/docs, for the demonstration
+    volumes: [config:/config:ro]          # the gateway only reads the config
+
+  admin:
+    <<: *app
+    build: { context: ../.., args: { PROJECT: src/ApiAggregator.Admin/ApiAggregator.Admin.csproj } }
+    command: ["ApiAggregator.Admin.dll"]
+    environment:
+      <<: *env
+      Gateway__BaseUrl: https://${API_HOST}/
+      Auth__Oidc__Authority: https://${AUTH_HOST}/realms/aggregator
+      Auth__Oidc__ClientId: aggregator-admin
+      Auth__Oidc__ClientSecret: ${ADMIN_OIDC_CLIENT_SECRET:?Run ./setup.sh first}
+      Auth__Oidc__RoleClaim: roles
+    # admin-keys: the keys that protect the sign-in cookie, so a restart doesn't sign everyone out.
+    volumes: [config:/config, admin-keys:/home/app/.aspnet/DataProtection-Keys]
+
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.2
+    restart: unless-stopped
+    command: ["start", "--import-realm"]
+    environment:
+      KC_HOSTNAME: https://${AUTH_HOST}
+      KC_HTTP_ENABLED: "true"          # plain http only between Caddy and Keycloak, inside this network
+      KC_PROXY_HEADERS: xforwarded
+      KC_DB: dev-file
+      KC_BOOTSTRAP_ADMIN_USERNAME: admin
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:?Run ./setup.sh first}
+      # Read by the realm file (deploy/keycloak/aggregator-realm.json) on its first import.
+      ADMIN_URL: https://${ADMIN_HOST}
+      ADMIN_OIDC_CLIENT_SECRET: ${ADMIN_OIDC_CLIENT_SECRET}
+      TEST_APP_CLIENT_SECRET: ${TEST_APP_CLIENT_SECRET:?Run ./setup.sh first}
+      AUTHOR_PASSWORD: ${AUTHOR_PASSWORD:?Run ./setup.sh first}
+      PUBLISHER_PASSWORD: ${PUBLISHER_PASSWORD:?Run ./setup.sh first}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:?Run ./setup.sh first}
+    volumes:
+      - ../keycloak:/opt/keycloak/data/import:ro
+      - keycloak:/opt/keycloak/data
+
+  # Optional made-up services to demonstrate with: docker compose --profile mocks up -d. Reachable only from the
+  # apps, at http://mocks:5100 (for example the spec http://mocks:5100/d/openapi.json). See samples/README.md.
+  mocks:
+    build: { context: ../.., args: { PROJECT: samples/MockServices/MockServices.csproj } }
+    command: ["MockServices.dll"]
+    restart: unless-stopped
+    profiles: [mocks]
+    environment:
+      ASPNETCORE_URLS: http://+:5100
+
+volumes:
+  config:       # your services, sign-ins, drafts, published endpoints and history (starts empty)
+  admin-keys:   # the admin app's cookie keys
+  keycloak:     # Keycloak's database: the realm is imported once, on the first start
+  caddy-data:   # Let's Encrypt certificates and account
+  caddy-config:
